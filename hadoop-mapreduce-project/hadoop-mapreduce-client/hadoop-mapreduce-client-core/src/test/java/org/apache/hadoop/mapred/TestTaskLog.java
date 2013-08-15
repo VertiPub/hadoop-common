@@ -17,6 +17,11 @@
  */
 package org.apache.hadoop.mapred;
 
+import static junit.framework.Assert.assertEquals;
+import static junit.framework.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -24,10 +29,8 @@ import java.io.InputStream;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.mapred.TaskLog.LogName;
 import org.apache.hadoop.mapreduce.MRJobConfig;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.junit.Test;
-
-import static junit.framework.Assert.*;
-import static org.mockito.Mockito.*;
 
 /**
  * TestCounters checks the sanity and recoverability of Queue
@@ -42,7 +45,8 @@ public class TestTaskLog {
   @Test (timeout=50000)
   public void testTaskLog() throws IOException {
     // test TaskLog
-    System.setProperty(MRJobConfig.TASK_LOG_DIR, "testString");
+    System.setProperty(
+        YarnConfiguration.YARN_APP_CONTAINER_LOG_DIR, "testString");
     assertEquals(TaskLog.getMRv2LogDir(), "testString");
     TaskAttemptID taid = mock(TaskAttemptID.class);
     JobID jid = new JobID("job", 1);
@@ -51,7 +55,8 @@ public class TestTaskLog {
     when(taid.toString()).thenReturn("JobId");
 
     File f = TaskLog.getTaskLogFile(taid, true, LogName.STDOUT);
-    assertTrue(f.getAbsolutePath().endsWith("testString/stdout"));
+    assertTrue(f.getAbsolutePath().endsWith("testString"
+        + File.separatorChar + "stdout"));
 
     // test getRealTaskLogFileLocation
 
@@ -65,11 +70,14 @@ public class TestTaskLog {
     TaskLog.syncLogs("location", taid, true);
 
     assertTrue(indexFile.getAbsolutePath().endsWith(
-        "userlogs/job_job_0001/JobId.cleanup/log.index"));
+        "userlogs" + File.separatorChar + "job_job_0001"
+        + File.separatorChar + "JobId.cleanup"
+        + File.separatorChar + "log.index"));
 
     f = TaskLog.getRealTaskLogFileLocation(taid, true, LogName.DEBUGOUT);
     if (f != null) {
-      assertTrue(f.getAbsolutePath().endsWith("location/debugout"));
+      assertTrue(f.getAbsolutePath().endsWith("location"
+          + File.separatorChar + "debugout"));
       FileUtils.copyFile(indexFile, f);
     }
     // test obtainLogDirOwner
@@ -115,7 +123,7 @@ public class TestTaskLog {
   @Test (timeout=50000)
   public void testTaskLogWithoutTaskLogDir() throws IOException {
     // TaskLog tasklog= new TaskLog();
-    System.clearProperty(MRJobConfig.TASK_LOG_DIR);
+    System.clearProperty(YarnConfiguration.YARN_APP_CONTAINER_LOG_DIR);
 
     // test TaskLog
 

@@ -32,8 +32,9 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authorize.AccessControlList;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
-import org.apache.hadoop.yarn.api.protocolrecords.GetAllApplicationsRequest;
+import org.apache.hadoop.service.Service.STATE;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
+import org.apache.hadoop.yarn.api.protocolrecords.GetApplicationsRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.GetApplicationReportRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.GetNewApplicationRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.KillApplicationRequest;
@@ -46,15 +47,14 @@ import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
+import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.ipc.YarnRPC;
 import org.apache.hadoop.yarn.server.resourcemanager.recovery.RMStateStore;
 import org.apache.hadoop.yarn.server.resourcemanager.recovery.RMStateStoreFactory;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMAppState;
-import org.apache.hadoop.yarn.service.Service.STATE;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -78,7 +78,7 @@ public class TestApplicationACLs {
       YarnConfiguration.RM_ADDRESS,
       YarnConfiguration.DEFAULT_RM_ADDRESS,
       YarnConfiguration.DEFAULT_RM_PORT);
-  private static ClientRMProtocol rmClient;
+  private static ApplicationClientProtocol rmClient;
 
   private static RecordFactory recordFactory = RecordFactoryProvider
       .getRecordFactory(conf);
@@ -121,10 +121,10 @@ public class TestApplicationACLs {
 
     UserGroupInformation owner = UserGroupInformation
         .createRemoteUser(APP_OWNER);
-    rmClient = owner.doAs(new PrivilegedExceptionAction<ClientRMProtocol>() {
+    rmClient = owner.doAs(new PrivilegedExceptionAction<ApplicationClientProtocol>() {
       @Override
-      public ClientRMProtocol run() throws Exception {
-        return (ClientRMProtocol) rpc.getProxy(ClientRMProtocol.class,
+      public ApplicationClientProtocol run() throws Exception {
+        return (ApplicationClientProtocol) rpc.getProxy(ApplicationClientProtocol.class,
             rmAddress, conf);
       }
     });
@@ -178,15 +178,15 @@ public class TestApplicationACLs {
     return applicationId;
   }
 
-  private ClientRMProtocol getRMClientForUser(String user)
+  private ApplicationClientProtocol getRMClientForUser(String user)
       throws IOException, InterruptedException {
     UserGroupInformation userUGI = UserGroupInformation
         .createRemoteUser(user);
-    ClientRMProtocol userClient = userUGI
-        .doAs(new PrivilegedExceptionAction<ClientRMProtocol>() {
+    ApplicationClientProtocol userClient = userUGI
+        .doAs(new PrivilegedExceptionAction<ApplicationClientProtocol>() {
           @Override
-          public ClientRMProtocol run() throws Exception {
-            return (ClientRMProtocol) rpc.getProxy(ClientRMProtocol.class,
+          public ApplicationClientProtocol run() throws Exception {
+            return (ApplicationClientProtocol) rpc.getProxy(ApplicationClientProtocol.class,
                 rmAddress, conf);
           }
         });
@@ -213,8 +213,8 @@ public class TestApplicationACLs {
 
     // List apps as owner
     Assert.assertEquals("App view by owner should list the apps!!", 1,
-        rmClient.getAllApplications(
-            recordFactory.newRecordInstance(GetAllApplicationsRequest.class))
+        rmClient.getApplications(
+            recordFactory.newRecordInstance(GetApplicationsRequest.class))
             .getApplicationList().size());
 
     // Kill app as owner
@@ -237,15 +237,15 @@ public class TestApplicationACLs {
         .newRecordInstance(KillApplicationRequest.class);
     finishAppRequest.setApplicationId(applicationId);
 
-    ClientRMProtocol superUserClient = getRMClientForUser(SUPER_USER);
+    ApplicationClientProtocol superUserClient = getRMClientForUser(SUPER_USER);
 
     // View as the superUser
     superUserClient.getApplicationReport(appReportRequest);
 
     // List apps as superUser
     Assert.assertEquals("App view by super-user should list the apps!!", 2,
-        superUserClient.getAllApplications(
-            recordFactory.newRecordInstance(GetAllApplicationsRequest.class))
+        superUserClient.getApplications(
+            recordFactory.newRecordInstance(GetApplicationsRequest.class))
             .getApplicationList().size());
 
     // Kill app as the superUser
@@ -268,15 +268,15 @@ public class TestApplicationACLs {
         .newRecordInstance(KillApplicationRequest.class);
     finishAppRequest.setApplicationId(applicationId);
 
-    ClientRMProtocol friendClient = getRMClientForUser(FRIEND);
+    ApplicationClientProtocol friendClient = getRMClientForUser(FRIEND);
 
     // View as the friend
     friendClient.getApplicationReport(appReportRequest);
 
     // List apps as friend
     Assert.assertEquals("App view by a friend should list the apps!!", 3,
-        friendClient.getAllApplications(
-            recordFactory.newRecordInstance(GetAllApplicationsRequest.class))
+        friendClient.getApplications(
+            recordFactory.newRecordInstance(GetApplicationsRequest.class))
             .getApplicationList().size());
 
     // Kill app as the friend
@@ -299,7 +299,7 @@ public class TestApplicationACLs {
         .newRecordInstance(KillApplicationRequest.class);
     finishAppRequest.setApplicationId(applicationId);
 
-    ClientRMProtocol enemyRmClient = getRMClientForUser(ENEMY);
+    ApplicationClientProtocol enemyRmClient = getRMClientForUser(ENEMY);
 
     // View as the enemy
     ApplicationReport appReport = enemyRmClient.getApplicationReport(
@@ -308,8 +308,8 @@ public class TestApplicationACLs {
 
     // List apps as enemy
     List<ApplicationReport> appReports = enemyRmClient
-        .getAllApplications(recordFactory
-            .newRecordInstance(GetAllApplicationsRequest.class))
+        .getApplications(recordFactory
+            .newRecordInstance(GetApplicationsRequest.class))
         .getApplicationList();
     Assert.assertEquals("App view by enemy should list the apps!!", 4,
         appReports.size());
@@ -321,7 +321,7 @@ public class TestApplicationACLs {
     try {
       enemyRmClient.forceKillApplication(finishAppRequest);
       Assert.fail("App killing by the enemy should fail!!");
-    } catch (YarnRemoteException e) {
+    } catch (YarnException e) {
       LOG.info("Got exception while killing app as the enemy", e);
       Assert
           .assertTrue(e.getMessage().contains(
@@ -338,7 +338,7 @@ public class TestApplicationACLs {
     Assert.assertEquals("Enemy should not see app rpc port!",
         -1, appReport.getRpcPort());
     Assert.assertEquals("Enemy should not see app client token!",
-        null, appReport.getClientToken());
+        null, appReport.getClientToAMToken());
     Assert.assertEquals("Enemy should not see app diagnostics!",
         UNAVAILABLE, appReport.getDiagnostics());
     Assert.assertEquals("Enemy should not see app tracking url!",

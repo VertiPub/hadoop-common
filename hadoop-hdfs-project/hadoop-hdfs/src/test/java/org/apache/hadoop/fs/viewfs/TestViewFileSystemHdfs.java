@@ -24,8 +24,10 @@ import java.net.URISyntaxException;
 import javax.security.auth.login.LoginException;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.CommonConfigurationKeys;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileSystemTestHelper;
+import org.apache.hadoop.fs.FsConstants;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
@@ -48,10 +50,14 @@ public class TestViewFileSystemHdfs extends ViewFileSystemBaseTest {
   private FileSystem fsTarget2;
   Path targetTestRoot2;
   
+  @Override
+  protected FileSystemTestHelper createFileSystemHelper() {
+    return new FileSystemTestHelper("/tmp/TestViewFileSystemHdfs");
+  }
+
   @BeforeClass
   public static void clusterSetupAtBegining() throws IOException,
       LoginException, URISyntaxException {
-    FileSystemTestHelper.TEST_ROOT_DIR = "/tmp/TestViewFileSystemHdfs";
     SupportsBlocks = true;
     CONF.setBoolean(
         DFSConfigKeys.DFS_NAMENODE_DELEGATION_TOKEN_ALWAYS_USE_KEY, true);
@@ -65,7 +71,11 @@ public class TestViewFileSystemHdfs extends ViewFileSystemBaseTest {
     
     fHdfs = cluster.getFileSystem(0);
     fHdfs2 = cluster.getFileSystem(1);
-    
+    fHdfs.getConf().set(CommonConfigurationKeys.FS_DEFAULT_NAME_KEY,
+        FsConstants.VIEWFS_URI.toString());
+    fHdfs2.getConf().set(CommonConfigurationKeys.FS_DEFAULT_NAME_KEY,
+        FsConstants.VIEWFS_URI.toString());
+
     defaultWorkingDirectory = fHdfs.makeQualified( new Path("/user/" + 
         UserGroupInformation.getCurrentUser().getShortUserName()));
     defaultWorkingDirectory2 = fHdfs2.makeQualified( new Path("/user/" + 
@@ -87,7 +97,7 @@ public class TestViewFileSystemHdfs extends ViewFileSystemBaseTest {
     // create the test root on local_fs
     fsTarget = fHdfs;
     fsTarget2 = fHdfs2;
-    targetTestRoot2 = FileSystemTestHelper.getAbsoluteTestRootPath(fsTarget2);
+    targetTestRoot2 = new FileSystemTestHelper().getAbsoluteTestRootPath(fsTarget2);
     super.setUp();
   }
 

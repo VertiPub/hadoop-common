@@ -28,6 +28,8 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
 
+import org.apache.hadoop.fs.FileUtil;
+
 public class TestShell extends TestCase {
 
   private static class Command extends Shell {
@@ -39,7 +41,12 @@ public class TestShell extends TestCase {
 
     @Override
     protected String[] getExecString() {
-      return new String[] {"echo", "hello"};
+      // There is no /bin/echo equivalent on Windows so just launch it as a
+      // shell built-in.
+      //
+      return Shell.WINDOWS ?
+          (new String[] {"cmd.exe", "/c", "echo", "hello"}) :
+          (new String[] {"echo", "hello"});
     }
 
     @Override
@@ -92,7 +99,7 @@ public class TestShell extends TestCase {
     PrintWriter writer = new PrintWriter(new FileOutputStream(shellFile));
     writer.println(timeoutCommand);
     writer.close();
-    shellFile.setExecutable(true);
+    FileUtil.setExecutable(shellFile, true);
     Shell.ShellCommandExecutor shexc 
     = new Shell.ShellCommandExecutor(new String[]{shellFile.getAbsolutePath()},
                                       null, null, 100);

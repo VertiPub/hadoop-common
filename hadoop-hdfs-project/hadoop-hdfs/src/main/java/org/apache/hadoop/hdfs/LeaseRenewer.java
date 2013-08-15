@@ -35,6 +35,7 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.Daemon;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.util.Time;
+import com.google.common.annotations.VisibleForTesting;
 
 /**
  * <p>
@@ -323,6 +324,11 @@ class LeaseRenewer {
     }
   }
 
+  @VisibleForTesting
+  synchronized void setEmptyTime(long time) {
+    emptyTime = time;
+  }
+
   /** Close a file. */
   void closeFile(final String src, final DFSClient dfsc) {
     dfsc.removeFileBeingWritten(src);
@@ -443,8 +449,8 @@ class LeaseRenewer {
           LOG.warn("Failed to renew lease for " + clientsString() + " for "
               + (elapsed/1000) + " seconds.  Aborting ...", ie);
           synchronized (this) {
-            for(DFSClient c : dfsclients) {
-              c.abort();
+            while (!dfsclients.isEmpty()) {
+              dfsclients.get(0).abort();
             }
           }
           break;

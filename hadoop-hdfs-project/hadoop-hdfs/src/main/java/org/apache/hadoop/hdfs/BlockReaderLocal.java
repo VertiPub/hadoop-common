@@ -17,10 +17,8 @@
  */
 package org.apache.hadoop.hdfs;
 
-import java.io.DataInputStream;
-import org.apache.hadoop.conf.Configuration;
-
 import java.io.BufferedInputStream;
+import java.io.DataInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -88,13 +86,10 @@ class BlockReaderLocal implements BlockReader {
   private final DatanodeID datanodeID;
   private final ExtendedBlock block;
   
-  private static int getSlowReadBufferNumChunks(Configuration conf,
+  private final FileInputStreamCache fisCache;
+  
+  private static int getSlowReadBufferNumChunks(int bufSize,
       int bytesPerChecksum) {
-
-    int bufSize =
-        conf.getInt(DFSConfigKeys.DFS_CLIENT_READ_SHORTCIRCUIT_BUFFER_SIZE_KEY,
-            DFSConfigKeys.DFS_CLIENT_READ_SHORTCIRCUIT_BUFFER_SIZE_DEFAULT);
-
     if (bufSize < bytesPerChecksum) {
       throw new IllegalArgumentException("Configured BlockReaderLocal buffer size (" +
           bufSize + ") is not large enough to hold a single chunk (" +
@@ -106,16 +101,18 @@ class BlockReaderLocal implements BlockReader {
     return bufSize / bytesPerChecksum;
   }
 
-  public BlockReaderLocal(Configuration conf, String filename,
+  public BlockReaderLocal(DFSClient.Conf conf, String filename,
       ExtendedBlock block, long startOffset, long length,
       FileInputStream dataIn, FileInputStream checksumIn,
-      DatanodeID datanodeID, boolean verifyChecksum) throws IOException {
+      DatanodeID datanodeID, boolean verifyChecksum,
+      FileInputStreamCache fisCache) throws IOException {
     this.dataIn = dataIn;
     this.checksumIn = checksumIn;
     this.startOffset = Math.max(startOffset, 0);
     this.filename = filename;
     this.datanodeID = datanodeID;
     this.block = block;
+    this.fisCache = fisCache;
 
     // read and handle the common header here. For now just a version
     checksumIn.getChannel().position(0);
@@ -128,13 +125,7 @@ class BlockReaderLocal implements BlockReader {
       throw new IOException("Wrong version (" + version + ") of the " +
           "metadata file for " + filename + ".");
     }
-    if (!verifyChecksum) {
-      this.verifyChecksum = false; 
-    } else {
-      this.verifyChecksum = !conf.getBoolean(DFSConfigKeys.
-          DFS_CLIENT_READ_SHORTCIRCUIT_SKIP_CHECKSUM_KEY, 
-        DFSConfigKeys.DFS_CLIENT_READ_SHORTCIRCUIT_SKIP_CHECKSUM_DEFAULT);
-    }
+    this.verifyChecksum = verifyChecksum && !conf.skipShortCircuitChecksums;
     long firstChunkOffset;
     if (this.verifyChecksum) {
       this.checksum = header.getChecksum();
@@ -144,7 +135,8 @@ class BlockReaderLocal implements BlockReader {
           - (startOffset % checksum.getBytesPerChecksum());
       this.offsetFromChunkBoundary = (int) (startOffset - firstChunkOffset);
 
-      int chunksPerChecksumRead = getSlowReadBufferNumChunks(conf, bytesPerChecksum);
+      int chunksPerChecksumRead = getSlowReadBufferNumChunks(
+          conf.shortCircuitBufferSize, bytesPerChecksum);
       slowReadBuff = bufferPool.getBuffer(bytesPerChecksum * chunksPerChecksumRead);
       checksumBuff = bufferPool.getBuffer(checksumSize * chunksPerChecksumRead);
       // Initially the buffers have nothing to read.
@@ -167,7 +159,12 @@ class BlockReaderLocal implements BlockReader {
       this.dataIn.getChannel().position(firstChunkOffset);
       success = true;
     } finally {
-      if (!success) {
+      if (success) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Created BlockReaderLocal for file " + filename
+              + " block " + block + " in datanode " + datanodeID);
+        }
+      } else {
         if (slowReadBuff != null) bufferPool.returnBuffer(slowReadBuff);
         if (checksumBuff != null) bufferPool.returnBuffer(checksumBuff);
       }
@@ -489,8 +486,7 @@ class BlockReaderLocal implements BlockReader {
   }
 
   @Override
-  public synchronized void close(PeerCache peerCache,
-      FileInputStreamCache fisCache) throws IOException {
+  public synchronized void close() throws IOException {
     if (fisCache != null) {
       if (LOG.isDebugEnabled()) {
         LOG.debug("putting FileInputStream for " + filename +
@@ -527,5 +523,15 @@ class BlockReaderLocal implements BlockReader {
   public int available() throws IOException {
     // We never do network I/O in BlockReaderLocal.
     return Integer.MAX_VALUE;
+  }
+
+  @Override
+  public boolean isLocal() {
+    return true;
+  }
+  
+  @Override
+  public boolean isShortCircuit() {
+    return true;
   }
 }

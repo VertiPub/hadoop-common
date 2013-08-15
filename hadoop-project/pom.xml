@@ -36,6 +36,9 @@
     <test.exclude>_</test.exclude>
     <test.exclude.pattern>_</test.exclude.pattern>
 
+    <!-- number of threads/forks to use when running tests in parallel, see parallel-tests profile -->
+    <testsThreadCount>4</testsThreadCount>
+
     <!-- platform encoding override -->
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -50,6 +53,16 @@
 
     <test.build.dir>${project.build.directory}/test-dir</test.build.dir>
     <test.build.data>${test.build.dir}</test.build.data>
+
+    <!-- Used for building path to native library loaded by tests.  Projects -->
+    <!-- at different nesting levels in the source tree may need to override. -->
+    <hadoop.common.build.dir>${basedir}/../../hadoop-common-project/hadoop-common/target</hadoop.common.build.dir>
+    <java.security.egd>file:///dev/urandom</java.security.egd>
+
+    <!-- ProtocolBuffer version, used to verify the protoc version and -->
+    <!-- define the protobuf JAR version                               -->
+    <protobuf.version>2.5.0</protobuf.version>
+    <protoc.path>${env.HADOOP_PROTOC_PATH}</protoc.path>
   </properties>
 
   <dependencyManagement>
@@ -83,6 +96,11 @@
       <dependency>
         <groupId>org.apache.hadoop</groupId>
         <artifactId>hadoop-auth</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.hadoop</groupId>
+        <artifactId>hadoop-nfs</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
@@ -273,6 +291,12 @@
       <dependency>
         <groupId>org.apache.hadoop</groupId>
         <artifactId>hadoop-minicluster</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.hadoop</groupId>
+        <artifactId>hadoop-minikdc</artifactId>
         <version>${project.version}</version>
       </dependency>
 
@@ -516,7 +540,7 @@
       <dependency>
         <groupId>junit</groupId>
         <artifactId>junit</artifactId>
-        <version>4.8.2</version>
+        <version>4.10</version>
       </dependency>
       <dependency>
         <groupId>commons-lang</groupId>
@@ -536,12 +560,12 @@
       <dependency>
         <groupId>org.slf4j</groupId>
         <artifactId>slf4j-api</artifactId>
-        <version>1.6.1</version>
+        <version>1.7.5</version>
       </dependency>
       <dependency>
         <groupId>org.slf4j</groupId>
         <artifactId>slf4j-log4j12</artifactId>
-        <version>1.6.1</version>
+        <version>1.7.5</version>
       </dependency>
       <dependency>
         <groupId>org.eclipse.jdt</groupId>
@@ -574,16 +598,6 @@
         <version>1.8.8</version>
       </dependency>
       <dependency>
-        <groupId>org.aspectj</groupId>
-        <artifactId>aspectjtools</artifactId>
-        <version>1.6.5</version>
-      </dependency>
-      <dependency>
-        <groupId>org.aspectj</groupId>
-        <artifactId>aspectjrt</artifactId>
-        <version>1.6.5</version>
-      </dependency>
-      <dependency>
         <groupId>org.mockito</groupId>
         <artifactId>mockito-all</artifactId>
         <version>1.8.5</version>
@@ -591,7 +605,7 @@
       <dependency>
         <groupId>org.apache.avro</groupId>
         <artifactId>avro</artifactId>
-        <version>1.5.3</version>
+        <version>1.7.4</version>
       </dependency>
       <dependency>
         <groupId>net.sf.kosmosfs</groupId>
@@ -606,7 +620,7 @@
       <dependency>
         <groupId>com.google.protobuf</groupId>
         <artifactId>protobuf-java</artifactId>
-        <version>2.4.0a</version>
+        <version>${protobuf.version}</version>
       </dependency>
       <dependency>
         <groupId>commons-daemon</groupId>
@@ -811,8 +825,8 @@
           <argLine>-Xmx1024m -XX:+HeapDumpOnOutOfMemoryError</argLine>
           <environmentVariables>
             <!-- HADOOP_HOME required for tests on Windows to find winutils -->
-            <HADOOP_HOME>${basedir}/../../hadoop-common-project/hadoop-common/target</HADOOP_HOME>
-            <LD_LIBRARY_PATH>${env.LD_LIBRARY_PATH}:${project.build.directory}/native/target/usr/local/lib:${basedir}/../../hadoop-common-project/hadoop-common/target/native/target/usr/local/lib/</LD_LIBRARY_PATH>
+            <HADOOP_HOME>${hadoop.common.build.dir}</HADOOP_HOME>
+            <LD_LIBRARY_PATH>${env.LD_LIBRARY_PATH}:${project.build.directory}/native/target/usr/local/lib:${hadoop.common.build.dir}/native/target/usr/local/lib</LD_LIBRARY_PATH>
             <MALLOC_ARENA_MAX>4</MALLOC_ARENA_MAX>
           </environmentVariables>
           <systemPropertyVariables>
@@ -829,7 +843,7 @@
 
             <java.net.preferIPv4Stack>true</java.net.preferIPv4Stack>
             <java.security.krb5.conf>${basedir}/src/test/resources/krb5.conf</java.security.krb5.conf>
-            <java.security.egd>file:///dev/urandom</java.security.egd>
+            <java.security.egd>${java.security.egd}</java.security.egd>
             <require.test.libhadoop>${require.test.libhadoop}</require.test.libhadoop>
           </systemPropertyVariables>
           <includes>
@@ -883,6 +897,14 @@
           <family>Windows</family>
         </os>
       </activation>
+      <properties>
+        <!-- We must use this exact string for egd on Windows, because the -->
+        <!-- JVM will check for an exact string match on this.  If found, it -->
+        <!-- will use a native entropy provider.  This will not really -->
+        <!-- attempt to open a file at this path. -->
+        <java.security.egd>file:/dev/urandom</java.security.egd>
+        <bundle.snappy.in.bin>true</bundle.snappy.in.bin>
+      </properties>
       <build>
         <plugins>
           <plugin>
@@ -891,7 +913,7 @@
             <configuration>
               <environmentVariables>
                 <!-- Specify where to look for the native DLL on Windows -->
-                <PATH>${env.PATH};${basedir}/../../hadoop-common-project/hadoop-common/target/bin</PATH>
+                <PATH>${env.PATH};${hadoop.common.build.dir}/bin;${snappy.lib}</PATH>
               </environmentVariables>
             </configuration>
           </plugin>
@@ -973,5 +995,23 @@
         </plugins>
       </build>
     </profile>
+    <!-- Copied into specific modules supporting parallel testing. Will be uncommented as soon as all modules support this.
+    <profile>
+      <id>parallel-tests</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <forkMode>perthread</forkMode>
+              <threadCount>${testsThreadCount}</threadCount>
+              <parallel>classes</parallel>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    -->
   </profiles>
 </project>

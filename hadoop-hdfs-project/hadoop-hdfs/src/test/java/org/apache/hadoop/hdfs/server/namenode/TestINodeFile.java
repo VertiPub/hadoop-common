@@ -19,8 +19,9 @@
 package org.apache.hadoop.hdfs.server.namenode;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.FileNotFoundException;
@@ -52,6 +53,7 @@ import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
+import org.apache.hadoop.hdfs.protocol.QuotaExceededException;
 import org.apache.hadoop.hdfs.server.blockmanagement.BlockInfo;
 import org.apache.hadoop.hdfs.server.protocol.NamenodeProtocols;
 import org.junit.Test;
@@ -63,10 +65,15 @@ public class TestINodeFile {
   static final short BLOCKBITS = 48;
   static final long BLKSIZE_MAXVALUE = ~(0xffffL << BLOCKBITS);
 
-  private String userName = "Test";
+  private final PermissionStatus perm = new PermissionStatus(
+      "userName", null, FsPermission.getDefault());
   private short replication;
   private long preferredBlockSize;
 
+  INodeFile createINodeFile(short replication, long preferredBlockSize) {
+    return new INodeFile(INodeId.GRANDFATHER_INODE_ID, null, perm, 0L, 0L,
+        null, replication, preferredBlockSize);
+  }
   /**
    * Test for the Replication value. Sets a value and checks if it was set
    * correct.
@@ -75,11 +82,9 @@ public class TestINodeFile {
   public void testReplication () {
     replication = 3;
     preferredBlockSize = 128*1024*1024;
-    INodeFile inf = new INodeFile(INodeId.GRANDFATHER_INODE_ID,
-        new PermissionStatus(userName, null, FsPermission.getDefault()), null,
-        replication, 0L, 0L, preferredBlockSize);
+    INodeFile inf = createINodeFile(replication, preferredBlockSize);
     assertEquals("True has to be returned in this case", replication,
-                 inf.getBlockReplication());
+                 inf.getFileReplication());
   }
 
   /**
@@ -92,9 +97,7 @@ public class TestINodeFile {
               throws IllegalArgumentException {
     replication = -1;
     preferredBlockSize = 128*1024*1024;
-    new INodeFile(INodeId.GRANDFATHER_INODE_ID, new PermissionStatus(userName,
-        null, FsPermission.getDefault()), null, replication, 0L, 0L,
-        preferredBlockSize);
+    createINodeFile(replication, preferredBlockSize);
   }
 
   /**
@@ -105,9 +108,7 @@ public class TestINodeFile {
   public void testPreferredBlockSize () {
     replication = 3;
     preferredBlockSize = 128*1024*1024;
-    INodeFile inf = new INodeFile(INodeId.GRANDFATHER_INODE_ID,
-        new PermissionStatus(userName, null, FsPermission.getDefault()), null,
-        replication, 0L, 0L, preferredBlockSize);
+    INodeFile inf = createINodeFile(replication, preferredBlockSize);
    assertEquals("True has to be returned in this case", preferredBlockSize,
         inf.getPreferredBlockSize());
  }
@@ -116,9 +117,7 @@ public class TestINodeFile {
   public void testPreferredBlockSizeUpperBound () {
     replication = 3;
     preferredBlockSize = BLKSIZE_MAXVALUE;
-    INodeFile inf = new INodeFile(INodeId.GRANDFATHER_INODE_ID,
-        new PermissionStatus(userName, null, FsPermission.getDefault()), null,
-        replication, 0L, 0L, preferredBlockSize);
+    INodeFile inf = createINodeFile(replication, preferredBlockSize);
     assertEquals("True has to be returned in this case", BLKSIZE_MAXVALUE,
                  inf.getPreferredBlockSize());
   }
@@ -133,9 +132,7 @@ public class TestINodeFile {
               throws IllegalArgumentException {
     replication = 3;
     preferredBlockSize = -1;
-    new INodeFile(INodeId.GRANDFATHER_INODE_ID, new PermissionStatus(userName,
-        null, FsPermission.getDefault()), null, replication, 0L, 0L,
-        preferredBlockSize);
+    createINodeFile(replication, preferredBlockSize);
   } 
 
   /**
@@ -148,41 +145,31 @@ public class TestINodeFile {
               throws IllegalArgumentException {
     replication = 3;
     preferredBlockSize = BLKSIZE_MAXVALUE+1;
-    new INodeFile(INodeId.GRANDFATHER_INODE_ID, new PermissionStatus(userName,
-        null, FsPermission.getDefault()), null, replication, 0L, 0L,
-        preferredBlockSize);
+    createINodeFile(replication, preferredBlockSize);
  }
 
   @Test
   public void testGetFullPathName() {
-    PermissionStatus perms = new PermissionStatus(
-      userName, null, FsPermission.getDefault());
-
     replication = 3;
     preferredBlockSize = 128*1024*1024;
-    INodeFile inf = new INodeFile(INodeId.GRANDFATHER_INODE_ID, perms, null,
-        replication, 0L, 0L, preferredBlockSize);
-    inf.setLocalName("f");
+    INodeFile inf = createINodeFile(replication, preferredBlockSize);
+    inf.setLocalName(DFSUtil.string2Bytes("f"));
 
     INodeDirectory root = new INodeDirectory(INodeId.GRANDFATHER_INODE_ID,
-        INodeDirectory.ROOT_NAME, perms);
-    INodeDirectory dir = new INodeDirectory(INodeId.GRANDFATHER_INODE_ID, "d",
-        perms);
+        INodeDirectory.ROOT_NAME, perm, 0L);
+    INodeDirectory dir = new INodeDirectory(INodeId.GRANDFATHER_INODE_ID,
+        DFSUtil.string2Bytes("d"), perm, 0L);
 
     assertEquals("f", inf.getFullPathName());
-    assertEquals("", inf.getLocalParentDir());
 
-    dir.addChild(inf, false);
+    dir.addChild(inf);
     assertEquals("d"+Path.SEPARATOR+"f", inf.getFullPathName());
-    assertEquals("d", inf.getLocalParentDir());
     
-    root.addChild(dir, false);
+    root.addChild(dir);
     assertEquals(Path.SEPARATOR+"d"+Path.SEPARATOR+"f", inf.getFullPathName());
     assertEquals(Path.SEPARATOR+"d", dir.getFullPathName());
 
     assertEquals(Path.SEPARATOR, root.getFullPathName());
-    assertEquals(Path.SEPARATOR, root.getLocalParentDir());
-    
   }
   
   /**
@@ -214,10 +201,14 @@ public class TestINodeFile {
       // Check the full path name of the INode associating with the file
       INode fnode = fsdir.getINode(file.toString());
       assertEquals(file.toString(), fnode.getFullPathName());
-
+      
       // Call FSDirectory#unprotectedSetQuota which calls
       // INodeDirectory#replaceChild
       dfs.setQuota(dir, Long.MAX_VALUE - 1, replication * fileLen * 10);
+      INode dirNode = fsdir.getINode(dir.toString());
+      assertEquals(dir.toString(), dirNode.getFullPathName());
+      assertTrue(dirNode instanceof INodeDirectoryWithQuota);
+      
       final Path newDir = new Path("/newdir");
       final Path newFile = new Path(newDir, "file");
       // Also rename dir
@@ -235,26 +226,13 @@ public class TestINodeFile {
   }
   
   @Test
-  public void testAppendBlocks() {
+  public void testConcatBlocks() {
     INodeFile origFile = createINodeFiles(1, "origfile")[0];
     assertEquals("Number of blocks didn't match", origFile.numBlocks(), 1L);
 
     INodeFile[] appendFiles =   createINodeFiles(4, "appendfile");
-    origFile.appendBlocks(appendFiles, getTotalBlocks(appendFiles));
+    origFile.concatBlocks(appendFiles);
     assertEquals("Number of blocks didn't match", origFile.numBlocks(), 5L);
-  }
-
-  /** 
-   * Gives the count of blocks for a given number of files
-   * @param files Array of INode files
-   * @return total count of blocks
-   */
-  private int getTotalBlocks(INodeFile[] files) {
-    int nBlocks=0;
-    for(int i=0; i < files.length; i++) {
-       nBlocks += files[i].numBlocks();
-    }
-    return nBlocks;
   }
   
   /** 
@@ -270,11 +248,9 @@ public class TestINodeFile {
     preferredBlockSize = 128 * 1024 * 1024;
     INodeFile[] iNodes = new INodeFile[nCount];
     for (int i = 0; i < nCount; i++) {
-      PermissionStatus perms = new PermissionStatus(userName, null,
-          FsPermission.getDefault());
-      iNodes[i] = new INodeFile(i, perms, null, replication, 0L, 0L,
+      iNodes[i] = new INodeFile(i, null, perm, 0L, 0L, null, replication,
           preferredBlockSize);
-      iNodes[i].setLocalName(fileNamePrefix +  Integer.toString(i));
+      iNodes[i].setLocalName(DFSUtil.string2Bytes(fileNamePrefix + i));
       BlockInfo newblock = new BlockInfo(replication);
       iNodes[i].addBlock(newblock);
     }
@@ -290,8 +266,6 @@ public class TestINodeFile {
   @Test
   public void testValueOf () throws IOException {
     final String path = "/testValueOf";
-    final PermissionStatus perm = new PermissionStatus(
-        userName, null, FsPermission.getDefault());
     final short replication = 3;
 
     {//cast from null
@@ -323,8 +297,7 @@ public class TestINodeFile {
     }
 
     {//cast from INodeFile
-      final INode from = new INodeFile(INodeId.GRANDFATHER_INODE_ID, perm,
-          null, replication, 0L, 0L, preferredBlockSize);
+      final INode from = createINodeFile(replication, preferredBlockSize);
 
      //cast to INodeFile, should success
       final INodeFile f = INodeFile.valueOf(from, path);
@@ -371,8 +344,8 @@ public class TestINodeFile {
     }
 
     {//cast from INodeDirectory
-      final INode from = new INodeDirectory(INodeId.GRANDFATHER_INODE_ID, perm,
-          0L);
+      final INode from = new INodeDirectory(INodeId.GRANDFATHER_INODE_ID, null,
+          perm, 0L);
 
       //cast to INodeFile, should fail
       try {
@@ -450,8 +423,27 @@ public class TestINodeFile {
       assertTrue(fs.delete(renamedPath, true));
       inodeCount -= 2;
       assertEquals(inodeCount, fsn.dir.getInodeMapSize());
+      
+      // Create and concat /test/file1 /test/file2
+      // Create /test1/file1 and /test1/file2
+      String file1 = "/test1/file1";
+      String file2 = "/test1/file2";
+      DFSTestUtil.createFile(fs, new Path(file1), 512, (short) 1, 0);
+      DFSTestUtil.createFile(fs, new Path(file2), 512, (short) 1, 0);
+      inodeCount += 3; // test1, file1 and file2 are created
+      expectedLastInodeId += 3;
+      assertEquals(inodeCount, fsn.dir.getInodeMapSize());
+      assertEquals(expectedLastInodeId, fsn.getLastInodeId());
+      // Concat the /test1/file1 /test1/file2 into /test1/file2
+      nnrpc.concat(file2, new String[] {file1});
+      inodeCount--; // file1 and file2 are concatenated to file2
+      assertEquals(inodeCount, fsn.dir.getInodeMapSize());
+      assertEquals(expectedLastInodeId, fsn.getLastInodeId());
+      assertTrue(fs.delete(new Path("/test1"), true));
+      inodeCount -= 2; // test1 and file2 is deleted
+      assertEquals(inodeCount, fsn.dir.getInodeMapSize());
 
-      // Make sure empty editlog can be handled
+      // Make sure editlog is loaded correctly 
       cluster.restartNameNode();
       cluster.waitActive();
       fsn = cluster.getNamesystem();
@@ -797,13 +789,13 @@ public class TestINodeFile {
   /**
    * For a given path, build a tree of INodes and return the leaf node.
    */
-  private INode createTreeOfInodes(String path) {
+  private INode createTreeOfInodes(String path) throws QuotaExceededException {
     byte[][] components = INode.getPathComponents(path);
     FsPermission perm = FsPermission.createImmutable((short)0755);
     PermissionStatus permstatus = PermissionStatus.createImmutable("", "", perm);
     
     long id = 0;
-    INodeDirectory prev = new INodeDirectory(++id, "", permstatus);
+    INodeDirectory prev = new INodeDirectory(++id, new byte[0], permstatus, 0);
     INodeDirectory dir = null;
     for (byte[] component : components) {
       if (component.length == 0) {
@@ -811,7 +803,7 @@ public class TestINodeFile {
       }
       System.out.println("Adding component " + DFSUtil.bytes2String(component));
       dir = new INodeDirectory(++id, component, permstatus, 0);
-      prev.addChild(dir, false);
+      prev.addChild(dir, false, null, null);
       prev = dir;
     }
     return dir; // Last Inode in the chain
@@ -829,7 +821,7 @@ public class TestINodeFile {
    * Test for {@link FSDirectory#getPathComponents(INode)}
    */
   @Test
-  public void testGetPathFromInode() {
+  public void testGetPathFromInode() throws QuotaExceededException {
     String path = "/a/b/c";
     INode inode = createTreeOfInodes(path);
     byte[][] expected = INode.getPathComponents(path);
@@ -841,7 +833,7 @@ public class TestINodeFile {
    * Tests for {@link FSDirectory#resolvePath(String, byte[][], FSDirectory)}
    */
   @Test
-  public void testInodePath() throws FileNotFoundException {
+  public void testInodePath() throws IOException {
     // For a non .inodes path the regular components are returned
     String path = "/a/b/c";
     INode inode = createTreeOfInodes(path);
@@ -889,5 +881,51 @@ public class TestINodeFile {
     components = INode.getPathComponents(testPath);
     resolvedPath = FSDirectory.resolvePath(testPath, components, fsd);
     assertEquals(testPath, resolvedPath);
+    
+    // Test path with nonexistent(deleted or wrong id) inode
+    Mockito.doReturn(null).when(fsd).getInode(Mockito.anyLong());
+    testPath = "/.reserved/.inodes/1234";
+    components = INode.getPathComponents(testPath);
+    try {
+      String realPath = FSDirectory.resolvePath(testPath, components, fsd);
+      fail("Path should not be resolved:" + realPath);
+    } catch (IOException e) {
+      assertTrue(e instanceof FileNotFoundException);
+    }
+  }
+  
+  /**
+   * Test whether the inode in inodeMap has been replaced after regular inode
+   * replacement
+   */
+  @Test
+  public void testInodeReplacement() throws Exception {
+    final Configuration conf = new Configuration();
+    final MiniDFSCluster cluster = new MiniDFSCluster.Builder(conf).
+        numDataNodes(1).build();
+    cluster.waitActive();
+    final DistributedFileSystem hdfs = cluster.getFileSystem();
+    final FSDirectory fsdir = cluster.getNamesystem().getFSDirectory();
+    
+    final Path dir = new Path("/dir");
+    hdfs.mkdirs(dir);
+    INode dirNode = fsdir.getINode(dir.toString());
+    INode dirNodeFromNode = fsdir.getInode(dirNode.getId());
+    assertSame(dirNode, dirNodeFromNode);
+    
+    // set quota to dir, which leads to node replacement
+    hdfs.setQuota(dir, Long.MAX_VALUE - 1, Long.MAX_VALUE - 1);
+    dirNode = fsdir.getINode(dir.toString());
+    assertTrue(dirNode instanceof INodeDirectoryWithQuota);
+    // the inode in inodeMap should also be replaced
+    dirNodeFromNode = fsdir.getInode(dirNode.getId());
+    assertSame(dirNode, dirNodeFromNode);
+    
+    hdfs.setQuota(dir, -1, -1);
+    dirNode = fsdir.getINode(dir.toString());
+    assertTrue(dirNode instanceof INodeDirectory);
+    // the inode in inodeMap should also be replaced
+    dirNodeFromNode = fsdir.getInode(dirNode.getId());
+    assertSame(dirNode, dirNodeFromNode);
   }
 }

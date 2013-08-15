@@ -18,9 +18,15 @@
 
 package org.apache.hadoop.yarn.server.resourcemanager;
 
+import java.net.InetSocketAddress;
+
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.yarn.api.ContainerManager;
+import org.apache.hadoop.security.SecurityUtil;
+import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.yarn.api.ContainerManagementProtocol;
 import org.apache.hadoop.yarn.api.records.ContainerId;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.apache.hadoop.yarn.security.AMRMTokenIdentifier;
 import org.apache.hadoop.yarn.server.resourcemanager.amlauncher.AMLauncher;
 import org.apache.hadoop.yarn.server.resourcemanager.amlauncher.AMLauncherEventType;
 import org.apache.hadoop.yarn.server.resourcemanager.amlauncher.ApplicationMasterLauncher;
@@ -28,14 +34,14 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttempt;
 
 public class MockRMWithCustomAMLauncher extends MockRM {
 
-  private final ContainerManager containerManager;
+  private final ContainerManagementProtocol containerManager;
 
-  public MockRMWithCustomAMLauncher(ContainerManager containerManager) {
+  public MockRMWithCustomAMLauncher(ContainerManagementProtocol containerManager) {
     this(new Configuration(), containerManager);
   }
 
   public MockRMWithCustomAMLauncher(Configuration conf,
-      ContainerManager containerManager) {
+      ContainerManagementProtocol containerManager) {
     super(conf);
     this.containerManager = containerManager;
   }
@@ -48,9 +54,20 @@ public class MockRMWithCustomAMLauncher extends MockRM {
           AMLauncherEventType event) {
         return new AMLauncher(context, application, event, getConfig()) {
           @Override
-          protected ContainerManager getContainerMgrProxy(
+          protected ContainerManagementProtocol getContainerMgrProxy(
               ContainerId containerId) {
             return containerManager;
+          }
+          @Override
+          protected Token<AMRMTokenIdentifier> getAMRMToken() {
+            Token<AMRMTokenIdentifier> amRmToken = super.getAMRMToken();
+            InetSocketAddress serviceAddr =
+                getConfig().getSocketAddr(
+                  YarnConfiguration.RM_SCHEDULER_ADDRESS,
+                  YarnConfiguration.DEFAULT_RM_SCHEDULER_ADDRESS,
+                  YarnConfiguration.DEFAULT_RM_SCHEDULER_PORT);
+            SecurityUtil.setTokenService(amRmToken, serviceAddr);
+            return amRmToken;
           }
         };
       }

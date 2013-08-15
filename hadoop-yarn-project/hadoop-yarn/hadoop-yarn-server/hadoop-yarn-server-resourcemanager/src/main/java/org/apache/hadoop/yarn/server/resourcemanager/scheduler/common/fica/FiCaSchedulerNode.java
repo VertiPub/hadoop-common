@@ -34,11 +34,11 @@ import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainer;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerApplication;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerNode;
+import org.apache.hadoop.yarn.util.resource.Resources;
 
 public class FiCaSchedulerNode extends SchedulerNode {
 
@@ -142,8 +142,9 @@ public class FiCaSchedulerNode extends SchedulerNode {
     }
 
     /* remove the containers from the nodemanger */
-    launchedContainers.remove(container.getId());
-    updateResource(container);
+    if (null != launchedContainers.remove(container.getId())) {
+      updateResource(container);
+    }
 
     LOG.info("Released container " + container.getId() + 
         " of capacity " + container.getResource() + " on host " + rmNode.getNodeAddress() + 
@@ -226,18 +227,25 @@ public class FiCaSchedulerNode extends SchedulerNode {
 
   public synchronized void unreserveResource(
       SchedulerApplication application) {
-    // Cannot unreserve for wrong application...
-    ApplicationAttemptId reservedApplication = 
-        reservedContainer.getContainer().getId().getApplicationAttemptId(); 
-    if (!reservedApplication.equals(
-        application.getApplicationAttemptId())) {
-      throw new IllegalStateException("Trying to unreserve " +  
-          " for application " + application.getApplicationAttemptId() + 
-          " when currently reserved " + 
-          " for application " + reservedApplication.getApplicationId() + 
-          " on node " + this);
-    }
     
+    // adding NP checks as this can now be called for preemption
+    if (reservedContainer != null
+        && reservedContainer.getContainer() != null
+        && reservedContainer.getContainer().getId() != null
+        && reservedContainer.getContainer().getId().getApplicationAttemptId() != null) {
+
+      // Cannot unreserve for wrong application...
+      ApplicationAttemptId reservedApplication =
+          reservedContainer.getContainer().getId().getApplicationAttemptId();
+      if (!reservedApplication.equals(
+          application.getApplicationAttemptId())) {
+        throw new IllegalStateException("Trying to unreserve " +
+            " for application " + application.getApplicationAttemptId() +
+            " when currently reserved " +
+            " for application " + reservedApplication.getApplicationId() +
+            " on node " + this);
+      }
+    }
     reservedContainer = null;
   }
 

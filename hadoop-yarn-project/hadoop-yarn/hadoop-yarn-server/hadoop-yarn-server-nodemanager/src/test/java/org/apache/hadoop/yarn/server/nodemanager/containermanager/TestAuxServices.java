@@ -18,8 +18,12 @@
 
 package org.apache.hadoop.yarn.server.nodemanager.containermanager;
 
-import org.junit.Test;
-import static org.junit.Assert.*;
+import static org.apache.hadoop.service.Service.STATE.INITED;
+import static org.apache.hadoop.service.Service.STATE.STARTED;
+import static org.apache.hadoop.service.Service.STATE.STOPPED;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -29,24 +33,19 @@ import java.util.Map;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.service.Service;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.AuxServices;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.AuxServicesEvent;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.AuxServicesEventType;
-import org.apache.hadoop.yarn.service.AbstractService;
-import org.apache.hadoop.yarn.service.Service;
-
-
-import static org.apache.hadoop.yarn.service.Service.STATE.*;
+import org.apache.hadoop.yarn.server.api.ApplicationInitializationContext;
+import org.apache.hadoop.yarn.server.api.ApplicationTerminationContext;
+import org.apache.hadoop.yarn.server.api.AuxiliaryService;
+import org.junit.Test;
 
 public class TestAuxServices {
   private static final Log LOG = LogFactory.getLog(TestAuxServices.class);
 
-  static class LightService extends AbstractService
-      implements AuxServices.AuxiliaryService {
+  static class LightService extends AuxiliaryService implements Service
+       {
     private final char idef;
     private final int expected_appId;
     private int remaining_init;
@@ -66,33 +65,34 @@ public class TestAuxServices {
     }
 
     public ArrayList<Integer> getAppIdsStopped() {
-      return (ArrayList)this.stoppedApps.clone();
+      return (ArrayList<Integer>)this.stoppedApps.clone();
     }
 
-    @Override
-    public void init(Configuration conf) {
+    @Override 
+    protected void serviceInit(Configuration conf) throws Exception {
       remaining_init = conf.getInt(idef + ".expected.init", 0);
       remaining_stop = conf.getInt(idef + ".expected.stop", 0);
-      super.init(conf);
+      super.serviceInit(conf);
     }
     @Override
-    public void stop() {
+    protected void serviceStop() throws Exception {
       assertEquals(0, remaining_init);
       assertEquals(0, remaining_stop);
-      super.stop();
+      super.serviceStop();
     }
     @Override
-    public void initApp(String user, ApplicationId appId, ByteBuffer data) {
+    public void initializeApplication(ApplicationInitializationContext context) {
+      ByteBuffer data = context.getApplicationDataForService();
       assertEquals(idef, data.getChar());
       assertEquals(expected_appId, data.getInt());
-      assertEquals(expected_appId, appId.getId());
+      assertEquals(expected_appId, context.getApplicationId().getId());
     }
     @Override
-    public void stopApp(ApplicationId appId) {
-      stoppedApps.add(appId.getId());
+    public void stopApplication(ApplicationTerminationContext context) {
+      stoppedApps.add(context.getApplicationId().getId());
     }
     @Override
-    public ByteBuffer getMeta() {
+    public ByteBuffer getMetaData() {
       return meta;
     }
   }
@@ -123,22 +123,21 @@ public class TestAuxServices {
     aux.init(conf);
     aux.start();
 
-    ApplicationId appId = RecordFactoryProvider.getRecordFactory(null).newRecordInstance(ApplicationId.class);
-    appId.setId(65);
+    ApplicationId appId1 = ApplicationId.newInstance(0, 65);
     ByteBuffer buf = ByteBuffer.allocate(6);
     buf.putChar('A');
     buf.putInt(65);
     buf.flip();
     AuxServicesEvent event = new AuxServicesEvent(
-        AuxServicesEventType.APPLICATION_INIT, "user0", appId, "Asrv", buf);
+        AuxServicesEventType.APPLICATION_INIT, "user0", appId1, "Asrv", buf);
     aux.handle(event);
-    appId.setId(66);
+    ApplicationId appId2 = ApplicationId.newInstance(0, 66);
     event = new AuxServicesEvent(
-        AuxServicesEventType.APPLICATION_STOP, "user0", appId, "Bsrv", null);
+        AuxServicesEventType.APPLICATION_STOP, "user0", appId2, "Bsrv", null);
     // verify all services got the stop event 
     aux.handle(event);
-    Collection<AuxServices.AuxiliaryService> servs = aux.getServices();
-    for (AuxServices.AuxiliaryService serv: servs) {
+    Collection<AuxiliaryService> servs = aux.getServices();
+    for (AuxiliaryService serv: servs) {
       ArrayList<Integer> appIds = ((LightService)serv).getAppIdsStopped();
       assertEquals("app not properly stopped", 1, appIds.size());
       assertTrue("wrong app stopped", appIds.contains((Integer)66));
@@ -200,7 +199,7 @@ public class TestAuxServices {
       assertEquals(STARTED, s.getServiceState());
     }
 
-    Map<String, ByteBuffer> meta = aux.getMeta();
+    Map<String, ByteBuffer> meta = aux.getMetaData();
     assertEquals(2, meta.size());
     assertEquals("A", new String(meta.get("Asrv").array()));
     assertEquals("B", new String(meta.get("Bsrv").array()));

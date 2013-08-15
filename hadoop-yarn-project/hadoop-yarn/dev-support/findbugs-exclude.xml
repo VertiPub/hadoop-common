@@ -24,6 +24,11 @@
     <Class name="~org\.apache\.hadoop\.yarn\.ipc\.RpcProtos.*" />
   </Match>
 
+  <Match>
+    <Class name="org.apache.hadoop.yarn.service.AbstractService" />
+    <Bug pattern="JLM_JSR166_UTILCONCURRENT_MONITORENTER" />
+  </Match>
+
   <!-- Ignore unchecked Event casts -->
   <Match>
     <Class name="org.apache.hadoop.yarn.server.nodemanager.containermanager.ContainerManagerImpl" />
@@ -126,6 +131,11 @@
     <Class name="org.apache.hadoop.yarn.server.resourcemanager.resource.Priority$Comparator" />
     <Bug pattern="SE_COMPARATOR_SHOULD_BE_SERIALIZABLE" />
   </Match>
+  <!-- Ignore some irrelevant class name warning -->
+  <Match>
+    <Class name="org.apache.hadoop.yarn.api.records.SerializedException" />
+    <Bug pattern="NM_CLASS_NOT_EXCEPTION" />
+  </Match>
 
   <!-- Inconsistent sync warning - only start() is synchronized-->
   <Match>
@@ -146,6 +156,7 @@
       <Field name="state" />
       <Field name="userLimit" />
       <Field name="userLimitFactor" />
+      <Field name="maxAMResourcePerQueuePercent" />
     </Or>
     <Bug pattern="IS2_INCONSISTENT_SYNC" />
   </Match>
@@ -171,6 +182,11 @@
     <Class name="org.apache.hadoop.yarn.server.resourcemanager.security.DelegationTokenRenewer"/>
     <Field name="renewalTimer" />
     <Bug code="IS"/>
+  </Match>
+  <Match>
+    <Class name="org.apache.hadoop.yarn.client.NMClientImpl$NMCommunicator"/>
+    <Field name="containerManager" />
+    <Bug pattern="IS2_INCONSISTENT_SYNC"/>
   </Match>
 
   <!-- Don't care if putIfAbsent value is ignored -->
@@ -275,6 +291,12 @@
     <Class name="org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.LocalResourcesTrackerImpl" />
     <Method name="handle" />
     <Bug pattern="BC_UNCONFIRMED_CAST" />
+  </Match>
+
+  <!-- Ignore SerializedException does not extend Exception -->
+  <Match>
+    <Class name="org.apache.hadoop.yarn.server.api.records.SerializedException" />
+    <Bug pattern="NM_CLASS_NOT_EXCEPTION" />
   </Match>
 
 </FindBugsFilter>

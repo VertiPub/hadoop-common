@@ -16,8 +16,7 @@
  * limitations under the License.
  */
 
-#define _GNU_SOURCE
-
+#include "config.h"
 #include "exception.h"
 #include "org/apache/hadoop/io/nativeio/file_descriptor.h"
 #include "org_apache_hadoop.h"
@@ -31,6 +30,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h> /* for FIONREAD */
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -46,6 +46,15 @@
 #define DEFAULT_RECEIVE_TIMEOUT 120000
 #define DEFAULT_SEND_TIMEOUT 120000
 #define LISTEN_BACKLOG 128
+
+/* In Linux, you can pass the MSG_NOSIGNAL flag to send, sendto, etc. to prevent
+ * those functions from generating SIGPIPE.  HDFS-4831 for details.
+ */
+#ifdef MSG_NOSIGNAL
+#define PLATFORM_SEND_FLAGS MSG_NOSIGNAL
+#else
+#define PLATFORM_SEND_FLAGS 0
+#endif
 
 /**
  * Can't pass more than this number of file descriptors in a single message.
@@ -96,14 +105,6 @@ static jthrowable newSocketException(JNIEnv *env, int errnum,
   jthr = newExceptionV(env, errnoToSocketExceptionName(errnum), fmt, ap);
   va_end(ap);
   return jthr;
-}
-
-static const char* terror(int errnum)
-{
-  if ((errnum < 0) || (errnum >= sys_nerr)) {
-    return "unknown error.";
-  }
-  return sys_errlist[errnum];
 }
 
 /**
@@ -176,6 +177,19 @@ static jthrowable setup(JNIEnv *env, int *ofd, jobject jpath, int doConnect)
         "is %zd bytes.", sizeof(addr.sun_path) - 1);
     goto done;
   }
+#ifdef SO_NOSIGPIPE
+  /* On MacOS and some BSDs, SO_NOSIGPIPE will keep send and sendto from causing
+   * EPIPE.  Note: this will NOT help when using write or writev, only with
+   * send, sendto, sendmsg, etc.  See HDFS-4831.
+   */
+  ret = 1;
+  if (setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, (void *)&ret, sizeof(ret))) {
+    ret = errno;
+    jthr = newSocketException(env, ret,
+        "error setting SO_NOSIGPIPE on socket: error %s", terror(ret));
+    goto done;
+  }
+#endif
   if (doConnect) {
     RETRY_ON_EINTR(ret, connect(fd, 
         (struct sockaddr*)&addr, sizeof(addr)));
@@ -254,12 +268,13 @@ JNIEnv *env, jclass clazz, jobject jstr, jint skipComponents)
   jthrowable jthr = NULL;
 
   utfLength = (*env)->GetStringUTFLength(env, jstr);
-  if (utfLength > sizeof(path)) {
+  if (utfLength > (sizeof(path)-1)) {
     jthr = newIOException(env, "path is too long!  We expected a path "
-        "no longer than %zd UTF-8 bytes.", sizeof(path));
+        "no longer than %zd UTF-8 bytes.", (sizeof(path)-1));
     goto done;
   }
   (*env)->GetStringUTFRegion(env, jstr, 0, utfLength, path);
+  path [ utfLength ] = 0;
   jthr = (*env)->ExceptionOccurred(env);
   if (jthr) {
     (*env)->ExceptionClear(env);
@@ -283,7 +298,7 @@ JNIEnv *env, jclass clazz, jobject jstr, jint skipComponents)
   // be a directory.  (If it is a directory, we will fail to create the socket
   // later with EISDIR or similar.)
   for (check[0] = '/', check[1] = '\0', rest = path, token = "";
-       token && rest[0];
+       token && rest && rest[0];
        token = strtok_r(rest, "/", &rest)) {
     if (strcmp(check, "/") != 0) {
       // If the previous directory we checked was '/', we skip appending another
@@ -583,7 +598,7 @@ static jthrowable write_fully(JNIEnv *env, int fd, int8_t *buf, int amt)
   int err, res;
 
   while (amt > 0) {
-    res = write(fd, buf, amt);
+    res = send(fd, buf, amt, PLATFORM_SEND_FLAGS);
     if (res < 0) {
       err = errno;
       if (err == EINTR) {
@@ -685,7 +700,7 @@ jint offset, jint length)
       goto done;
     }
   }
-  RETRY_ON_EINTR(ret, sendmsg(fd, &socketMsg, 0));
+  RETRY_ON_EINTR(ret, sendmsg(fd, &socketMsg, PLATFORM_SEND_FLAGS));
   if (ret < 0) {
     ret = errno;
     jthr = newSocketException(env, ret, "sendmsg(2) error: %s", terror(ret));

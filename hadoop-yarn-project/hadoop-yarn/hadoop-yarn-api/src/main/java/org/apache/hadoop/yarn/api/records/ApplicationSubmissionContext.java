@@ -19,10 +19,12 @@
 package org.apache.hadoop.yarn.api.records;
 
 import org.apache.hadoop.classification.InterfaceAudience.LimitedPrivate;
+import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p><code>ApplicationSubmissionContext</code> represents all of the
@@ -43,18 +45,53 @@ import org.apache.hadoop.yarn.api.ClientRMProtocol;
  * </p>
  * 
  * @see ContainerLaunchContext
- * @see ClientRMProtocol#submitApplication(org.apache.hadoop.yarn.api.protocolrecords.SubmitApplicationRequest)
+ * @see ApplicationClientProtocol#submitApplication(org.apache.hadoop.yarn.api.protocolrecords.SubmitApplicationRequest)
  */
 @Public
 @Stable
-public interface ApplicationSubmissionContext {
+public abstract class ApplicationSubmissionContext {
+
+  @Public
+  @Stable
+  public static ApplicationSubmissionContext newInstance(
+      ApplicationId applicationId, String applicationName, String queue,
+      Priority priority, ContainerLaunchContext amContainer,
+      boolean isUnmanagedAM, boolean cancelTokensWhenComplete,
+      int maxAppAttempts, Resource resource, String applicationType) {
+    ApplicationSubmissionContext context =
+        Records.newRecord(ApplicationSubmissionContext.class);
+    context.setApplicationId(applicationId);
+    context.setApplicationName(applicationName);
+    context.setQueue(queue);
+    context.setPriority(priority);
+    context.setAMContainerSpec(amContainer);
+    context.setUnmanagedAM(isUnmanagedAM);
+    context.setCancelTokensWhenComplete(cancelTokensWhenComplete);
+    context.setMaxAppAttempts(maxAppAttempts);
+    context.setResource(resource);
+    context.setApplicationType(applicationType);
+    return context;
+  }
+
+  @Public
+  @Stable
+  public static ApplicationSubmissionContext newInstance(
+      ApplicationId applicationId, String applicationName, String queue,
+      Priority priority, ContainerLaunchContext amContainer,
+      boolean isUnmanagedAM, boolean cancelTokensWhenComplete,
+      int maxAppAttempts, Resource resource) {
+    return newInstance(applicationId, applicationName, queue, priority,
+      amContainer, isUnmanagedAM, cancelTokensWhenComplete, maxAppAttempts,
+      resource, null);
+  }
+
   /**
    * Get the <code>ApplicationId</code> of the submitted application.
    * @return <code>ApplicationId</code> of the submitted application
    */
   @Public
   @Stable
-  public ApplicationId getApplicationId();
+  public abstract ApplicationId getApplicationId();
   
   /**
    * Set the <code>ApplicationId</code> of the submitted application.
@@ -63,7 +100,7 @@ public interface ApplicationSubmissionContext {
    */
   @Public
   @Stable
-  public void setApplicationId(ApplicationId applicationId);
+  public abstract void setApplicationId(ApplicationId applicationId);
 
   /**
    * Get the application <em>name</em>.
@@ -71,7 +108,7 @@ public interface ApplicationSubmissionContext {
    */
   @Public
   @Stable
-  public String getApplicationName();
+  public abstract String getApplicationName();
   
   /**
    * Set the application <em>name</em>.
@@ -79,7 +116,7 @@ public interface ApplicationSubmissionContext {
    */
   @Public
   @Stable
-  public void setApplicationName(String applicationName);
+  public abstract void setApplicationName(String applicationName);
   
   /**
    * Get the <em>queue</em> to which the application is being submitted.
@@ -87,7 +124,7 @@ public interface ApplicationSubmissionContext {
    */
   @Public
   @Stable
-  public String getQueue();
+  public abstract String getQueue();
   
   /**
    * Set the <em>queue</em> to which the application is being submitted
@@ -95,7 +132,7 @@ public interface ApplicationSubmissionContext {
    */
   @Public
   @Stable
-  public void setQueue(String queue);
+  public abstract void setQueue(String queue);
   
   /**
    * Get the <code>Priority</code> of the application.
@@ -103,15 +140,15 @@ public interface ApplicationSubmissionContext {
    */
   @Public
   @Stable
-  public Priority getPriority();
+  public abstract Priority getPriority();
 
   /**
    * Set the <code>Priority</code> of the application.
    * @param priority <code>Priority</code> of the application
    */
-  @Public
-  @Stable
-  public void setPriority(Priority priority);
+  @Private
+  @Unstable
+  public abstract void setPriority(Priority priority);
 
   /**
    * Get the <code>ContainerLaunchContext</code> to describe the 
@@ -122,7 +159,7 @@ public interface ApplicationSubmissionContext {
    */
   @Public
   @Stable
-  public ContainerLaunchContext getAMContainerSpec();
+  public abstract ContainerLaunchContext getAMContainerSpec();
   
   /**
    * Set the <code>ContainerLaunchContext</code> to describe the 
@@ -133,7 +170,7 @@ public interface ApplicationSubmissionContext {
    */
   @Public
   @Stable
-  public void setAMContainerSpec(ContainerLaunchContext amContainer);
+  public abstract void setAMContainerSpec(ContainerLaunchContext amContainer);
   
   /**
    * Get if the RM should manage the execution of the AM. 
@@ -147,22 +184,22 @@ public interface ApplicationSubmissionContext {
    * @return true if the AM is not managed by the RM
    */
   @Public
-  @Unstable
-  public boolean getUnmanagedAM();
+  @Stable
+  public abstract boolean getUnmanagedAM();
   
   /**
    * @param value true if RM should not manage the AM
    */
   @Public
-  @Unstable
-  public void setUnmanagedAM(boolean value);
+  @Stable
+  public abstract void setUnmanagedAM(boolean value);
 
   /**
    * @return true if tokens should be canceled when the app completes.
    */
   @LimitedPrivate("mapreduce")
   @Unstable
-  public boolean getCancelTokensWhenComplete();
+  public abstract boolean getCancelTokensWhenComplete();
   
   /**
    * Set to false if tokens should not be canceled when the app finished else
@@ -172,14 +209,14 @@ public interface ApplicationSubmissionContext {
    */
   @LimitedPrivate("mapreduce")
   @Unstable
-  public void setCancelTokensWhenComplete(boolean cancel);
+  public abstract void setCancelTokensWhenComplete(boolean cancel);
 
   /**
    * @return the number of max attempts of the application to be submitted
    */
   @Public
-  @Unstable
-  public int getMaxAppAttempts();
+  @Stable
+  public abstract int getMaxAppAttempts();
 
   /**
    * Set the number of max attempts of the application to be submitted. WARNING:
@@ -189,14 +226,46 @@ public interface ApplicationSubmissionContext {
    * to be submitted.
    */
   @Public
-  @Unstable
-  public void setMaxAppAttempts(int maxAppAttempts);
+  @Stable
+  public abstract void setMaxAppAttempts(int maxAppAttempts);
 
+  /**
+   * Get the resource required by the <code>ApplicationMaster</code> for this
+   * application.
+   * 
+   * @return the resource required by the <code>ApplicationMaster</code> for
+   *         this application.
+   */
   @Public
   @Stable
-  public Resource getResource();
+  public abstract Resource getResource();
 
+  /**
+   * Set the resource required by the <code>ApplicationMaster</code> for this
+   * application.
+   *
+   * @param resource the resource required by the <code>ApplicationMaster</code>
+   * for this application.
+   */
   @Public
   @Stable
-  public void setResource(Resource resource);
+  public abstract void setResource(Resource resource);
+  
+  /**
+   * Get the application type
+   * 
+   * @return the application type
+   */
+  @Public
+  @Stable
+  public abstract String getApplicationType();
+
+  /**
+   * Set the application type
+   * 
+   * @param applicationType the application type
+   */
+  @Public
+  @Stable
+  public abstract void setApplicationType(String applicationType);
 }

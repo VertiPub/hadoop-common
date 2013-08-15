@@ -681,9 +681,9 @@ public class MiniDFSCluster {
       sb.append("\tabsolute:").append(path.getAbsolutePath()).append("\n");
       sb.append("\tpermissions: ");
       sb.append(path.isDirectory() ? "d": "-");
-      sb.append(path.canRead() ? "r" : "-");
-      sb.append(path.canWrite() ? "w" : "-");
-      sb.append(path.canExecute() ? "x" : "-");
+      sb.append(FileUtil.canRead(path) ? "r" : "-");
+      sb.append(FileUtil.canWrite(path) ? "w" : "-");
+      sb.append(FileUtil.canExecute(path) ? "x" : "-");
       sb.append("\n");
       path = path.getParentFile();
     }
@@ -2038,6 +2038,10 @@ public class MiniDFSCluster {
    */
   public void setLeasePeriod(long soft, long hard) {
     NameNodeAdapter.setLeasePeriod(getNamesystem(), soft, hard);
+  }
+  
+  public void setLeasePeriod(long soft, long hard, int nnIndex) {
+    NameNodeAdapter.setLeasePeriod(getNamesystem(nnIndex), soft, hard);
   }
   
   public void setWaitSafeMode(boolean wait) {

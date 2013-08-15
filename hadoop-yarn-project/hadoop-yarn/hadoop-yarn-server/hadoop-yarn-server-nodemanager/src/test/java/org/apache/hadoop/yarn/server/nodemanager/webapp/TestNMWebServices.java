@@ -32,6 +32,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.util.VersionInfo;
+import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.nodemanager.Context;
 import org.apache.hadoop.yarn.server.nodemanager.LocalDirsHandlerService;
@@ -85,9 +86,9 @@ public class TestNMWebServices extends JerseyTest {
   private Injector injector = Guice.createInjector(new ServletModule() {
     @Override
     protected void configureServlets() {
-      nmContext = new NodeManager.NMContext(null);
-      nmContext.getNodeId().setHost("testhost.foo.com");
-      nmContext.getNodeId().setPort(8042);
+      nmContext = new NodeManager.NMContext(null, null);
+      NodeId nodeId = NodeId.newInstance("testhost.foo.com", 8042);
+      ((NodeManager.NMContext)nmContext).setNodeId(nodeId);
       resourceView = new ResourceView() {
         @Override
         public long getVmemAllocatedForContainers() {
@@ -360,14 +361,14 @@ public class TestNMWebServices extends JerseyTest {
 
     WebServicesTestUtils.checkStringMatch("hadoopVersionBuiltOn",
         VersionInfo.getDate(), hadoopVersionBuiltOn);
-    WebServicesTestUtils.checkStringMatch("hadoopBuildVersion",
+    WebServicesTestUtils.checkStringEqual("hadoopBuildVersion",
         VersionInfo.getBuildVersion(), hadoopBuildVersion);
     WebServicesTestUtils.checkStringMatch("hadoopVersion",
         VersionInfo.getVersion(), hadoopVersion);
 
     WebServicesTestUtils.checkStringMatch("resourceManagerVersionBuiltOn",
         YarnVersionInfo.getDate(), resourceManagerVersionBuiltOn);
-    WebServicesTestUtils.checkStringMatch("resourceManagerBuildVersion",
+    WebServicesTestUtils.checkStringEqual("resourceManagerBuildVersion",
         YarnVersionInfo.getBuildVersion(), resourceManagerBuildVersion);
     WebServicesTestUtils.checkStringMatch("resourceManagerVersion",
         YarnVersionInfo.getVersion(), resourceManagerVersion);

@@ -396,10 +396,10 @@ public class NetworkTopology {
     netlock.writeLock().lock();
     try {
       if ((depthOfAllLeaves != -1) && (depthOfAllLeaves != newDepth)) {
-        LOG.error("Error: can't add leaf node at depth " +
-            newDepth + " to topology:\n" + oldTopoStr);
-        throw new InvalidTopologyException("Invalid network topology. " +
-            "You cannot have a rack and a non-rack node at the same " +
+        LOG.error("Error: can't add leaf node " + NodeBase.getPath(node) +
+            " at depth " + newDepth + " to topology:\n" + oldTopoStr);
+        throw new InvalidTopologyException("Failed to add " + NodeBase.getPath(node) +
+            ": You cannot have a rack and a non-rack node at the same " +
             "level of the network topology.");
       }
       Node rack = getNodeForNetworkLocation(node);
@@ -446,6 +446,28 @@ public class NetworkTopology {
     return getNode(node.getNetworkLocation());
   }
   
+  /**
+   * Given a string representation of a rack, return its children
+   * @param loc a path-like string representation of a rack
+   * @return a newly allocated list with all the node's children
+   */
+  public List<Node> getDatanodesInRack(String loc) {
+    netlock.readLock().lock();
+    try {
+      loc = NodeBase.normalize(loc);
+      if (!NodeBase.ROOT.equals(loc)) {
+        loc = loc.substring(1);
+      }
+      InnerNode rack = (InnerNode) clusterMap.getLoc(loc);
+      if (rack == null) {
+        return null;
+      }
+      return new ArrayList<Node>(rack.getChildren());
+    } finally {
+      netlock.readLock().unlock();
+    }
+  }
+
   /** Remove a node
    * Update node counter and rack counter if necessary
    * @param node node to be removed; can be null

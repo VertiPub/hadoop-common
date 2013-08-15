@@ -33,12 +33,12 @@ import junit.framework.Assert;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
-import org.apache.hadoop.yarn.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.NodeState;
 import org.apache.hadoop.yarn.event.EventHandler;
 import org.apache.hadoop.yarn.event.InlineDispatcher;
 import org.apache.hadoop.yarn.server.api.protocolrecords.NodeHeartbeatResponse;
+import org.apache.hadoop.yarn.server.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeCleanAppEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeCleanContainerEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeEvent;
@@ -48,11 +48,12 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeStatusEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.UpdatedContainerInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.YarnScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.NodeAddedSchedulerEvent;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.NodeRemovedSchedulerEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.NodeUpdateSchedulerEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.SchedulerEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.SchedulerEventType;
 import org.apache.hadoop.yarn.server.resourcemanager.security.DelegationTokenRenewer;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.junit.After;
 import org.junit.Before;
@@ -84,7 +85,7 @@ public class TestRMNodeTransitions {
     
     rmContext =
         new RMContextImpl(rmDispatcher, null, null, null,
-            mock(DelegationTokenRenewer.class), null, null, null);
+            mock(DelegationTokenRenewer.class), null, null, null, null);
     scheduler = mock(YarnScheduler.class);
     doAnswer(
         new Answer<Void>() {
@@ -269,6 +270,15 @@ public class TestRMNodeTransitions {
     node.handle(new RMNodeEvent(node.getNodeID(), RMNodeEventType.EXPIRE));
     Assert.assertEquals(NodeState.LOST, node.getState());
   }
+  
+  @Test
+  public void testUnhealthyExpireForSchedulerRemove() {
+    RMNodeImpl node = getUnhealthyNode();
+    verify(scheduler,times(2)).handle(any(NodeRemovedSchedulerEvent.class));
+    node.handle(new RMNodeEvent(node.getNodeID(), RMNodeEventType.EXPIRE));
+    verify(scheduler,times(2)).handle(any(NodeRemovedSchedulerEvent.class));
+    Assert.assertEquals(NodeState.LOST, node.getState());
+  }
 
   @Test
   public void testRunningDecommission() {
@@ -346,9 +356,8 @@ public class TestRMNodeTransitions {
 
   private RMNodeImpl getUnhealthyNode() {
     RMNodeImpl node = getRunningNode();
-    NodeHealthStatus status = node.getNodeHealthStatus();
-    status.setHealthReport("sick");
-    status.setIsNodeHealthy(false);
+    NodeHealthStatus status = NodeHealthStatus.newInstance(false, "sick",
+        System.currentTimeMillis());
     node.handle(new RMNodeStatusEvent(node.getNodeID(), status,
         new ArrayList<ContainerStatus>(), null, null));
     Assert.assertEquals(NodeState.UNHEALTHY, node.getState());

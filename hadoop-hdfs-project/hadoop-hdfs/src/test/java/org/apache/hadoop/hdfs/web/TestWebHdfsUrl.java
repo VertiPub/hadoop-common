@@ -26,6 +26,7 @@ import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.Arrays;
 
@@ -54,7 +55,23 @@ public class TestWebHdfsUrl {
     UserGroupInformation.setConfiguration(new Configuration());
   }
   
-  @Test(timeout=4000)
+  @Test(timeout=60000)
+  public void testEncodedPathUrl() throws IOException, URISyntaxException{
+    Configuration conf = new Configuration();
+
+    final WebHdfsFileSystem webhdfs = (WebHdfsFileSystem) FileSystem.get(
+        uri, conf);
+
+    // Construct a file path that contains percentage-encoded string
+    String pathName = "/hdtest010%2C60020%2C1371000602151.1371058984668";
+    Path fsPath = new Path(pathName);
+    URL encodedPathUrl = webhdfs.toUrl(PutOpParam.Op.CREATE, fsPath);
+    // We should get back the original file path after cycling back and decoding
+    Assert.assertEquals(WebHdfsFileSystem.PATH_PREFIX + pathName,
+        encodedPathUrl.toURI().getPath());
+  }
+
+  @Test(timeout=60000)
   public void testSimpleAuthParamsInUrl() throws IOException {
     Configuration conf = new Configuration();
 
@@ -75,7 +92,7 @@ public class TestWebHdfsUrl {
         fileStatusUrl);
   }
 
-  @Test(timeout=4000)
+  @Test(timeout=60000)
   public void testSimpleProxyAuthParamsInUrl() throws IOException {
     Configuration conf = new Configuration();
 
@@ -98,7 +115,7 @@ public class TestWebHdfsUrl {
         fileStatusUrl);
   }
 
-  @Test(timeout=4000)
+  @Test(timeout=60000)
   public void testSecureAuthParamsInUrl() throws IOException {
     Configuration conf = new Configuration();
     // fake turning on security so api thinks it should use tokens
@@ -178,7 +195,7 @@ public class TestWebHdfsUrl {
         fileStatusUrl);    
   }
 
-  @Test(timeout=4000)
+  @Test(timeout=60000)
   public void testSecureProxyAuthParamsInUrl() throws IOException {
     Configuration conf = new Configuration();
     // fake turning on security so api thinks it should use tokens
@@ -290,7 +307,7 @@ public class TestWebHdfsUrl {
     return (WebHdfsFileSystem) FileSystem.get(uri, conf);
   }
   
-  @Test(timeout=4000)
+  @Test(timeout=60000)
   public void testSelectHdfsDelegationToken() throws Exception {
     SecurityUtilTestHelper.setTokenServiceUseIp(true);
 

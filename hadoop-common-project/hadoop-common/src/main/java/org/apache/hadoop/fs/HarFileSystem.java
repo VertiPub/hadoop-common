@@ -24,11 +24,12 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.HashMap;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -56,10 +57,12 @@ public class HarFileSystem extends FilterFileSystem {
 
   private static final Log LOG = LogFactory.getLog(HarFileSystem.class);
 
+  public static final String METADATA_CACHE_ENTRIES_KEY = "fs.har.metadatacache.entries";
+  public static final int METADATA_CACHE_ENTRIES_DEFAULT = 10;
+
   public static final int VERSION = 3;
 
-  private static final Map<URI, HarMetaData> harMetaCache =
-      new ConcurrentHashMap<URI, HarMetaData>();
+  private static Map<URI, HarMetaData> harMetaCache;
 
   // uri representation of this Har filesystem
   private URI uri;
@@ -98,7 +101,14 @@ public class HarFileSystem extends FilterFileSystem {
   public HarFileSystem(FileSystem fs) {
     super(fs);
   }
-  
+ 
+  private synchronized void initializeMetadataCache(Configuration conf) {
+    if (harMetaCache == null) {
+      int cacheSize = conf.getInt(METADATA_CACHE_ENTRIES_KEY, METADATA_CACHE_ENTRIES_DEFAULT);
+      harMetaCache = Collections.synchronizedMap(new LruCache<URI, HarMetaData>(cacheSize));
+    }
+  }
+ 
   /**
    * Initialize a Har filesystem per har archive. The 
    * archive home directory is the top level directory
@@ -114,6 +124,9 @@ public class HarFileSystem extends FilterFileSystem {
    */
   @Override
   public void initialize(URI name, Configuration conf) throws IOException {
+    // initialize the metadata cache, if needed
+    initializeMetadataCache(conf);
+
     // decode the name
     URI underLyingURI = decodeHarURI(name, conf);
     // we got the right har Path- now check if this is 
@@ -204,35 +217,36 @@ public class HarFileSystem extends FilterFileSystem {
       //create a path 
       return FileSystem.getDefaultUri(conf);
     }
-    String host = rawURI.getHost();
-    if (host == null) {
+    String authority = rawURI.getAuthority();
+    if (authority == null) {
       throw new IOException("URI: " + rawURI
-          + " is an invalid Har URI since host==null."
+          + " is an invalid Har URI since authority==null."
           + "  Expecting har://<scheme>-<host>/<path>.");
     }
-    int i = host.indexOf('-');
+ 
+    int i = authority.indexOf('-');
     if (i < 0) {
       throw new IOException("URI: " + rawURI
           + " is an invalid Har URI since '-' not found."
           + "  Expecting har://<scheme>-<host>/<path>.");
     }
-    final String underLyingScheme = host.substring(0, i);
-    i++;
-    final String underLyingHost = i == host.length()? null: host.substring(i);
-    int underLyingPort = rawURI.getPort();
-    String auth = (underLyingHost == null && underLyingPort == -1)?
-                  null:(underLyingHost+
-                      (underLyingPort == -1 ? "" : ":"+underLyingPort));
-    URI tmp = null;
+ 
     if (rawURI.getQuery() != null) {
       // query component not allowed
       throw new IOException("query component in Path not supported  " + rawURI);
     }
+ 
+    URI tmp = null;
+ 
     try {
-      tmp = new URI(underLyingScheme, auth, rawURI.getPath(), 
-            rawURI.getQuery(), rawURI.getFragment());
+      // convert <scheme>-<host> to <scheme>://<host>
+      URI baseUri = new URI(authority.replaceFirst("-", "://"));
+ 
+      tmp = new URI(baseUri.getScheme(), baseUri.getAuthority(),
+            rawURI.getPath(), rawURI.getQuery(), rawURI.getFragment());
     } catch (URISyntaxException e) {
-        // do nothing should not happen
+      throw new IOException("URI: " + rawURI
+          + " is an invalid Har URI. Expecting har://<scheme>-<host>/<path>.");
     }
     return tmp;
   }
@@ -809,7 +823,8 @@ public class HarFileSystem extends FilterFileSystem {
     /**
      * Create an input stream that fakes all the reads/positions/seeking.
      */
-    private static class HarFsInputStream extends FSInputStream {
+    private static class HarFsInputStream extends FSInputStream
+        implements CanSetDropBehind, CanSetReadahead {
       private long position, start, end;
       //The underlying data input stream that the
       // underlying filesystem will return.
@@ -956,7 +971,18 @@ public class HarFileSystem extends FilterFileSystem {
       public void readFully(long pos, byte[] b) throws IOException {
           readFully(pos, b, 0, b.length);
       }
-      
+
+      @Override
+      public void setReadahead(Long readahead)
+          throws IOException, UnsupportedEncodingException {
+        underLyingStream.setReadahead(readahead);
+      }
+
+      @Override
+      public void setDropBehind(Boolean dropBehind)
+          throws IOException, UnsupportedEncodingException {
+        underLyingStream.setDropBehind(dropBehind);
+      }
     }
   
     /**
@@ -1103,5 +1129,19 @@ public class HarFileSystem extends FilterFileSystem {
    */
   HarMetaData getMetadata() {
     return metadata;
+  }
+
+  private static class LruCache<K, V> extends LinkedHashMap<K, V> {
+    private final int MAX_ENTRIES;
+
+    public LruCache(int maxEntries) {
+        super(maxEntries + 1, 1.0f, true);
+        MAX_ENTRIES = maxEntries;
+    }
+
+    @Override
+    protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+        return size() > MAX_ENTRIES;
+    }
   }
 }

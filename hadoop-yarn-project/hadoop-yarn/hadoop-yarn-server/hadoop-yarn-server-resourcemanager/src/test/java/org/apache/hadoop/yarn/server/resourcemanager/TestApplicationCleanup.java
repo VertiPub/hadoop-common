@@ -41,7 +41,7 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMApp;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttempt;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttemptState;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.SchedulerEvent;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
@@ -59,7 +59,7 @@ public class TestApplicationCleanup {
     MockRM rm = new MockRM();
     rm.start();
 
-    MockNM nm1 = rm.registerNode("h1:1234", 5000);
+    MockNM nm1 = rm.registerNode("127.0.0.1:1234", 5000);
 
     RMApp app = rm.submitApp(2000);
 
@@ -72,7 +72,7 @@ public class TestApplicationCleanup {
     
     //request for containers
     int request = 2;
-    am.allocate("h1" , 1000, request, 
+    am.allocate("127.0.0.1" , 1000, request, 
         new ArrayList<ContainerId>());
     
     //kick the scheduler
@@ -147,7 +147,7 @@ public class TestApplicationCleanup {
     };
     rm.start();
 
-    MockNM nm1 = rm.registerNode("h1:1234", 5000);
+    MockNM nm1 = rm.registerNode("127.0.0.1:1234", 5000);
 
     RMApp app = rm.submitApp(2000);
 
@@ -160,7 +160,7 @@ public class TestApplicationCleanup {
     
     //request for containers
     int request = 2;
-    am.allocate("h1" , 1000, request, 
+    am.allocate("127.0.0.1" , 1000, request, 
         new ArrayList<ContainerId>());
     dispatcher.await();
     

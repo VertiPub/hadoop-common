@@ -58,16 +58,18 @@ import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptEventType;
 import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptKillEvent;
 import org.apache.hadoop.util.StringInterner;
-import org.apache.hadoop.yarn.YarnException;
-import org.apache.hadoop.yarn.api.ContainerExitStatus;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateResponse;
 import org.apache.hadoop.yarn.api.records.Container;
+import org.apache.hadoop.yarn.api.records.ContainerExitStatus;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
+import org.apache.hadoop.yarn.api.records.NMToken;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.NodeReport;
 import org.apache.hadoop.yarn.api.records.NodeState;
 import org.apache.hadoop.yarn.api.records.Priority;
+import org.apache.hadoop.yarn.client.api.NMTokenCache;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.util.RackResolver;
 
@@ -156,8 +158,8 @@ public class RMContainerAllocator extends RMContainerRequestor
   }
 
   @Override
-  public void init(Configuration conf) {
-    super.init(conf);
+  protected void serviceInit(Configuration conf) throws Exception {
+    super.serviceInit(conf);
     reduceSlowStart = conf.getFloat(
         MRJobConfig.COMPLETED_MAPS_FOR_REDUCE_SLOWSTART, 
         DEFAULT_COMPLETED_MAPS_PERCENT_FOR_REDUCE_SLOWSTART);
@@ -176,7 +178,7 @@ public class RMContainerAllocator extends RMContainerRequestor
   }
 
   @Override
-  public void start() {
+  protected void serviceStart() throws Exception {
     this.eventHandlingThread = new Thread() {
       @SuppressWarnings("unchecked")
       @Override
@@ -208,7 +210,7 @@ public class RMContainerAllocator extends RMContainerRequestor
       }
     };
     this.eventHandlingThread.start();
-    super.start();
+    super.serviceStart();
   }
 
   @Override
@@ -242,13 +244,15 @@ public class RMContainerAllocator extends RMContainerRequestor
   }
 
   @Override
-  public void stop() {
+  protected void serviceStop() throws Exception {
     if (stopped.getAndSet(true)) {
       // return if already stopped
       return;
     }
-    eventHandlingThread.interrupt();
-    super.stop();
+    if (eventHandlingThread != null) {
+      eventHandlingThread.interrupt();
+    }
+    super.serviceStop();
     scheduleStats.log("Final Stats: ");
   }
 
@@ -274,7 +278,7 @@ public class RMContainerAllocator extends RMContainerRequestor
     try {
       eventQueue.put(event);
     } catch (InterruptedException e) {
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
   }
 
@@ -289,9 +293,6 @@ public class RMContainerAllocator extends RMContainerRequestor
       if (reqEvent.getAttemptID().getTaskId().getTaskType().equals(TaskType.MAP)) {
         if (mapResourceReqt == 0) {
           mapResourceReqt = reqEvent.getCapability().getMemory();
-          int minSlotMemSize = getMinContainerCapability().getMemory();
-          mapResourceReqt = (int) Math.ceil((float) mapResourceReqt/minSlotMemSize)
-              * minSlotMemSize;
           eventHandler.handle(new JobHistoryEvent(jobId, 
               new NormalizedResourceEvent(org.apache.hadoop.mapreduce.TaskType.MAP,
               mapResourceReqt)));
@@ -312,10 +313,6 @@ public class RMContainerAllocator extends RMContainerRequestor
       } else {
         if (reduceResourceReqt == 0) {
           reduceResourceReqt = reqEvent.getCapability().getMemory();
-          int minSlotMemSize = getMinContainerCapability().getMemory();
-          //round off on slotsize
-          reduceResourceReqt = (int) Math.ceil((float) 
-              reduceResourceReqt/minSlotMemSize) * minSlotMemSize;
           eventHandler.handle(new JobHistoryEvent(jobId, 
               new NormalizedResourceEvent(
                   org.apache.hadoop.mapreduce.TaskType.REDUCE,
@@ -563,23 +560,40 @@ public class RMContainerAllocator extends RMContainerRequestor
         LOG.error("Could not contact RM after " + retryInterval + " milliseconds.");
         eventHandler.handle(new JobEvent(this.getJob().getID(),
                                          JobEventType.INTERNAL_ERROR));
-        throw new YarnException("Could not contact RM after " +
+        throw new YarnRuntimeException("Could not contact RM after " +
                                 retryInterval + " milliseconds.");
       }
       // Throw this up to the caller, which may decide to ignore it and
       // continue to attempt to contact the RM.
       throw e;
     }
-    if (response.getReboot()) {
-      // This can happen if the RM has been restarted. If it is in that state,
-      // this application must clean itself up.
-      eventHandler.handle(new JobEvent(this.getJob().getID(),
-                                       JobEventType.JOB_AM_REBOOT));
-      throw new YarnException("Resource Manager doesn't recognize AttemptId: " +
-                               this.getContext().getApplicationID());
+    if (response.getAMCommand() != null) {
+      switch(response.getAMCommand()) {
+      case AM_RESYNC:
+      case AM_SHUTDOWN:
+        // This can happen if the RM has been restarted. If it is in that state,
+        // this application must clean itself up.
+        eventHandler.handle(new JobEvent(this.getJob().getID(),
+                                         JobEventType.JOB_AM_REBOOT));
+        throw new YarnRuntimeException("Resource Manager doesn't recognize AttemptId: " +
+                                 this.getContext().getApplicationID());
+      default:
+        String msg =
+              "Unhandled value of AMCommand: " + response.getAMCommand();
+        LOG.error(msg);
+        throw new YarnRuntimeException(msg);
+      }
     }
     int newHeadRoom = getAvailableResources() != null ? getAvailableResources().getMemory() : 0;
     List<Container> newContainers = response.getAllocatedContainers();
+    // Setting NMTokens
+    if (response.getNMTokens() != null) {
+      for (NMToken nmToken : response.getNMTokens()) {
+        NMTokenCache.setNMToken(nmToken.getNodeId().toString(),
+            nmToken.getToken());
+      }
+    }
+    
     List<ContainerStatus> finishedContainers = response.getCompletedContainersStatuses();
     if (newContainers.size() + finishedContainers.size() > 0 || headRoom != newHeadRoom) {
       //something changed
@@ -1145,14 +1159,6 @@ public class RMContainerAllocator extends RMContainerRequestor
     
     TaskAttemptId get(ContainerId cId) {
       return containerToAttemptMap.get(cId);
-    }
-    
-    NodeId getNodeId(TaskAttemptId tId) {
-      if (tId.getTaskId().getTaskType().equals(TaskType.MAP)) {
-        return maps.get(tId).getNodeId();
-      } else {
-        return reduces.get(tId).getNodeId();
-      }
     }
 
     ContainerId get(TaskAttemptId tId) {

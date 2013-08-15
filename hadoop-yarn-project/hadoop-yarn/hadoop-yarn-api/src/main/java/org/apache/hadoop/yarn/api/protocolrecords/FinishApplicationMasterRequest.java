@@ -20,9 +20,9 @@ package org.apache.hadoop.yarn.api.protocolrecords;
 
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
-import org.apache.hadoop.yarn.api.AMRMProtocol;
-import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
+import org.apache.hadoop.yarn.api.ApplicationMasterProtocol;
 import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p>The finalization request sent by the <code>ApplicationMaster</code> to
@@ -30,10 +30,6 @@ import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
  *
  * <p>The final request includes details such:
  *   <ul>
- *     <li>
- *         {@link ApplicationAttemptId} being managed by the
- *         <code>ApplicationMaster</code>
- *     </li>
  *     <li>Final state of the <code>ApplicationMaster</code></li>
  *     <li>
  *       Diagnostic information in case of failure of the
@@ -43,29 +39,23 @@ import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
  *   </ul>
  * </p>
  *
- * @see AMRMProtocol#finishApplicationMaster(FinishApplicationMasterRequest)
+ * @see ApplicationMasterProtocol#finishApplicationMaster(FinishApplicationMasterRequest)
  */
-public interface FinishApplicationMasterRequest {
+@Public
+@Stable
+public abstract class FinishApplicationMasterRequest {
 
-  /**
-   * Get the <code>ApplicationAttemptId</code> being managed by the
-   * <code>ApplicationMaster</code>.
-   * @return <code>ApplicationAttemptId</code> being managed by the
-   *         <code>ApplicationMaster</code>
-   */
   @Public
   @Stable
-  ApplicationAttemptId getApplicationAttemptId();
-
-  /**
-   * Set the <code>ApplicationAttemptId</code> being managed by the
-   * <code>ApplicationMaster</code>.
-   * @param applicationAttemptId <code>ApplicationAttemptId</code> being managed
-   *                             by the <code>ApplicationMaster</code>
-   */
-  @Public
-  @Stable
-  void setAppAttemptId(ApplicationAttemptId applicationAttemptId);
+  public static FinishApplicationMasterRequest newInstance(
+      FinalApplicationStatus finalAppStatus, String diagnostics, String url) {
+    FinishApplicationMasterRequest request =
+        Records.newRecord(FinishApplicationMasterRequest.class);
+    request.setFinalApplicationStatus(finalAppStatus);
+    request.setDiagnostics(diagnostics);
+    request.setTrackingUrl(url);
+    return request;
+  }
 
   /**
    * Get <em>final state</em> of the <code>ApplicationMaster</code>.
@@ -73,15 +63,15 @@ public interface FinishApplicationMasterRequest {
    */
   @Public
   @Stable
-  FinalApplicationStatus getFinalApplicationStatus();
+  public abstract FinalApplicationStatus getFinalApplicationStatus();
 
   /**
-   * Set the <em>finish state</em> of the <code>ApplicationMaster</code>
-   * @param finishState <em>finish state</em> of the <code>ApplicationMaster</code>
+   * Set the <em>final state</em> of the <code>ApplicationMaster</code>
+   * @param finalState <em>final state</em> of the <code>ApplicationMaster</code>
    */
   @Public
   @Stable
-  void setFinishApplicationStatus(FinalApplicationStatus finishState);
+  public abstract void setFinalApplicationStatus(FinalApplicationStatus finalState);
 
   /**
    * Get <em>diagnostic information</em> on application failure.
@@ -89,7 +79,7 @@ public interface FinishApplicationMasterRequest {
    */
   @Public
   @Stable
-  String getDiagnostics();
+  public abstract String getDiagnostics();
 
   /**
    * Set <em>diagnostic information</em> on application failure.
@@ -97,7 +87,7 @@ public interface FinishApplicationMasterRequest {
    */
   @Public
   @Stable
-  void setDiagnostics(String diagnostics);
+  public abstract void setDiagnostics(String diagnostics);
 
   /**
    * Get the <em>tracking URL</em> for the <code>ApplicationMaster</code>.
@@ -105,7 +95,7 @@ public interface FinishApplicationMasterRequest {
    */
   @Public
   @Stable
-  String getTrackingUrl();
+  public abstract String getTrackingUrl();
 
   /**
    * Set the <em>tracking URL</em>for the <code>ApplicationMaster</code>
@@ -114,6 +104,6 @@ public interface FinishApplicationMasterRequest {
    */
   @Public
   @Stable
-  void setTrackingUrl(String url);
+  public abstract void setTrackingUrl(String url);
 
 }

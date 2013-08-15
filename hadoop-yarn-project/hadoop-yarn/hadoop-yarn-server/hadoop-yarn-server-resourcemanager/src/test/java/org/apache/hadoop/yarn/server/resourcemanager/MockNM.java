@@ -28,16 +28,17 @@ import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerState;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
-import org.apache.hadoop.yarn.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.Resource;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.api.protocolrecords.NodeHeartbeatRequest;
 import org.apache.hadoop.yarn.server.api.protocolrecords.NodeHeartbeatResponse;
 import org.apache.hadoop.yarn.server.api.protocolrecords.RegisterNodeManagerRequest;
 import org.apache.hadoop.yarn.server.api.protocolrecords.RegisterNodeManagerResponse;
 import org.apache.hadoop.yarn.server.api.records.MasterKey;
+import org.apache.hadoop.yarn.server.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.server.api.records.NodeStatus;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
 import org.apache.hadoop.yarn.util.Records;
 
 public class MockNM {
@@ -45,17 +46,27 @@ public class MockNM {
   private int responseId;
   private NodeId nodeId;
   private final int memory;
+  private final int vCores;
   private ResourceTrackerService resourceTracker;
   private final int httpPort = 2;
-  private MasterKey currentMasterKey;
+  private MasterKey currentContainerTokenMasterKey;
+  private MasterKey currentNMTokenMasterKey;
 
   public MockNM(String nodeIdStr, int memory, ResourceTrackerService resourceTracker) {
+    // scale vcores based on the requested memory
+    this(nodeIdStr, memory,
+        Math.max(1, (memory * YarnConfiguration.DEFAULT_NM_VCORES) /
+            YarnConfiguration.DEFAULT_NM_PMEM_MB),
+        resourceTracker);
+  }
+
+  public MockNM(String nodeIdStr, int memory, int vcores,
+                ResourceTrackerService resourceTracker) {
     this.memory = memory;
+    this.vCores = vcores;
     this.resourceTracker = resourceTracker;
     String[] splits = nodeIdStr.split(":");
-    nodeId = Records.newRecord(NodeId.class);
-    nodeId.setHost(splits[0]);
-    nodeId.setPort(Integer.parseInt(splits[1]));
+    nodeId = BuilderUtils.newNodeId(splits[0], Integer.parseInt(splits[1]));
   }
 
   public NodeId getNodeId() {
@@ -83,12 +94,13 @@ public class MockNM {
         RegisterNodeManagerRequest.class);
     req.setNodeId(nodeId);
     req.setHttpPort(httpPort);
-    Resource resource = Records.newRecord(Resource.class);
-    resource.setMemory(memory);
+    Resource resource = BuilderUtils.newResource(memory, vCores);
     req.setResource(resource);
     RegisterNodeManagerResponse registrationResponse =
         resourceTracker.registerNodeManager(req);
-    this.currentMasterKey = registrationResponse.getMasterKey();
+    this.currentContainerTokenMasterKey =
+        registrationResponse.getContainerTokenMasterKey();
+    this.currentNMTokenMasterKey = registrationResponse.getNMTokenMasterKey();
     return registrationResponse;
   }
 
@@ -131,14 +143,25 @@ public class MockNM {
     healthStatus.setLastHealthReportTime(1);
     status.setNodeHealthStatus(healthStatus);
     req.setNodeStatus(status);
-    req.setLastKnownMasterKey(this.currentMasterKey);
+    req.setLastKnownContainerTokenMasterKey(this.currentContainerTokenMasterKey);
+    req.setLastKnownNMTokenMasterKey(this.currentNMTokenMasterKey);
     NodeHeartbeatResponse heartbeatResponse =
         resourceTracker.nodeHeartbeat(req);
-    MasterKey masterKeyFromRM = heartbeatResponse.getMasterKey();
-    this.currentMasterKey =
-        (masterKeyFromRM != null
-            && masterKeyFromRM.getKeyId() != this.currentMasterKey.getKeyId()
-            ? masterKeyFromRM : this.currentMasterKey);
+    
+    MasterKey masterKeyFromRM = heartbeatResponse.getContainerTokenMasterKey();
+    if (masterKeyFromRM != null
+        && masterKeyFromRM.getKeyId() != this.currentContainerTokenMasterKey
+            .getKeyId()) {
+      this.currentContainerTokenMasterKey = masterKeyFromRM;
+    }
+
+    masterKeyFromRM = heartbeatResponse.getNMTokenMasterKey();
+    if (masterKeyFromRM != null
+        && masterKeyFromRM.getKeyId() != this.currentNMTokenMasterKey
+            .getKeyId()) {
+      this.currentNMTokenMasterKey = masterKeyFromRM;
+    }
+    
     return heartbeatResponse;
   }
 

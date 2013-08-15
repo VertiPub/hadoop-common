@@ -30,6 +30,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.hadoop.classification.InterfaceAudience;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.apache.hadoop.hdfs.server.common.Storage.StorageDirectory;
@@ -57,6 +58,7 @@ import com.google.common.collect.ComparisonChain;
 public class FileJournalManager implements JournalManager {
   private static final Log LOG = LogFactory.getLog(FileJournalManager.class);
 
+  private final Configuration conf;
   private final StorageDirectory sd;
   private final StorageErrorReporter errorReporter;
   private int outputBufferCapacity = 512*1024;
@@ -72,8 +74,9 @@ public class FileJournalManager implements JournalManager {
   StoragePurger purger
     = new NNStorageRetentionManager.DeletionStoragePurger();
 
-  public FileJournalManager(StorageDirectory sd,
+  public FileJournalManager(Configuration conf, StorageDirectory sd,
       StorageErrorReporter errorReporter) {
+    this.conf = conf;
     this.sd = sd;
     this.errorReporter = errorReporter;
   }
@@ -102,8 +105,8 @@ public class FileJournalManager implements JournalManager {
       throws IOException {
     try {
       currentInProgress = NNStorage.getInProgressEditsFile(sd, txid);
-      EditLogOutputStream stm = new EditLogFileOutputStream(currentInProgress,
-          outputBufferCapacity);
+      EditLogOutputStream stm = new EditLogFileOutputStream(conf,
+          currentInProgress, outputBufferCapacity);
       stm.create();
       return stm;
     } catch (IOException e) {
@@ -164,24 +167,39 @@ public class FileJournalManager implements JournalManager {
   /**
    * Find all editlog segments starting at or above the given txid.
    * @param fromTxId the txnid which to start looking
+   * @param forReading whether or not the caller intends to read from the edit
+   *        logs
+   * @param inProgressOk whether or not to include the in-progress edit log 
+   *        segment       
    * @return a list of remote edit logs
    * @throws IOException if edit logs cannot be listed.
    */
-  public List<RemoteEditLog> getRemoteEditLogs(long firstTxId) throws IOException {
+  public List<RemoteEditLog> getRemoteEditLogs(long firstTxId,
+      boolean forReading, boolean inProgressOk) throws IOException {
+    // make sure not reading in-progress edit log, i.e., if forReading is true,
+    // we should ignore the in-progress edit log.
+    Preconditions.checkArgument(!(forReading && inProgressOk));
+    
     File currentDir = sd.getCurrentDir();
     List<EditLogFile> allLogFiles = matchEditLogs(currentDir);
     List<RemoteEditLog> ret = Lists.newArrayListWithCapacity(
         allLogFiles.size());
 
     for (EditLogFile elf : allLogFiles) {
-      if (elf.hasCorruptHeader() || elf.isInProgress()) continue;
+      if (elf.hasCorruptHeader() || (!inProgressOk && elf.isInProgress())) {
+        continue;
+      }
       if (elf.getFirstTxId() >= firstTxId) {
         ret.add(new RemoteEditLog(elf.firstTxId, elf.lastTxId));
-      } else if ((firstTxId > elf.getFirstTxId()) &&
-                 (firstTxId <= elf.getLastTxId())) {
-        // Note that this behavior is different from getLogFiles below.
-        throw new IllegalStateException("Asked for firstTxId " + firstTxId
-            + " which is in the middle of file " + elf.file);
+      } else if (elf.getFirstTxId() < firstTxId && firstTxId <= elf.getLastTxId()) {
+        // If the firstTxId is in the middle of an edit log segment
+        if (forReading) {
+          // Note that this behavior is different from getLogFiles below.
+          throw new IllegalStateException("Asked for firstTxId " + firstTxId
+              + " which is in the middle of file " + elf.file);
+        } else {
+          ret.add(new RemoteEditLog(elf.firstTxId, elf.lastTxId));
+        }
       }
     }
     
@@ -242,7 +260,7 @@ public class FileJournalManager implements JournalManager {
   @Override
   synchronized public void selectInputStreams(
       Collection<EditLogInputStream> streams, long fromTxId,
-      boolean inProgressOk) throws IOException {
+      boolean inProgressOk, boolean forReading) throws IOException {
     List<EditLogFile> elfs = matchEditLogs(sd.getCurrentDir());
     LOG.debug(this + ": selecting input streams starting at " + fromTxId + 
         (inProgressOk ? " (inProgress ok) " : " (excluding inProgress) ") +

@@ -24,6 +24,7 @@ import static org.junit.Assert.fail;
 
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.EnumSet;
 
 import javax.ws.rs.core.MediaType;
 import javax.xml.parsers.DocumentBuilder;
@@ -31,8 +32,8 @@ import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
-import org.apache.hadoop.yarn.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.api.records.NodeState;
+import org.apache.hadoop.yarn.server.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.server.resourcemanager.MockNM;
 import org.apache.hadoop.yarn.server.resourcemanager.MockRM;
 import org.apache.hadoop.yarn.server.resourcemanager.RMContext;
@@ -55,6 +56,7 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 
+import com.google.common.base.Joiner;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.servlet.GuiceServletContextListener;
@@ -78,6 +80,8 @@ public class TestRMWebServicesNodes extends JerseyTest {
       bind(RMWebServices.class);
       bind(GenericExceptionHandler.class);
       rm = new MockRM(new Configuration());
+      rm.getRMContainerTokenSecretManager().rollMasterKey();
+      rm.getRMNMTokenSecretManager().rollMasterKey();
       bind(ResourceManager.class).toInstance(rm);
       bind(RMContext.class).toInstance(rm.getRMContext());
       bind(ApplicationACLsManager.class).toInstance(
@@ -134,17 +138,14 @@ public class TestRMWebServicesNodes extends JerseyTest {
     rm.NMwaitForState(nm1.getNodeId(), NodeState.RUNNING);
     rm.NMwaitForState(nm2.getNodeId(), NodeState.NEW);
 
-    // One unhealthy node which should not appear in the list after
-    // MAPREDUCE-3760.
     MockNM nm3 = rm.registerNode("h3:1236", 5122);
     rm.NMwaitForState(nm3.getNodeId(), NodeState.NEW);
     rm.sendNodeStarted(nm3);
     rm.NMwaitForState(nm3.getNodeId(), NodeState.RUNNING);
     RMNodeImpl node = (RMNodeImpl) rm.getRMContext().getRMNodes()
         .get(nm3.getNodeId());
-    NodeHealthStatus nodeHealth = node.getNodeHealthStatus();
-    nodeHealth.setHealthReport("test health report");
-    nodeHealth.setIsNodeHealthy(false);
+    NodeHealthStatus nodeHealth = NodeHealthStatus.newInstance(false,
+        "test health report", System.currentTimeMillis());
     node.handle(new RMNodeStatusEvent(nm3.getNodeId(), nodeHealth,
         new ArrayList<ContainerStatus>(), null, null));
     rm.NMwaitForState(nm3.getNodeId(), NodeState.UNHEALTHY);
@@ -159,12 +160,12 @@ public class TestRMWebServicesNodes extends JerseyTest {
     JSONObject nodes = json.getJSONObject("nodes");
     assertEquals("incorrect number of elements", 1, nodes.length());
     JSONArray nodeArray = nodes.getJSONArray("node");
-    // Just 2 nodes, leaving behind the unhealthy node.
-    assertEquals("incorrect number of elements", 2, nodeArray.length());
+    // 3 nodes, including the unhealthy node and the new node.
+    assertEquals("incorrect number of elements", 3, nodeArray.length());
   }
 
   @Test
-  public void testNodesQueryState() throws JSONException, Exception {
+  public void testNodesQueryNew() throws JSONException, Exception {
     WebResource r = resource();
     MockNM nm1 = rm.registerNode("h1:1234", 5120);
     MockNM nm2 = rm.registerNode("h2:1235", 5121);
@@ -173,7 +174,7 @@ public class TestRMWebServicesNodes extends JerseyTest {
     rm.NMwaitForState(nm2.getNodeId(), NodeState.NEW);
 
     ClientResponse response = r.path("ws").path("v1").path("cluster")
-        .path("nodes").queryParam("state", NodeState.RUNNING.toString())
+        .path("nodes").queryParam("states", NodeState.NEW.toString())
         .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
 
     assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
@@ -185,7 +186,7 @@ public class TestRMWebServicesNodes extends JerseyTest {
     assertEquals("incorrect number of elements", 1, nodeArray.length());
     JSONObject info = nodeArray.getJSONObject(0);
 
-    verifyNodeInfo(info, nm1);
+    verifyNodeInfo(info, nm2);
   }
 
   @Test
@@ -196,7 +197,7 @@ public class TestRMWebServicesNodes extends JerseyTest {
 
     ClientResponse response = r.path("ws").path("v1").path("cluster")
         .path("nodes")
-        .queryParam("state", NodeState.DECOMMISSIONED.toString())
+        .queryParam("states", NodeState.DECOMMISSIONED.toString())
         .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
     assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
     JSONObject json = response.getEntity(JSONObject.class);
@@ -212,7 +213,7 @@ public class TestRMWebServicesNodes extends JerseyTest {
 
     try {
       r.path("ws").path("v1").path("cluster").path("nodes")
-          .queryParam("state", "BOGUSSTATE").accept(MediaType.APPLICATION_JSON)
+          .queryParam("states", "BOGUSSTATE").accept(MediaType.APPLICATION_JSON)
           .get(JSONObject.class);
 
       fail("should have thrown exception querying invalid state");
@@ -256,7 +257,7 @@ public class TestRMWebServicesNodes extends JerseyTest {
     rm.sendNodeLost(nm2);
 
     ClientResponse response = r.path("ws").path("v1").path("cluster")
-        .path("nodes").queryParam("state", NodeState.LOST.toString())
+        .path("nodes").queryParam("states", NodeState.LOST.toString())
         .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
 
     assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
@@ -307,7 +308,7 @@ public class TestRMWebServicesNodes extends JerseyTest {
   }
 
   @Test
-  public void testNodesQueryHealthy() throws JSONException, Exception {
+  public void testNodesQueryRunning() throws JSONException, Exception {
     WebResource r = resource();
     MockNM nm1 = rm.registerNode("h1:1234", 5120);
     MockNM nm2 = rm.registerNode("h2:1235", 5121);
@@ -315,7 +316,7 @@ public class TestRMWebServicesNodes extends JerseyTest {
     rm.NMwaitForState(nm1.getNodeId(), NodeState.RUNNING);
     rm.NMwaitForState(nm2.getNodeId(), NodeState.NEW);
     ClientResponse response = r.path("ws").path("v1").path("cluster")
-        .path("nodes").queryParam("healthy", "true")
+        .path("nodes").queryParam("states", "running")
         .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
     assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
     JSONObject json = response.getEntity(JSONObject.class);
@@ -323,55 +324,7 @@ public class TestRMWebServicesNodes extends JerseyTest {
     JSONObject nodes = json.getJSONObject("nodes");
     assertEquals("incorrect number of elements", 1, nodes.length());
     JSONArray nodeArray = nodes.getJSONArray("node");
-    assertEquals("incorrect number of elements", 2, nodeArray.length());
-  }
-
-  @Test
-  public void testNodesQueryHealthyCase() throws JSONException, Exception {
-    WebResource r = resource();
-    MockNM nm1 = rm.registerNode("h1:1234", 5120);
-    MockNM nm2 = rm.registerNode("h2:1235", 5121);
-    rm.sendNodeStarted(nm1);
-    rm.NMwaitForState(nm1.getNodeId(), NodeState.RUNNING);
-    rm.NMwaitForState(nm2.getNodeId(), NodeState.NEW);
-    ClientResponse response = r.path("ws").path("v1").path("cluster")
-        .path("nodes").queryParam("healthy", "TRUe")
-        .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
-    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
-    JSONObject json = response.getEntity(JSONObject.class);
-    assertEquals("incorrect number of elements", 1, json.length());
-    JSONObject nodes = json.getJSONObject("nodes");
-    assertEquals("incorrect number of elements", 1, nodes.length());
-    JSONArray nodeArray = nodes.getJSONArray("node");
-    assertEquals("incorrect number of elements", 2, nodeArray.length());
-
-  }
-
-  @Test
-  public void testNodesQueryHealthyAndState() throws JSONException, Exception {
-    WebResource r = resource();
-    MockNM nm1 = rm.registerNode("h1:1234", 5120);
-    MockNM nm2 = rm.registerNode("h2:1235", 5121);
-    rm.sendNodeStarted(nm1);
-    rm.NMwaitForState(nm2.getNodeId(), NodeState.NEW);
-    rm.NMwaitForState(nm1.getNodeId(), NodeState.RUNNING);
-    RMNodeImpl node = (RMNodeImpl) rm.getRMContext().getRMNodes()
-        .get(nm1.getNodeId());
-    NodeHealthStatus nodeHealth = node.getNodeHealthStatus();
-    nodeHealth.setHealthReport("test health report");
-    nodeHealth.setIsNodeHealthy(false);
-    node.handle(new RMNodeStatusEvent(nm1.getNodeId(), nodeHealth,
-        new ArrayList<ContainerStatus>(), null, null));
-    rm.NMwaitForState(nm1.getNodeId(), NodeState.UNHEALTHY);
-
-    ClientResponse response = r.path("ws").path("v1").path("cluster")
-        .path("nodes").queryParam("healthy", "true")
-        .queryParam("state", NodeState.RUNNING.toString())
-        .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
-    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
-    JSONObject json = response.getEntity(JSONObject.class);
-    assertEquals("incorrect number of elements", 1, json.length());
-    assertEquals("nodes is not null", JSONObject.NULL, json.get("nodes"));
+    assertEquals("incorrect number of elements", 1, nodeArray.length());
   }
 
   @Test
@@ -383,7 +336,7 @@ public class TestRMWebServicesNodes extends JerseyTest {
     rm.NMwaitForState(nm1.getNodeId(), NodeState.RUNNING);
     rm.NMwaitForState(nm2.getNodeId(), NodeState.NEW);
     ClientResponse response = r.path("ws").path("v1").path("cluster")
-        .path("nodes").queryParam("healthy", "false")
+        .path("nodes").queryParam("states", "UNHEALTHY")
         .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
     assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
     JSONObject json = response.getEntity(JSONObject.class);
@@ -391,47 +344,16 @@ public class TestRMWebServicesNodes extends JerseyTest {
     assertEquals("nodes is not null", JSONObject.NULL, json.get("nodes"));
   }
 
-  @Test
-  public void testNodesQueryHealthyInvalid() throws JSONException, Exception {
-    WebResource r = resource();
-    rm.registerNode("h1:1234", 5120);
-    rm.registerNode("h2:1235", 5121);
-
-    try {
-      r.path("ws").path("v1").path("cluster").path("nodes")
-          .queryParam("healthy", "tr").accept(MediaType.APPLICATION_JSON)
-          .get(JSONObject.class);
-      fail("should have thrown exception querying invalid healthy string");
-    } catch (UniformInterfaceException ue) {
-      ClientResponse response = ue.getResponse();
-      assertEquals(Status.BAD_REQUEST, response.getClientResponseStatus());
-      assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
-      JSONObject msg = response.getEntity(JSONObject.class);
-      JSONObject exception = msg.getJSONObject("RemoteException");
-      assertEquals("incorrect number of elements", 3, exception.length());
-      String message = exception.getString("message");
-      String type = exception.getString("exception");
-      String classname = exception.getString("javaClassName");
-      WebServicesTestUtils
-          .checkStringMatch(
-              "exception message",
-              "java.lang.Exception: Error: You must specify either true or false to query on health",
-              message);
-      WebServicesTestUtils.checkStringMatch("exception type",
-          "BadRequestException", type);
-      WebServicesTestUtils.checkStringMatch("exception classname",
-          "org.apache.hadoop.yarn.webapp.BadRequestException", classname);
-
-    } finally {
-      rm.stop();
-    }
-  }
-
   public void testNodesHelper(String path, String media) throws JSONException,
       Exception {
     WebResource r = resource();
     MockNM nm1 = rm.registerNode("h1:1234", 5120);
     MockNM nm2 = rm.registerNode("h2:1235", 5121);
+    rm.sendNodeStarted(nm1);
+    rm.sendNodeStarted(nm2);
+    rm.NMwaitForState(nm1.getNodeId(), NodeState.RUNNING);
+    rm.NMwaitForState(nm2.getNodeId(), NodeState.RUNNING);
+
     ClientResponse response = r.path("ws").path("v1").path("cluster")
         .path(path).accept(media).get(ClientResponse.class);
     assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
@@ -691,6 +613,31 @@ public class TestRMWebServicesNodes extends JerseyTest {
     assertEquals("incorrect number of elements", 2, nodes.getLength());
     rm.stop();
   }
+  
+  @Test
+  public void testQueryAll() throws Exception {
+    WebResource r = resource();
+    MockNM nm1 = rm.registerNode("h1:1234", 5120);
+    MockNM nm2 = rm.registerNode("h2:1235", 5121);
+    MockNM nm3 = rm.registerNode("h3:1236", 5122);
+    rm.sendNodeStarted(nm1);
+    rm.sendNodeStarted(nm3);
+    rm.NMwaitForState(nm1.getNodeId(), NodeState.RUNNING);
+    rm.NMwaitForState(nm2.getNodeId(), NodeState.NEW);
+    rm.sendNodeLost(nm3);
+
+    ClientResponse response = r.path("ws").path("v1").path("cluster")
+        .path("nodes")
+        .queryParam("states", Joiner.on(',').join(EnumSet.allOf(NodeState.class)))
+        .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
+
+    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
+    JSONObject json = response.getEntity(JSONObject.class);
+    JSONObject nodes = json.getJSONObject("nodes");
+    assertEquals("incorrect number of elements", 1, nodes.length());
+    JSONArray nodeArray = nodes.getJSONArray("node");
+    assertEquals("incorrect number of elements", 3, nodeArray.length());
+  }
 
   public void verifyNodesXML(NodeList nodes, MockNM nm) throws JSONException,
       Exception {
@@ -699,7 +646,6 @@ public class TestRMWebServicesNodes extends JerseyTest {
       verifyNodeInfoGeneric(nm,
           WebServicesTestUtils.getXmlString(element, "state"),
           WebServicesTestUtils.getXmlString(element, "rack"),
-          WebServicesTestUtils.getXmlString(element, "healthStatus"),
           WebServicesTestUtils.getXmlString(element, "id"),
           WebServicesTestUtils.getXmlString(element, "nodeHostName"),
           WebServicesTestUtils.getXmlString(element, "nodeHTTPAddress"),
@@ -713,10 +659,10 @@ public class TestRMWebServicesNodes extends JerseyTest {
 
   public void verifyNodeInfo(JSONObject nodeInfo, MockNM nm)
       throws JSONException, Exception {
-    assertEquals("incorrect number of elements", 11, nodeInfo.length());
+    assertEquals("incorrect number of elements", 10, nodeInfo.length());
 
     verifyNodeInfoGeneric(nm, nodeInfo.getString("state"),
-        nodeInfo.getString("rack"), nodeInfo.getString("healthStatus"),
+        nodeInfo.getString("rack"),
         nodeInfo.getString("id"), nodeInfo.getString("nodeHostName"),
         nodeInfo.getString("nodeHTTPAddress"),
         nodeInfo.getLong("lastHealthUpdate"),
@@ -726,32 +672,29 @@ public class TestRMWebServicesNodes extends JerseyTest {
   }
 
   public void verifyNodeInfoGeneric(MockNM nm, String state, String rack,
-      String healthStatus, String id, String nodeHostName,
+      String id, String nodeHostName,
       String nodeHTTPAddress, long lastHealthUpdate, String healthReport,
       int numContainers, long usedMemoryMB, long availMemoryMB)
       throws JSONException, Exception {
 
     RMNode node = rm.getRMContext().getRMNodes().get(nm.getNodeId());
-    NodeHealthStatus health = node.getNodeHealthStatus();
     ResourceScheduler sched = rm.getResourceScheduler();
     SchedulerNodeReport report = sched.getNodeReport(nm.getNodeId());
 
     WebServicesTestUtils.checkStringMatch("state", node.getState().toString(),
         state);
     WebServicesTestUtils.checkStringMatch("rack", node.getRackName(), rack);
-    WebServicesTestUtils.checkStringMatch("healthStatus", "Healthy",
-        healthStatus);
     WebServicesTestUtils.checkStringMatch("id", nm.getNodeId().toString(), id);
     WebServicesTestUtils.checkStringMatch("nodeHostName", nm.getNodeId()
         .getHost(), nodeHostName);
     WebServicesTestUtils.checkStringMatch("healthReport",
-        String.valueOf(health.getHealthReport()), healthReport);
+        String.valueOf(node.getHealthReport()), healthReport);
     String expectedHttpAddress = nm.getNodeId().getHost() + ":"
         + nm.getHttpPort();
     WebServicesTestUtils.checkStringMatch("nodeHTTPAddress",
         expectedHttpAddress, nodeHTTPAddress);
 
-    long expectedHealthUpdate = health.getLastHealthReportTime();
+    long expectedHealthUpdate = node.getLastHealthReportTime();
     assertEquals("lastHealthUpdate doesn't match, got: " + lastHealthUpdate
         + " expected: " + expectedHealthUpdate, expectedHealthUpdate,
         lastHealthUpdate);

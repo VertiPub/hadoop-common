@@ -28,12 +28,17 @@ import java.util.Map;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.classification.InterfaceAudience.Private;
+import org.apache.hadoop.classification.InterfaceStability.Unstable;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authorize.AccessControlList;
 import org.apache.hadoop.yarn.api.records.QueueACL;
 import org.apache.hadoop.yarn.api.records.QueueUserACLInfo;
 import org.apache.hadoop.yarn.api.records.Resource;
+import org.apache.hadoop.yarn.util.resource.Resources;
 
+@Private
+@Unstable
 public class FSLeafQueue extends FSQueue {
   private static final Log LOG = LogFactory.getLog(
       FSLeafQueue.class.getName());
@@ -126,8 +131,8 @@ public class FSLeafQueue extends FSQueue {
             + demand);
       }
       demand = Resources.add(demand, toAdd);
-      if (Resources.greaterThanOrEqual(demand, maxRes)) {
-        demand = maxRes;
+      demand = Resources.componentwiseMin(demand, maxRes);
+      if (Resources.equals(demand, maxRes)) {
         break;
       }
     }
@@ -153,7 +158,7 @@ public class FSLeafQueue extends FSQueue {
     for (AppSchedulable sched : appScheds) {
       if (sched.getRunnable()) {
         assigned = sched.assignContainer(node);
-        if (Resources.greaterThan(assigned, Resources.none())) {
+        if (!assigned.equals(Resources.none())) {
           break;
         }
       }

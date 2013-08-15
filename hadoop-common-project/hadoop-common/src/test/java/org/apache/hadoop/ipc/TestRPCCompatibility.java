@@ -34,6 +34,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.ipc.protobuf.ProtocolInfoProtos.GetProtocolSignatureRequestProto;
 import org.apache.hadoop.ipc.protobuf.ProtocolInfoProtos.GetProtocolSignatureResponseProto;
 import org.apache.hadoop.ipc.protobuf.ProtocolInfoProtos.ProtocolSignatureProto;
+import org.apache.hadoop.ipc.protobuf.RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto;
 import org.apache.hadoop.net.NetUtils;
 import org.junit.After;
 import org.junit.Before;
@@ -56,7 +57,7 @@ public class TestRPCCompatibility {
     void ping() throws IOException;    
   }
   
-  public interface TestProtocol1 extends VersionedProtocol, TestProtocol0 {
+  public interface TestProtocol1 extends TestProtocol0 {
     String echo(String value) throws IOException;
   }
 
@@ -122,7 +123,7 @@ public class TestRPCCompatibility {
   }
   
   @After
-  public void tearDown() throws IOException {
+  public void tearDown() {
     if (proxy != null) {
       RPC.stopProxy(proxy.getProxy());
       proxy = null;
@@ -277,7 +278,7 @@ System.out.println("echo int is NOT supported");
         TestProtocol3.class.getMethod("echo_alias", int.class));
     assertFalse(intEchoHash == intEchoHashAlias);
     
-    // Make sure that methods with the same returninig type and method name but
+    // Make sure that methods with the same returning type and method name but
     // larger number of parameter types have different hash code
     int intEchoHash2 = ProtocolSignature.getFingerprint(
         TestProtocol3.class.getMethod("echo", int.class, int.class));
@@ -310,9 +311,13 @@ System.out.println("echo int is NOT supported");
     try {
       proxy.echo(21);
       fail("The call must throw VersionMismatch exception");
-    } catch (IOException ex) {
-      Assert.assertTrue("Expected version mismatch but got " + ex.getMessage(), 
-          ex.getMessage().contains("VersionMismatch"));
+    } catch (RemoteException ex) {
+      Assert.assertEquals(RPC.VersionMismatch.class.getName(), 
+          ex.getClassName());
+      Assert.assertTrue(ex.getErrorCode().equals(
+          RpcErrorCodeProto.ERROR_RPC_VERSION_MISMATCH));
+    }  catch (IOException ex) {
+      fail("Expected version mismatch but got " + ex);
     }
   }
   

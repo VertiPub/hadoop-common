@@ -20,6 +20,8 @@ package org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.util.Comparator;
@@ -29,7 +31,11 @@ import junit.framework.Assert;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.conf.Configurable;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.net.NetworkTopology;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
+import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.QueueInfo;
 import org.apache.hadoop.yarn.api.records.QueueUserACLInfo;
@@ -37,12 +43,12 @@ import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.api.records.ResourceRequest;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.AsyncDispatcher;
+import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.server.resourcemanager.Application;
 import org.apache.hadoop.yarn.server.resourcemanager.MockNodes;
 import org.apache.hadoop.yarn.server.resourcemanager.RMContextImpl;
 import org.apache.hadoop.yarn.server.resourcemanager.ResourceManager;
 import org.apache.hadoop.yarn.server.resourcemanager.Task;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.ResourceScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerApp;
@@ -50,13 +56,12 @@ import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.NodeAddedSc
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.NodeRemovedSchedulerEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.security.ClientToAMTokenSecretManagerInRM;
 import org.apache.hadoop.yarn.server.resourcemanager.security.RMContainerTokenSecretManager;
-import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
+import org.apache.hadoop.yarn.server.resourcemanager.security.NMTokenSecretManagerInRM;
+import org.apache.hadoop.yarn.util.resource.Resources;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
-import static org.mockito.Mockito.*;
 
 
 public class TestCapacityScheduler {
@@ -97,11 +102,44 @@ public class TestCapacityScheduler {
   public void tearDown() throws Exception {
     resourceManager.stop();
   }
-  
+
+
+  @Test (timeout = 30000)
+  public void testConfValidation() throws Exception {
+    ResourceScheduler scheduler = new CapacityScheduler();
+    Configuration conf = new YarnConfiguration();
+    conf.setInt(YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_MB, 2048);
+    conf.setInt(YarnConfiguration.RM_SCHEDULER_MAXIMUM_ALLOCATION_MB, 1024);
+    try {
+      scheduler.reinitialize(conf, null);
+      fail("Exception is expected because the min memory allocation is" +
+        " larger than the max memory allocation.");
+    } catch (YarnRuntimeException e) {
+      // Exception is expected.
+      assertTrue("The thrown exception is not the expected one.",
+        e.getMessage().startsWith(
+          "Invalid resource scheduler memory"));
+    }
+
+    conf = new YarnConfiguration();
+    conf.setInt(YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_VCORES, 2);
+    conf.setInt(YarnConfiguration.RM_SCHEDULER_MAXIMUM_ALLOCATION_VCORES, 1);
+    try {
+      scheduler.reinitialize(conf, null);
+      fail("Exception is expected because the min vcores allocation is" +
+        " larger than the max vcores allocation.");
+    } catch (YarnRuntimeException e) {
+      // Exception is expected.
+      assertTrue("The thrown exception is not the expected one.",
+        e.getMessage().startsWith(
+          "Invalid resource scheduler vcores"));
+    }
+  }
+
   private org.apache.hadoop.yarn.server.resourcemanager.NodeManager
       registerNode(String hostName, int containerManagerPort, int httpPort,
           String rackName, Resource capability)
-          throws IOException {
+          throws IOException, YarnException {
     return new org.apache.hadoop.yarn.server.resourcemanager.NodeManager(
         hostName, containerManagerPort, httpPort, rackName, capability,
         resourceManager.getResourceTrackerService(), resourceManager
@@ -272,6 +310,7 @@ public class TestCapacityScheduler {
     cs.setConf(new YarnConfiguration());
     cs.reinitialize(conf, new RMContextImpl(null, null, null, null, null,
       null, new RMContainerTokenSecretManager(conf),
+      new NMTokenSecretManagerInRM(conf),
       new ClientToAMTokenSecretManagerInRM()));
     checkQueueCapacities(cs, A_CAPACITY, B_CAPACITY);
 
@@ -370,6 +409,7 @@ public class TestCapacityScheduler {
 
     cs.reinitialize(conf, new RMContextImpl(null, null, null, null, null,
       null, new RMContainerTokenSecretManager(conf),
+      new NMTokenSecretManagerInRM(conf),
       new ClientToAMTokenSecretManagerInRM()));
   }
 
@@ -382,6 +422,7 @@ public class TestCapacityScheduler {
     cs.setConf(new YarnConfiguration());
     cs.reinitialize(csConf, new RMContextImpl(null, null, null, null,
       null, null, new RMContainerTokenSecretManager(csConf),
+      new NMTokenSecretManagerInRM(csConf),
       new ClientToAMTokenSecretManagerInRM()));
 
     RMNode n1 = MockNodes.newNodeInfo(0, MockNodes.newResource(4 * GB), 1);
@@ -408,6 +449,7 @@ public class TestCapacityScheduler {
     cs.setConf(new YarnConfiguration());
     cs.reinitialize(conf, new RMContextImpl(null, null, null, null, null,
       null, new RMContainerTokenSecretManager(conf),
+      new NMTokenSecretManagerInRM(conf),
       new ClientToAMTokenSecretManagerInRM()));
     checkQueueCapacities(cs, A_CAPACITY, B_CAPACITY);
 
@@ -467,15 +509,9 @@ public class TestCapacityScheduler {
     {
       CapacityScheduler cs = new CapacityScheduler();
       Comparator<FiCaSchedulerApp> appComparator= cs.getApplicationComparator();
-      ApplicationId id1 = RecordFactoryProvider.getRecordFactory(null).newRecordInstance(ApplicationId.class);
-      id1.setClusterTimestamp(1);
-      id1.setId(1);
-      ApplicationId id2 = RecordFactoryProvider.getRecordFactory(null).newRecordInstance(ApplicationId.class);
-      id2.setClusterTimestamp(1);
-      id2.setId(2);
-      ApplicationId id3 = RecordFactoryProvider.getRecordFactory(null).newRecordInstance(ApplicationId.class);
-      id3.setClusterTimestamp(2);
-      id3.setId(1);
+      ApplicationId id1 = ApplicationId.newInstance(1, 1);
+      ApplicationId id2 = ApplicationId.newInstance(1, 2);
+      ApplicationId id3 = ApplicationId.newInstance(2, 1);
       //same clusterId
       FiCaSchedulerApp app1 = Mockito.mock(FiCaSchedulerApp.class);
       when(app1.getApplicationId()).thenReturn(id1);

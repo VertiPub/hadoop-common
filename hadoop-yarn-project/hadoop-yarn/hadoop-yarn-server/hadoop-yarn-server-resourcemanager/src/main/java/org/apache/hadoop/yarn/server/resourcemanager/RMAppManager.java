@@ -31,8 +31,11 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
+import org.apache.hadoop.yarn.api.records.ResourceRequest;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.EventHandler;
+import org.apache.hadoop.yarn.exceptions.InvalidResourceRequestException;
+import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.ipc.RPCUtil;
 import org.apache.hadoop.yarn.server.resourcemanager.RMAuditLogger.AuditConstants;
 import org.apache.hadoop.yarn.server.resourcemanager.recovery.RMStateStore;
@@ -45,8 +48,11 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMAppEventType;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMAppImpl;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMAppRejectedEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttempt;
+import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttemptImpl;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerUtils;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.YarnScheduler;
 import org.apache.hadoop.yarn.server.security.ApplicationACLsManager;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
 
 /**
  * This class manages the list of applications for the resource manager. 
@@ -233,71 +239,83 @@ public class RMAppManager implements EventHandler<RMAppManagerEvent>,
   @SuppressWarnings("unchecked")
   protected void submitApplication(
       ApplicationSubmissionContext submissionContext, long submitTime,
-      boolean isRecovered) {
+      boolean isRecovered, String user) throws YarnException {
     ApplicationId applicationId = submissionContext.getApplicationId();
-    RMApp application = null;
+
+    // Validation of the ApplicationSubmissionContext needs to be completed
+    // here. Only those fields that are dependent on RM's configuration are
+    // checked here as they have to be validated whether they are part of new
+    // submission or just being recovered.
+
+    // Check whether AM resource requirements are within required limits
+    if (!submissionContext.getUnmanagedAM()) {
+      ResourceRequest amReq = BuilderUtils.newResourceRequest(
+          RMAppAttemptImpl.AM_CONTAINER_PRIORITY, ResourceRequest.ANY,
+          submissionContext.getResource(), 1);
+      try {
+        SchedulerUtils.validateResourceRequest(amReq,
+            scheduler.getMaximumResourceCapability());
+      } catch (InvalidResourceRequestException e) {
+        LOG.warn("RM app submission failed in validating AM resource request"
+            + " for application " + applicationId, e);
+        throw e;
+      }
+    }
+
+    // Create RMApp
+    RMApp application =
+        new RMAppImpl(applicationId, rmContext, this.conf,
+            submissionContext.getApplicationName(), user,
+            submissionContext.getQueue(),
+            submissionContext, this.scheduler, this.masterService,
+            submitTime, submissionContext.getApplicationType());
+
+    // Concurrent app submissions with same applicationId will fail here
+    // Concurrent app submissions with different applicationIds will not
+    // influence each other
+    if (rmContext.getRMApps().putIfAbsent(applicationId, application) !=
+        null) {
+      String message = "Application with id " + applicationId
+          + " is already present! Cannot add a duplicate!";
+      LOG.warn(message);
+      throw RPCUtil.getRemoteException(message);
+    }
+
+    // Inform the ACLs Manager
+    this.applicationACLsManager.addApplication(applicationId,
+        submissionContext.getAMContainerSpec().getApplicationACLs());
+
     try {
-
-      // Sanity checks
-      if (submissionContext.getQueue() == null) {
-        submissionContext.setQueue(YarnConfiguration.DEFAULT_QUEUE_NAME);
-      }
-      if (submissionContext.getApplicationName() == null) {
-        submissionContext.setApplicationName(
-            YarnConfiguration.DEFAULT_APPLICATION_NAME);
-      }
-
-      // Create RMApp
-      application =
-          new RMAppImpl(applicationId, rmContext, this.conf,
-              submissionContext.getApplicationName(),
-              submissionContext.getAMContainerSpec().getUser(),
-              submissionContext.getQueue(),
-              submissionContext, this.scheduler, this.masterService,
-              submitTime);
-
-      // Sanity check - duplicate?
-      if (rmContext.getRMApps().putIfAbsent(applicationId, application) != 
-          null) {
-        String message = "Application with id " + applicationId
-            + " is already present! Cannot add a duplicate!";
-        LOG.info(message);
-        throw RPCUtil.getRemoteException(message);
-      } 
-
-      // Inform the ACLs Manager
-      this.applicationACLsManager.addApplication(applicationId,
-          submissionContext.getAMContainerSpec().getApplicationACLs());
-
       // Setup tokens for renewal
       if (UserGroupInformation.isSecurityEnabled()) {
         this.rmContext.getDelegationTokenRenewer().addApplication(
             applicationId,parseCredentials(submissionContext),
             submissionContext.getCancelTokensWhenComplete()
             );
-      }      
-      
-      // All done, start the RMApp
-      this.rmContext.getDispatcher().getEventHandler().handle(
-          new RMAppEvent(applicationId, isRecovered ? RMAppEventType.RECOVER:
-            RMAppEventType.START));
+      }
     } catch (IOException ie) {
-        LOG.info("RMAppManager submit application exception", ie);
-        if (application != null) {
-          // Sending APP_REJECTED is fine, since we assume that the 
-          // RMApp is in NEW state and thus we havne't yet informed the 
-          // Scheduler about the existence of the application
-          this.rmContext.getDispatcher().getEventHandler().handle(
-              new RMAppRejectedEvent(applicationId, ie.getMessage()));
-        }
+      LOG.warn(
+          "Unable to add the application to the delegation token renewer.",
+          ie);
+      // Sending APP_REJECTED is fine, since we assume that the
+      // RMApp is in NEW state and thus we havne't yet informed the
+      // Scheduler about the existence of the application
+      this.rmContext.getDispatcher().getEventHandler().handle(
+          new RMAppRejectedEvent(applicationId, ie.getMessage()));
+      throw RPCUtil.getRemoteException(ie);
     }
+
+    // All done, start the RMApp
+    this.rmContext.getDispatcher().getEventHandler().handle(
+        new RMAppEvent(applicationId, isRecovered ? RMAppEventType.RECOVER:
+            RMAppEventType.START));
   }
   
   private Credentials parseCredentials(ApplicationSubmissionContext application) 
       throws IOException {
     Credentials credentials = new Credentials();
     DataInputByteBuffer dibb = new DataInputByteBuffer();
-    ByteBuffer tokens = application.getAMContainerSpec().getContainerTokens();
+    ByteBuffer tokens = application.getAMContainerSpec().getTokens();
     if (tokens != null) {
       dibb.reset(tokens);
       credentials.readTokenStorageStream(dibb);
@@ -315,10 +333,6 @@ public class RMAppManager implements EventHandler<RMAppManagerEvent>,
     LOG.info("Recovering " + appStates.size() + " applications");
     for(ApplicationState appState : appStates.values()) {
       boolean shouldRecover = true;
-      // re-submit the application
-      // this is going to send an app start event but since the async dispatcher 
-      // has not started that event will be queued until we have completed re
-      // populating the state
       if(appState.getApplicationSubmissionContext().getUnmanagedAM()) {
         // do not recover unmanaged applications since current recovery 
         // mechanism of restarting attempts does not work for them.
@@ -348,10 +362,14 @@ public class RMAppManager implements EventHandler<RMAppManagerEvent>,
         shouldRecover = false;
       }
 
+      // re-submit the application
+      // this is going to send an app start event but since the async dispatcher
+      // has not started that event will be queued until we have completed re
+      // populating the state
       if(shouldRecover) {
         LOG.info("Recovering application " + appState.getAppId());
         submitApplication(appState.getApplicationSubmissionContext(), 
-                        appState.getSubmitTime(), true);
+                        appState.getSubmitTime(), true, appState.getUser());
         // re-populate attempt information in application
         RMAppImpl appImpl = (RMAppImpl) rmContext.getRMApps().get(
                                                         appState.getAppId());
@@ -376,14 +394,6 @@ public class RMAppManager implements EventHandler<RMAppManagerEvent>,
             rmContext.getRMApps().get(applicationId));
         checkAppNumCompletedLimit(); 
       } 
-      break;
-      case APP_SUBMIT:
-      {
-        ApplicationSubmissionContext submissionContext = 
-            ((RMAppManagerSubmitEvent)event).getSubmissionContext();
-        long submitTime = ((RMAppManagerSubmitEvent)event).getSubmitTime();
-        submitApplication(submissionContext, submitTime, false);
-      }
       break;
       default:
         LOG.error("Invalid eventtype " + event.getType() + ". Ignoring!");

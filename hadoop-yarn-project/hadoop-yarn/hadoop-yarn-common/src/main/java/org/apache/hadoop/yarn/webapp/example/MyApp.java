@@ -20,6 +20,7 @@ package org.apache.hadoop.yarn.webapp.example;
 
 import com.google.inject.Inject;
 
+import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.yarn.webapp.Controller;
 import org.apache.hadoop.yarn.webapp.WebApps;
 import org.apache.hadoop.yarn.webapp.view.HtmlPage;
@@ -29,10 +30,11 @@ import org.apache.hadoop.yarn.webapp.view.HtmlPage;
  * <br>http://localhost:8888/my and
  * <br>http://localhost:8888/my/anythingYouWant
  */
+@InterfaceAudience.LimitedPrivate({"YARN", "MapReduce"})
 public class MyApp {
 
   // This is an app API
-  public String anyAPI() { return "anything ☁, really!"; }
+  public String anyAPI() { return "anything, really!"; }
 
   // Note this is static so it can be in any files.
   public static class MyController extends Controller {
@@ -46,7 +48,7 @@ public class MyApp {
 
     @Override
     public void index() {
-      set("anything", "something ☯");
+      set("anything", "something");
     }
 
     public void anythingYouWant() {

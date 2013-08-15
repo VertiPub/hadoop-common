@@ -30,6 +30,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DFSUtil;
 import org.apache.hadoop.hdfs.server.common.JspHelper;
+import org.apache.hadoop.hdfs.server.namenode.startupprogress.StartupProgress;
 import org.apache.hadoop.hdfs.server.namenode.web.resources.NamenodeWebHdfsMethods;
 import org.apache.hadoop.hdfs.web.AuthFilter;
 import org.apache.hadoop.hdfs.web.WebHdfsFileSystem;
@@ -55,6 +56,7 @@ public class NameNodeHttpServer {
   public static final String NAMENODE_ADDRESS_ATTRIBUTE_KEY = "name.node.address";
   public static final String FSIMAGE_ATTRIBUTE_KEY = "name.system.image";
   protected static final String NAMENODE_ATTRIBUTE_KEY = "name.node";
+  public static final String STARTUP_PROGRESS_ATTRIBUTE_KEY = "startup.progress";
   
   public NameNodeHttpServer(
       Configuration conf,
@@ -128,27 +130,24 @@ public class NameNodeHttpServer {
       }
     };
 
-    boolean certSSL = conf.getBoolean("dfs.https.enable", false);
+    boolean certSSL = conf.getBoolean(DFSConfigKeys.DFS_HTTPS_ENABLE_KEY, false);
     if (certSSL) {
       boolean needClientAuth = conf.getBoolean("dfs.https.need.client.auth", false);
       InetSocketAddress secInfoSocAddr = NetUtils.createSocketAddr(infoHost + ":" + conf.get(
-        "dfs.https.port", infoHost + ":" + 0));
+        DFSConfigKeys.DFS_NAMENODE_HTTPS_PORT_KEY, infoHost + ":" + 0));
       Configuration sslConf = new Configuration(false);
       if (certSSL) {
-        sslConf.addResource(conf.get("dfs.https.server.keystore.resource",
+        sslConf.addResource(conf.get(DFSConfigKeys.DFS_SERVER_HTTPS_KEYSTORE_RESOURCE_KEY,
                                      "ssl-server.xml"));
       }
       httpServer.addSslListener(secInfoSocAddr, sslConf, needClientAuth);
       // assume same ssl port for all datanodes
       InetSocketAddress datanodeSslPort = NetUtils.createSocketAddr(conf.get(
-        "dfs.datanode.https.address", infoHost + ":" + 50475));
-      httpServer.setAttribute("datanode.https.port", datanodeSslPort
+        DFSConfigKeys.DFS_DATANODE_HTTPS_ADDRESS_KEY, infoHost + ":" + 50475));
+      httpServer.setAttribute(DFSConfigKeys.DFS_DATANODE_HTTPS_PORT_KEY, datanodeSslPort
         .getPort());
     }
     httpServer.setAttribute(NAMENODE_ATTRIBUTE_KEY, nn);
-    httpServer.setAttribute(NAMENODE_ADDRESS_ATTRIBUTE_KEY,
-        NetUtils.getConnectAddress(nn.getNameNodeAddress()));
-    httpServer.setAttribute(FSIMAGE_ATTRIBUTE_KEY, nn.getFSImage());
     httpServer.setAttribute(JspHelper.CURRENT_CONF, conf);
     setupServlets(httpServer, conf);
     httpServer.start();
@@ -166,7 +165,37 @@ public class NameNodeHttpServer {
     return httpAddress;
   }
 
+  /**
+   * Sets fsimage for use by servlets.
+   * 
+   * @param fsImage FSImage to set
+   */
+  public void setFSImage(FSImage fsImage) {
+    httpServer.setAttribute(FSIMAGE_ATTRIBUTE_KEY, fsImage);
+  }
+
+  /**
+   * Sets address of namenode for use by servlets.
+   * 
+   * @param nameNodeAddress InetSocketAddress to set
+   */
+  public void setNameNodeAddress(InetSocketAddress nameNodeAddress) {
+    httpServer.setAttribute(NAMENODE_ADDRESS_ATTRIBUTE_KEY,
+        NetUtils.getConnectAddress(nameNodeAddress));
+  }
+
+  /**
+   * Sets startup progress of namenode for use by servlets.
+   * 
+   * @param prog StartupProgress to set
+   */
+  public void setStartupProgress(StartupProgress prog) {
+    httpServer.setAttribute(STARTUP_PROGRESS_ATTRIBUTE_KEY, prog);
+  }
+
   private static void setupServlets(HttpServer httpServer, Configuration conf) {
+    httpServer.addInternalServlet("startupProgress",
+        StartupProgressServlet.PATH_SPEC, StartupProgressServlet.class);
     httpServer.addInternalServlet("getDelegationToken",
         GetDelegationTokenServlet.PATH_SPEC, 
         GetDelegationTokenServlet.class, true);
@@ -206,5 +235,16 @@ public class NameNodeHttpServer {
       ServletContext context) {
     return (InetSocketAddress)context.getAttribute(
         NAMENODE_ADDRESS_ATTRIBUTE_KEY);
+  }
+
+  /**
+   * Returns StartupProgress associated with ServletContext.
+   * 
+   * @param context ServletContext to get
+   * @return StartupProgress associated with context
+   */
+  public static StartupProgress getStartupProgressFromContext(
+      ServletContext context) {
+    return (StartupProgress)context.getAttribute(STARTUP_PROGRESS_ATTRIBUTE_KEY);
   }
 }

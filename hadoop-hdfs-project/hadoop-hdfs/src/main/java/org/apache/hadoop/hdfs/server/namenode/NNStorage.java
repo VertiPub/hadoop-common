@@ -34,6 +34,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.hdfs.DFSUtil;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.apache.hadoop.hdfs.protocol.LayoutVersion;
@@ -75,7 +76,8 @@ public class NNStorage extends Storage implements Closeable,
     EDITS     ("edits"),
     IMAGE_NEW ("fsimage.ckpt"),
     EDITS_NEW ("edits.new"), // from "old" pre-HDFS-1073 format
-    EDITS_INPROGRESS ("edits_inprogress");
+    EDITS_INPROGRESS ("edits_inprogress"),
+    EDITS_TMP ("edits_tmp");
 
     private String fileName = null;
     private NameNodeFile(String name) { this.fileName = name; }
@@ -230,8 +232,8 @@ public class NNStorage extends Storage implements Closeable,
         File root = sd.getRoot();
         LOG.info("currently disabled dir " + root.getAbsolutePath() +
                  "; type="+sd.getStorageDirType() 
-                 + ";canwrite="+root.canWrite());
-        if(root.exists() && root.canWrite()) {
+                 + ";canwrite="+FileUtil.canWrite(root));
+        if(root.exists() && FileUtil.canWrite(root)) {
           LOG.info("restoring dir " + sd.getRoot().getAbsolutePath());
           this.addStorageDir(sd); // restore
           this.removedStorageDirs.remove(sd);
@@ -505,7 +507,7 @@ public class NNStorage extends Storage implements Closeable,
       dirIterator(NameNodeDirType.IMAGE); it.hasNext();) {
       sd = it.next();
       File fsImage = getStorageFile(sd, NameNodeFile.IMAGE, txid);
-      if(sd.getRoot().canRead() && fsImage.exists())
+      if(FileUtil.canRead(sd.getRoot()) && fsImage.exists())
         return fsImage;
     }
     return null;
@@ -679,6 +681,12 @@ public class NNStorage extends Storage implements Closeable,
     return new File(sd.getCurrentDir(),
         getFinalizedEditsFileName(startTxId, endTxId));
   }
+
+  static File getTemporaryEditsFile(StorageDirectory sd,
+      long startTxId, long endTxId, long timestamp) {
+    return new File(sd.getCurrentDir(),
+        getTemporaryEditsFileName(startTxId, endTxId, timestamp));
+  }
   
   static File getImageFile(StorageDirectory sd, long txid) {
     return new File(sd.getCurrentDir(),
@@ -689,6 +697,12 @@ public class NNStorage extends Storage implements Closeable,
   public static String getFinalizedEditsFileName(long startTxId, long endTxId) {
     return String.format("%s_%019d-%019d", NameNodeFile.EDITS.getName(),
                          startTxId, endTxId);
+  }
+
+  public static String getTemporaryEditsFileName(long startTxId, long endTxId,
+      long timestamp) {
+    return String.format("%s_%019d-%019d_%019d", NameNodeFile.EDITS_TMP.getName(),
+                         startTxId, endTxId, timestamp);
   }
   
   /**
@@ -722,7 +736,7 @@ public class NNStorage extends Storage implements Closeable,
   private File findFile(NameNodeDirType dirType, String name) {
     for (StorageDirectory sd : dirIterable(dirType)) {
       File candidate = new File(sd.getCurrentDir(), name);
-      if (sd.getCurrentDir().canRead() &&
+      if (FileUtil.canRead(sd.getCurrentDir()) &&
           candidate.exists()) {
         return candidate;
       }
@@ -828,8 +842,8 @@ public class NNStorage extends Storage implements Closeable,
     String absPath = f.getAbsolutePath();
     for (StorageDirectory sd : storageDirs) {
       String dirPath = sd.getRoot().getAbsolutePath();
-      if (!dirPath.endsWith("/")) {
-        dirPath += "/";
+      if (!dirPath.endsWith(File.separator)) {
+        dirPath += File.separator;
       }
       if (absPath.startsWith(dirPath)) {
         reportErrorsOnDirectory(sd);

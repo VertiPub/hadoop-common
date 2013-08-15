@@ -23,6 +23,8 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.hadoop.classification.InterfaceAudience.Private;
+import org.apache.hadoop.classification.InterfaceStability.Unstable;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authorize.AccessControlList;
 import org.apache.hadoop.yarn.api.records.Priority;
@@ -32,14 +34,17 @@ import org.apache.hadoop.yarn.api.records.QueueState;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
+import org.apache.hadoop.yarn.server.resourcemanager.resource.ResourceWeights;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.Queue;
-import org.apache.hadoop.yarn.server.resourcemanager.scheduler.QueueMetrics;
+import org.apache.hadoop.yarn.util.resource.Resources;
 
+@Private
+@Unstable
 public abstract class FSQueue extends Schedulable implements Queue {
   private final String name;
   private final QueueManager queueMgr;
   private final FairScheduler scheduler;
-  private final QueueMetrics metrics;
+  private final FSQueueMetrics metrics;
   
   protected final FSParentQueue parent;
   protected final RecordFactory recordFactory =
@@ -52,7 +57,9 @@ public abstract class FSQueue extends Schedulable implements Queue {
     this.name = name;
     this.queueMgr = queueMgr;
     this.scheduler = scheduler;
-    this.metrics = QueueMetrics.forQueue(getName(), parent, true, scheduler.getConf());
+    this.metrics = FSQueueMetrics.forQueue(getName(), parent, true, scheduler.getConf());
+    metrics.setMinShare(getMinShare());
+    metrics.setMaxShare(getMaxShare());
     this.parent = parent;
   }
   
@@ -79,13 +86,18 @@ public abstract class FSQueue extends Schedulable implements Queue {
       throws AllocationConfigurationException;
 
   @Override
-  public double getWeight() {
+  public ResourceWeights getWeights() {
     return queueMgr.getQueueWeight(getName());
   }
   
   @Override
   public Resource getMinShare() {
     return queueMgr.getMinResources(getName());
+  }
+  
+  @Override
+  public Resource getMaxShare() {
+    return queueMgr.getMaxResources(getName());
   }
 
   @Override
@@ -130,8 +142,14 @@ public abstract class FSQueue extends Schedulable implements Queue {
   }
   
   @Override
-  public QueueMetrics getMetrics() {
+  public FSQueueMetrics getMetrics() {
     return metrics;
+  }
+  
+  @Override
+  public void setFairShare(Resource fairShare) {
+    super.setFairShare(fairShare);
+    metrics.setFairShare(fairShare);
   }
   
   public boolean hasAccess(QueueACL acl, UserGroupInformation user) {
@@ -161,7 +179,7 @@ public abstract class FSQueue extends Schedulable implements Queue {
    * @return true if check passes (can assign) or false otherwise
    */
   protected boolean assignContainerPreCheck(FSSchedulerNode node) {
-    if (Resources.greaterThan(getResourceUsage(),
+    if (!Resources.fitsIn(getResourceUsage(),
         queueMgr.getMaxResources(getName()))
         || node.getReservedContainer() != null) {
       return false;

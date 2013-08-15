@@ -53,6 +53,7 @@ import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.io.MultipleIOException;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.net.NetUtils;
+import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
@@ -119,6 +120,7 @@ public abstract class FileSystem extends Configured implements Closeable {
    */
   private Set<Path> deleteOnExit = new TreeSet<Path>();
   
+  boolean resolveSymlinks;
   /**
    * This method adds a file system for testing so that we can find it later. It
    * is only for testing.
@@ -195,6 +197,9 @@ public abstract class FileSystem extends Configured implements Closeable {
    */
   public void initialize(URI name, Configuration conf) throws IOException {
     statistics = getStatistics(name.getScheme(), getClass());    
+    resolveSymlinks = conf.getBoolean(
+        CommonConfigurationKeys.FS_CLIENT_RESOLVE_REMOTE_SYMLINKS_KEY,
+        CommonConfigurationKeys.FS_CLIENT_RESOLVE_REMOTE_SYMLINKS_DEFAULT);
   }
 
   /**
@@ -260,6 +265,16 @@ public abstract class FileSystem extends Configured implements Closeable {
    */
   protected int getDefaultPort() {
     return 0;
+  }
+
+  protected static FileSystem getFSofPath(final Path absOrFqPath,
+      final Configuration conf)
+      throws UnsupportedFileSystemException, IOException {
+    absOrFqPath.checkNotSchemeWithRelative();
+    absOrFqPath.checkNotRelative();
+
+    // Uses the default file system if not fully qualified
+    return get(absOrFqPath.toUri(), conf);
   }
 
   /**
@@ -811,7 +826,9 @@ public abstract class FileSystem extends Configured implements Closeable {
   public FSDataOutputStream create(Path f, short replication, 
       Progressable progress) throws IOException {
     return create(f, true, 
-                  getConf().getInt("io.file.buffer.size", 4096),
+                  getConf().getInt(
+                      CommonConfigurationKeysPublic.IO_FILE_BUFFER_SIZE_KEY,
+                      CommonConfigurationKeysPublic.IO_FILE_BUFFER_SIZE_DEFAULT),
                   replication,
                   getDefaultBlockSize(f), progress);
   }
@@ -1243,7 +1260,7 @@ public abstract class FileSystem extends Configured implements Closeable {
   protected void rename(final Path src, final Path dst,
       final Rename... options) throws IOException {
     // Default implementation
-    final FileStatus srcStatus = getFileStatus(src);
+    final FileStatus srcStatus = getFileLinkStatus(src);
     if (srcStatus == null) {
       throw new FileNotFoundException("rename source " + src + " not found.");
     }
@@ -1259,7 +1276,7 @@ public abstract class FileSystem extends Configured implements Closeable {
 
     FileStatus dstStatus;
     try {
-      dstStatus = getFileStatus(dst);
+      dstStatus = getFileLinkStatus(dst);
     } catch (IOException e) {
       dstStatus = null;
     }
@@ -1602,7 +1619,7 @@ public abstract class FileSystem extends Configured implements Closeable {
    * @throws IOException
    */
   public FileStatus[] globStatus(Path pathPattern) throws IOException {
-    return globStatus(pathPattern, DEFAULT_FILTER);
+    return new Globber(this, pathPattern, DEFAULT_FILTER).glob();
   }
   
   /**
@@ -1620,126 +1637,7 @@ public abstract class FileSystem extends Configured implements Closeable {
    */
   public FileStatus[] globStatus(Path pathPattern, PathFilter filter)
       throws IOException {
-    String filename = pathPattern.toUri().getPath();
-    List<FileStatus> allMatches = null;
-    
-    List<String> filePatterns = GlobExpander.expand(filename);
-    for (String filePattern : filePatterns) {
-      Path path = new Path(filePattern.isEmpty() ? Path.CUR_DIR : filePattern);
-      List<FileStatus> matches = globStatusInternal(path, filter);
-      if (matches != null) {
-        if (allMatches == null) {
-          allMatches = matches;
-        } else {
-          allMatches.addAll(matches);
-        }
-      }
-    }
-    
-    FileStatus[] results = null;
-    if (allMatches != null) {
-      results = allMatches.toArray(new FileStatus[allMatches.size()]);
-    } else if (filePatterns.size() > 1) {
-      // no matches with multiple expansions is a non-matching glob 
-      results = new FileStatus[0];
-    }
-    return results;
-  }
-
-  // sort gripes because FileStatus Comparable isn't parameterized...
-  @SuppressWarnings("unchecked") 
-  private List<FileStatus> globStatusInternal(Path pathPattern,
-      PathFilter filter) throws IOException {
-    boolean patternHasGlob = false;       // pathPattern has any globs
-    List<FileStatus> matches = new ArrayList<FileStatus>();
-
-    // determine starting point
-    int level = 0;
-    String baseDir = Path.CUR_DIR;
-    if (pathPattern.isAbsolute()) {
-      level = 1; // need to skip empty item at beginning of split list
-      baseDir = Path.SEPARATOR;
-    }
-    
-    // parse components and determine if it's a glob
-    String[] components = null;
-    GlobFilter[] filters = null;
-    String filename = pathPattern.toUri().getPath();
-    if (!filename.isEmpty() && !Path.SEPARATOR.equals(filename)) {
-      components = filename.split(Path.SEPARATOR);
-      filters = new GlobFilter[components.length];
-      for (int i=level; i < components.length; i++) {
-        filters[i] = new GlobFilter(components[i]);
-        patternHasGlob |= filters[i].hasPattern();
-      }
-      if (!patternHasGlob) {
-        baseDir = unquotePathComponent(filename);
-        components = null; // short through to filter check
-      }
-    }
-    
-    // seed the parent directory path, return if it doesn't exist
-    try {
-      matches.add(getFileStatus(new Path(baseDir)));
-    } catch (FileNotFoundException e) {
-      return patternHasGlob ? matches : null;
-    }
-    
-    // skip if there are no components other than the basedir
-    if (components != null) {
-      // iterate through each path component
-      for (int i=level; (i < components.length) && !matches.isEmpty(); i++) {
-        List<FileStatus> children = new ArrayList<FileStatus>();
-        for (FileStatus match : matches) {
-          // don't look for children in a file matched by a glob
-          if (!match.isDirectory()) {
-            continue;
-          }
-          try {
-            if (filters[i].hasPattern()) {
-              // get all children matching the filter
-              FileStatus[] statuses = listStatus(match.getPath(), filters[i]);
-              children.addAll(Arrays.asList(statuses));
-            } else {
-              // the component does not have a pattern
-              String component = unquotePathComponent(components[i]);
-              Path child = new Path(match.getPath(), component);
-              children.add(getFileStatus(child));
-            }
-          } catch (FileNotFoundException e) {
-            // don't care
-          }
-        }
-        matches = children;
-      }
-    }
-    // remove anything that didn't match the filter
-    if (!matches.isEmpty()) {
-      Iterator<FileStatus> iter = matches.iterator();
-      while (iter.hasNext()) {
-        if (!filter.accept(iter.next().getPath())) {
-          iter.remove();
-        }
-      }
-    }
-    // no final paths, if there were any globs return empty list
-    if (matches.isEmpty()) {
-      return patternHasGlob ? matches : null;
-    }
-    Collections.sort(matches);
-    return matches;
-  }
-
-  /**
-   * The glob filter builds a regexp per path component.  If the component
-   * does not contain a shell metachar, then it falls back to appending the
-   * raw string to the list of built up paths.  This raw path needs to have
-   * the quoting removed.  Ie. convert all occurances of "\X" to "X"
-   * @param name of the path component
-   * @return the unquoted path component
-   */
-  private String unquotePathComponent(String name) {
-    return name.replaceAll("\\\\(.)", "$1");
+    return new Globber(this, pathPattern, filter).glob();
   }
   
   /**
@@ -2174,6 +2072,65 @@ public abstract class FileSystem extends Configured implements Closeable {
   public abstract FileStatus getFileStatus(Path f) throws IOException;
 
   /**
+   * See {@link FileContext#fixRelativePart}
+   */
+  protected Path fixRelativePart(Path p) {
+    if (p.isUriPathAbsolute()) {
+      return p;
+    } else {
+      return new Path(getWorkingDirectory(), p);
+    }
+  }
+
+  /**
+   * See {@link FileContext#createSymlink(Path, Path, boolean)}
+   */
+  public void createSymlink(final Path target, final Path link,
+      final boolean createParent) throws AccessControlException,
+      FileAlreadyExistsException, FileNotFoundException,
+      ParentNotDirectoryException, UnsupportedFileSystemException, 
+      IOException {
+    // Supporting filesystems should override this method
+    throw new UnsupportedOperationException(
+        "Filesystem does not support symlinks!");
+  }
+
+  /**
+   * See {@link FileContext#getFileLinkStatus(Path)}
+   */
+  public FileStatus getFileLinkStatus(final Path f)
+      throws AccessControlException, FileNotFoundException,
+      UnsupportedFileSystemException, IOException {
+    // Supporting filesystems should override this method
+    return getFileStatus(f);
+  }
+
+  /**
+   * See {@link AbstractFileSystem#supportsSymlinks()}
+   */
+  public boolean supportsSymlinks() {
+    return false;
+  }
+
+  /**
+   * See {@link FileContext#getLinkTarget(Path)}
+   */
+  public Path getLinkTarget(Path f) throws IOException {
+    // Supporting filesystems should override this method
+    throw new UnsupportedOperationException(
+        "Filesystem does not support symlinks!");
+  }
+
+  /**
+   * See {@link AbstractFileSystem#getLinkTarget(Path)}
+   */
+  protected Path resolveLink(Path f) throws IOException {
+    // Supporting filesystems should override this method
+    throw new UnsupportedOperationException(
+        "Filesystem does not support symlinks!");
+  }
+
+  /**
    * Get the checksum of a file.
    *
    * @param f The file path
@@ -2265,6 +2222,51 @@ public abstract class FileSystem extends Configured implements Closeable {
       ) throws IOException {
   }
 
+  /**
+   * Create a snapshot with a default name.
+   * @param path The directory where snapshots will be taken.
+   * @return the snapshot path.
+   */
+  public final Path createSnapshot(Path path) throws IOException {
+    return createSnapshot(path, null);
+  }
+
+  /**
+   * Create a snapshot
+   * @param path The directory where snapshots will be taken.
+   * @param snapshotName The name of the snapshot
+   * @return the snapshot path.
+   */
+  public Path createSnapshot(Path path, String snapshotName)
+      throws IOException {
+    throw new UnsupportedOperationException(getClass().getSimpleName()
+        + " doesn't support createSnapshot");
+  }
+  
+  /**
+   * Rename a snapshot
+   * @param path The directory path where the snapshot was taken
+   * @param snapshotOldName Old name of the snapshot
+   * @param snapshotNewName New name of the snapshot
+   * @throws IOException
+   */
+  public void renameSnapshot(Path path, String snapshotOldName,
+      String snapshotNewName) throws IOException {
+    throw new UnsupportedOperationException(getClass().getSimpleName()
+        + " doesn't support renameSnapshot");
+  }
+  
+  /**
+   * Delete a snapshot of a directory
+   * @param path  The directory that the to-be-deleted snapshot belongs to
+   * @param snapshotName The name of the snapshot
+   */
+  public void deleteSnapshot(Path path, String snapshotName)
+      throws IOException {
+    throw new UnsupportedOperationException(getClass().getSimpleName()
+        + " doesn't support deleteSnapshot");
+  }
+  
   // making it volatile to be able to do a double checked locking
   private volatile static boolean FILE_SYSTEMS_LOADED = false;
 
@@ -2351,7 +2353,8 @@ public abstract class FileSystem extends Configured implements Closeable {
         }
         
         // now insert the new file system into the map
-        if (map.isEmpty() ) {
+        if (map.isEmpty()
+                && !ShutdownHookManager.get().isShutdownInProgress()) {
           ShutdownHookManager.get().addShutdownHook(clientFinalizer, SHUTDOWN_HOOK_PRIORITY);
         }
         fs.key = key;

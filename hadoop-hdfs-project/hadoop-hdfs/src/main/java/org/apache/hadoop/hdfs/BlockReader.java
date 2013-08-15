@@ -51,19 +51,9 @@ public interface BlockReader extends ByteBufferReadable {
   /**
    * Close the block reader.
    *
-   * @param peerCache      The PeerCache to put the Peer we're using back
-   *                       into, or null if we should simply close the Peer
-   *                       we're using (along with its Socket).
-   *                       Ignored by Readers that don't maintain Peers.
-   * @param fisCache       The FileInputStreamCache to put our FileInputStreams
-   *                       back into, or null if we should simply close them.
-   *                       Ignored by Readers that don't maintain
-   *                       FileInputStreams.
-   *
    * @throws IOException
    */
-  void close(PeerCache peerCache, FileInputStreamCache fisCache)
-      throws IOException;
+  void close() throws IOException;
 
   /**
    * Read exactly the given amount of data, throwing an exception
@@ -80,4 +70,15 @@ public interface BlockReader extends ByteBufferReadable {
    * filled or the next call will return EOF.
    */
   int readAll(byte[] buf, int offset, int len) throws IOException;
+
+  /**
+   * @return              true only if this is a local read.
+   */
+  boolean isLocal();
+  
+  /**
+   * @return              true only if this is a short-circuit read.
+   *                      All short-circuit reads are also local.
+   */
+  boolean isShortCircuit();
 }

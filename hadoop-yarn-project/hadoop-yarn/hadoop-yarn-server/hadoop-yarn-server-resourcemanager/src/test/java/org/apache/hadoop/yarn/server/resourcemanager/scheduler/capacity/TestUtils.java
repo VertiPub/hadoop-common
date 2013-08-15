@@ -41,15 +41,16 @@ import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.server.resourcemanager.RMContext;
 import org.apache.hadoop.yarn.server.resourcemanager.RMContextImpl;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.ContainerAllocationExpirer;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerApp;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerNode;
-import org.apache.hadoop.yarn.server.resourcemanager.security.ApplicationTokenSecretManager;
+import org.apache.hadoop.yarn.server.resourcemanager.security.AMRMTokenSecretManager;
 import org.apache.hadoop.yarn.server.resourcemanager.security.ClientToAMTokenSecretManagerInRM;
 import org.apache.hadoop.yarn.server.resourcemanager.security.RMContainerTokenSecretManager;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
+import org.apache.hadoop.yarn.server.resourcemanager.security.NMTokenSecretManagerInRM;
+import org.apache.hadoop.yarn.util.resource.Resources;
 
 public class TestUtils {
   private static final Log LOG = LogFactory.getLog(TestUtils.class);
@@ -85,8 +86,9 @@ public class TestUtils {
     Configuration conf = new Configuration();
     RMContext rmContext =
         new RMContextImpl(nullDispatcher, cae, null, null, null,
-          new ApplicationTokenSecretManager(conf),
+          new AMRMTokenSecretManager(conf),
           new RMContainerTokenSecretManager(conf),
+          new NMTokenSecretManagerInRM(conf),
           new ClientToAMTokenSecretManagerInRM());
     
     return rmContext;
@@ -115,15 +117,16 @@ public class TestUtils {
   }
   
   public static ResourceRequest createResourceRequest(
-      String hostName, int memory, int numContainers, Priority priority,
-      RecordFactory recordFactory) {
+      String resourceName, int memory, int numContainers, boolean relaxLocality,
+      Priority priority, RecordFactory recordFactory) {
     ResourceRequest request = 
         recordFactory.newRecordInstance(ResourceRequest.class);
     Resource capability = Resources.createResource(memory, 1);
     
     request.setNumContainers(numContainers);
-    request.setHostName(hostName);
+    request.setResourceName(resourceName);
     request.setCapability(capability);
+    request.setRelaxLocality(relaxLocality);
     request.setPriority(priority);
     return request;
   }

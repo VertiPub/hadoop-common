@@ -111,7 +111,7 @@
                   <goal>java</goal>
                 </goals>
                 <configuration>
-                  <mainClass>org.apache.hadoop.yarn.util.VisualizeStateMachine</mainClass>
+                  <mainClass>org.apache.hadoop.yarn.state.VisualizeStateMachine</mainClass>
 		  <classpathScope>compile</classpathScope>
                   <arguments>
                     <argument>NodeManager</argument>
@@ -143,6 +143,10 @@
               <name>application.submitter</name>
               <value>${application.submitter}</value>
             </property>
+	    <property>
+	      <name>yarn.log.dir</name>
+	      <value>${maven.project.build.directory}/logs</value>
+	    </property>
           </systemPropertyVariables>
           <excludes>
             <exclude>**/TestFSDownload.java</exclude>
@@ -161,6 +165,8 @@
               <goal>protoc</goal>
             </goals>
             <configuration>
+              <protocVersion>${protobuf.version}</protocVersion>
+              <protocCommand>${protoc.path}</protocCommand>
               <imports>
                 <param>${basedir}/../../../../hadoop-common-project/hadoop-common/src/main/proto</param>
                 <param>${basedir}/../../hadoop-yarn-api/src/main/proto</param>

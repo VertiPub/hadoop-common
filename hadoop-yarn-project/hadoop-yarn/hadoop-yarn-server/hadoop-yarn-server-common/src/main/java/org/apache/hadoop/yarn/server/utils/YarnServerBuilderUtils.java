@@ -22,11 +22,13 @@ import java.util.List;
 
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
+import org.apache.hadoop.yarn.api.records.SerializedException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.server.api.protocolrecords.NodeHeartbeatResponse;
 import org.apache.hadoop.yarn.server.api.records.MasterKey;
 import org.apache.hadoop.yarn.server.api.records.NodeAction;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * Server Builder utilities to construct various objects.
@@ -40,12 +42,14 @@ public class YarnServerBuilderUtils {
   public static NodeHeartbeatResponse newNodeHeartbeatResponse(int responseId,
       NodeAction action, List<ContainerId> containersToCleanUp,
       List<ApplicationId> applicationsToCleanUp,
-      MasterKey masterKey, long nextHeartbeatInterval) {
+      MasterKey containerTokenMasterKey, MasterKey nmTokenMasterKey,
+      long nextHeartbeatInterval) {
     NodeHeartbeatResponse response = recordFactory
         .newRecordInstance(NodeHeartbeatResponse.class);
     response.setResponseId(responseId);
     response.setNodeAction(action);
-    response.setMasterKey(masterKey);
+    response.setContainerTokenMasterKey(containerTokenMasterKey);
+    response.setNMTokenMasterKey(nmTokenMasterKey);
     response.setNextHeartBeatInterval(nextHeartbeatInterval);
     if(containersToCleanUp != null) {
       response.addAllContainersToCleanup(containersToCleanUp);

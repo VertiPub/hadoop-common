@@ -121,7 +121,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testApps() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     testAppsHelper("apps", app1, MediaType.APPLICATION_JSON);
@@ -131,7 +131,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsSlash() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     testAppsHelper("apps/", app1, MediaType.APPLICATION_JSON);
@@ -141,7 +141,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsDefault() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     testAppsHelper("apps/", app1, "");
@@ -151,7 +151,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsXML() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024, "testwordcount", "user1");
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
@@ -176,7 +176,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsXMLMulti() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024, "testwordcount", "user1");
     rm.submitApp(2048, "testwordcount2", "user1");
 
@@ -220,7 +220,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryState() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
@@ -242,7 +242,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryStateNone() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
@@ -260,7 +260,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryStateInvalid() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
@@ -298,7 +298,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryFinalStatus() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
@@ -321,7 +321,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryFinalStatusNone() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
@@ -339,7 +339,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryFinalStatusInvalid() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
@@ -377,7 +377,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryUser() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024);
     rm.submitApp(1024);
 
@@ -405,7 +405,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryQueue() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024);
     rm.submitApp(1024);
 
@@ -428,7 +428,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryLimit() throws JSONException, Exception {
     rm.start();
-    rm.registerNode("amNM:1234", 2048);
+    rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024);
     rm.submitApp(1024);
     rm.submitApp(1024);
@@ -451,7 +451,7 @@ public class TestRMWebServicesApps extends JerseyTest {
     rm.start();
     long start = System.currentTimeMillis();
     Thread.sleep(1);
-    rm.registerNode("amNM:1234", 2048);
+    rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024);
     rm.submitApp(1024);
     rm.submitApp(1024);
@@ -472,7 +472,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryStartBeginSome() throws JSONException, Exception {
     rm.start();
-    rm.registerNode("amNM:1234", 2048);
+    rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024);
     rm.submitApp(1024);
     long start = System.currentTimeMillis();
@@ -495,7 +495,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryStartEnd() throws JSONException, Exception {
     rm.start();
-    rm.registerNode("amNM:1234", 2048);
+    rm.registerNode("127.0.0.1:1234", 2048);
     long end = System.currentTimeMillis();
     Thread.sleep(1);
     rm.submitApp(1024);
@@ -515,7 +515,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryStartBeginEnd() throws JSONException, Exception {
     rm.start();
-    rm.registerNode("amNM:1234", 2048);
+    rm.registerNode("127.0.0.1:1234", 2048);
     long start = System.currentTimeMillis();
     Thread.sleep(1);
     rm.submitApp(1024);
@@ -541,7 +541,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryFinishBegin() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     long start = System.currentTimeMillis();
     Thread.sleep(1);
     RMApp app1 = rm.submitApp(1024);
@@ -573,7 +573,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryFinishEnd() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     // finish App
@@ -605,7 +605,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppsQueryFinishBeginEnd() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     long start = System.currentTimeMillis();
     Thread.sleep(1);
     RMApp app1 = rm.submitApp(1024);
@@ -638,9 +638,194 @@ public class TestRMWebServicesApps extends JerseyTest {
   }
 
   @Test
+  public void testAppsQueryAppTypes() throws JSONException, Exception {
+    rm.start();
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
+    Thread.sleep(1);
+    RMApp app1 = rm.submitApp(1024);
+    amNodeManager.nodeHeartbeat(true);
+    // finish App
+    MockAM am = rm
+        .sendAMLaunched(app1.getCurrentAppAttempt().getAppAttemptId());
+    am.registerAppAttempt();
+    am.unregisterAppAttempt();
+    amNodeManager.nodeHeartbeat(app1.getCurrentAppAttempt().getAppAttemptId(),
+        1, ContainerState.COMPLETE);
+
+    rm.submitApp(1024, "", UserGroupInformation.getCurrentUser()
+        .getShortUserName(), null, false, null, 2, null, "MAPREDUCE");
+    rm.submitApp(1024, "", UserGroupInformation.getCurrentUser()
+        .getShortUserName(), null, false, null, 2, null, "NON-YARN");
+
+    WebResource r = resource();
+    ClientResponse response = r.path("ws").path("v1").path("cluster")
+        .path("apps").queryParam("applicationTypes", "MAPREDUCE")
+        .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
+    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
+    JSONObject json = response.getEntity(JSONObject.class);
+    assertEquals("incorrect number of elements", 1, json.length());
+    JSONObject apps = json.getJSONObject("apps");
+    assertEquals("incorrect number of elements", 1, apps.length());
+    JSONArray array = apps.getJSONArray("app");
+    assertEquals("incorrect number of elements", 1, array.length());
+    assertEquals("MAPREDUCE",
+        array.getJSONObject(0).getString("applicationType"));
+
+    r = resource();
+    response =
+        r.path("ws").path("v1").path("cluster").path("apps")
+            .queryParam("applicationTypes", "YARN")
+            .queryParam("applicationTypes", "MAPREDUCE")
+            .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
+    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
+    json = response.getEntity(JSONObject.class);
+    assertEquals("incorrect number of elements", 1, json.length());
+    apps = json.getJSONObject("apps");
+    assertEquals("incorrect number of elements", 1, apps.length());
+    array = apps.getJSONArray("app");
+    assertEquals("incorrect number of elements", 2, array.length());
+    assertTrue((array.getJSONObject(0).getString("applicationType")
+        .equals("YARN") && array.getJSONObject(1).getString("applicationType")
+        .equals("MAPREDUCE")) ||
+        (array.getJSONObject(1).getString("applicationType").equals("YARN")
+            && array.getJSONObject(0).getString("applicationType")
+            .equals("MAPREDUCE")));
+
+    r = resource();
+    response =
+        r.path("ws").path("v1").path("cluster").path("apps")
+            .queryParam("applicationTypes", "YARN,NON-YARN")
+            .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
+    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
+    json = response.getEntity(JSONObject.class);
+    assertEquals("incorrect number of elements", 1, json.length());
+    apps = json.getJSONObject("apps");
+    assertEquals("incorrect number of elements", 1, apps.length());
+    array = apps.getJSONArray("app");
+    assertEquals("incorrect number of elements", 2, array.length());
+    assertTrue((array.getJSONObject(0).getString("applicationType")
+        .equals("YARN") && array.getJSONObject(1).getString("applicationType")
+        .equals("NON-YARN")) ||
+        (array.getJSONObject(1).getString("applicationType").equals("YARN")
+            && array.getJSONObject(0).getString("applicationType")
+            .equals("NON-YARN")));
+
+    r = resource();
+    response = r.path("ws").path("v1").path("cluster")
+        .path("apps").queryParam("applicationTypes", "")
+        .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
+    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
+    json = response.getEntity(JSONObject.class);
+    assertEquals("incorrect number of elements", 1, json.length());
+    apps = json.getJSONObject("apps");
+    assertEquals("incorrect number of elements", 1, apps.length());
+    array = apps.getJSONArray("app");
+    assertEquals("incorrect number of elements", 3, array.length());
+
+    r = resource();
+    response =
+        r.path("ws").path("v1").path("cluster").path("apps")
+            .queryParam("applicationTypes", "YARN,NON-YARN")
+            .queryParam("applicationTypes", "MAPREDUCE")
+            .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
+    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
+    json = response.getEntity(JSONObject.class);
+    assertEquals("incorrect number of elements", 1, json.length());
+    apps = json.getJSONObject("apps");
+    assertEquals("incorrect number of elements", 1, apps.length());
+    array = apps.getJSONArray("app");
+    assertEquals("incorrect number of elements", 3, array.length());
+
+    r = resource();
+    response =
+        r.path("ws").path("v1").path("cluster").path("apps")
+            .queryParam("applicationTypes", "YARN")
+            .queryParam("applicationTypes", "")
+            .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
+    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
+    json = response.getEntity(JSONObject.class);
+    assertEquals("incorrect number of elements", 1, json.length());
+    apps = json.getJSONObject("apps");
+    assertEquals("incorrect number of elements", 1, apps.length());
+    array = apps.getJSONArray("app");
+    assertEquals("incorrect number of elements", 1, array.length());
+    assertEquals("YARN",
+        array.getJSONObject(0).getString("applicationType"));
+
+    r = resource();
+    response =
+        r.path("ws").path("v1").path("cluster").path("apps")
+            .queryParam("applicationTypes", ",,, ,, YARN ,, ,")
+            .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
+    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
+    json = response.getEntity(JSONObject.class);
+    assertEquals("incorrect number of elements", 1, json.length());
+    apps = json.getJSONObject("apps");
+    assertEquals("incorrect number of elements", 1, apps.length());
+    array = apps.getJSONArray("app");
+    assertEquals("incorrect number of elements", 1, array.length());
+    assertEquals("YARN",
+        array.getJSONObject(0).getString("applicationType"));
+
+    r = resource();
+    response =
+        r.path("ws").path("v1").path("cluster").path("apps")
+            .queryParam("applicationTypes", ",,, ,,  ,, ,")
+            .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
+    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
+    json = response.getEntity(JSONObject.class);
+    assertEquals("incorrect number of elements", 1, json.length());
+    apps = json.getJSONObject("apps");
+    assertEquals("incorrect number of elements", 1, apps.length());
+    array = apps.getJSONArray("app");
+    assertEquals("incorrect number of elements", 3, array.length());
+
+    r = resource();
+    response =
+        r.path("ws").path("v1").path("cluster").path("apps")
+            .queryParam("applicationTypes", "YARN, ,NON-YARN, ,,")
+            .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
+    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
+    json = response.getEntity(JSONObject.class);
+    assertEquals("incorrect number of elements", 1, json.length());
+    apps = json.getJSONObject("apps");
+    assertEquals("incorrect number of elements", 1, apps.length());
+    array = apps.getJSONArray("app");
+    assertEquals("incorrect number of elements", 2, array.length());
+    assertTrue((array.getJSONObject(0).getString("applicationType")
+        .equals("YARN") && array.getJSONObject(1).getString("applicationType")
+        .equals("NON-YARN")) ||
+        (array.getJSONObject(1).getString("applicationType").equals("YARN")
+            && array.getJSONObject(0).getString("applicationType")
+            .equals("NON-YARN")));
+
+    r = resource();
+    response =
+        r.path("ws").path("v1").path("cluster").path("apps")
+            .queryParam("applicationTypes", " YARN, ,  ,,,")
+            .queryParam("applicationTypes", "MAPREDUCE , ,, ,")
+            .accept(MediaType.APPLICATION_JSON).get(ClientResponse.class);
+    assertEquals(MediaType.APPLICATION_JSON_TYPE, response.getType());
+    json = response.getEntity(JSONObject.class);
+    assertEquals("incorrect number of elements", 1, json.length());
+    apps = json.getJSONObject("apps");
+    assertEquals("incorrect number of elements", 1, apps.length());
+    array = apps.getJSONArray("app");
+    assertEquals("incorrect number of elements", 2, array.length());
+    assertTrue((array.getJSONObject(0).getString("applicationType")
+        .equals("YARN") && array.getJSONObject(1).getString("applicationType")
+        .equals("MAPREDUCE")) ||
+        (array.getJSONObject(1).getString("applicationType").equals("YARN")
+            && array.getJSONObject(0).getString("applicationType")
+            .equals("MAPREDUCE")));
+
+    rm.stop();
+  }
+
+  @Test
   public void testSingleApp() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024, "testwordcount", "user1");
     amNodeManager.nodeHeartbeat(true);
     testSingleAppsHelper(app1.getApplicationId().toString(), app1,
@@ -651,7 +836,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testSingleAppsSlash() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     testSingleAppsHelper(app1.getApplicationId().toString() + "/", app1,
@@ -662,7 +847,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testSingleAppsDefault() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     testSingleAppsHelper(app1.getApplicationId().toString() + "/", app1, "");
@@ -672,7 +857,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testInvalidApp() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
@@ -708,7 +893,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testNonexistApp() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024, "testwordcount", "user1");
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
@@ -757,7 +942,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testSingleAppsXML() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024, "testwordcount", "user1");
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
@@ -788,6 +973,7 @@ public class TestRMWebServicesApps extends JerseyTest {
           WebServicesTestUtils.getXmlString(element, "id"),
           WebServicesTestUtils.getXmlString(element, "user"),
           WebServicesTestUtils.getXmlString(element, "name"),
+          WebServicesTestUtils.getXmlString(element, "applicationType"),
           WebServicesTestUtils.getXmlString(element, "queue"),
           WebServicesTestUtils.getXmlString(element, "state"),
           WebServicesTestUtils.getXmlString(element, "finalStatus"),
@@ -807,20 +993,20 @@ public class TestRMWebServicesApps extends JerseyTest {
       Exception {
 
     // 15 because trackingUrl not assigned yet
-    assertEquals("incorrect number of elements", 15, info.length());
+    assertEquals("incorrect number of elements", 16, info.length());
 
     verifyAppInfoGeneric(app, info.getString("id"), info.getString("user"),
-        info.getString("name"), info.getString("queue"),
-        info.getString("state"), info.getString("finalStatus"),
-        (float) info.getDouble("progress"), info.getString("trackingUI"),
-        info.getString("diagnostics"), info.getLong("clusterId"),
-        info.getLong("startedTime"), info.getLong("finishedTime"),
-        info.getLong("elapsedTime"), info.getString("amHostHttpAddress"),
-        info.getString("amContainerLogs"));
+      info.getString("name"), info.getString("applicationType"), info.getString("queue"),
+      info.getString("state"), info.getString("finalStatus"),
+      (float) info.getDouble("progress"), info.getString("trackingUI"),
+      info.getString("diagnostics"), info.getLong("clusterId"),
+      info.getLong("startedTime"), info.getLong("finishedTime"),
+      info.getLong("elapsedTime"), info.getString("amHostHttpAddress"),
+      info.getString("amContainerLogs"));
   }
 
   public void verifyAppInfoGeneric(RMApp app, String id, String user,
-      String name, String queue, String state, String finalStatus,
+      String name, String applicationType, String queue, String state, String finalStatus,
       float progress, String trackingUI, String diagnostics, long clusterId,
       long startedTime, long finishedTime, long elapsedTime,
       String amHostHttpAddress, String amContainerLogs) throws JSONException,
@@ -830,6 +1016,8 @@ public class TestRMWebServicesApps extends JerseyTest {
         .toString(), id);
     WebServicesTestUtils.checkStringMatch("user", app.getUser(), user);
     WebServicesTestUtils.checkStringMatch("name", app.getName(), name);
+    WebServicesTestUtils.checkStringMatch("applicationType",
+      app.getApplicationType(), applicationType);
     WebServicesTestUtils.checkStringMatch("queue", app.getQueue(), queue);
     WebServicesTestUtils.checkStringMatch("state", app.getState().toString(),
         state);
@@ -858,7 +1046,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppAttempts() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024, "testwordcount", "user1");
     amNodeManager.nodeHeartbeat(true);
     testAppAttemptsHelper(app1.getApplicationId().toString(), app1,
@@ -869,7 +1057,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testMultipleAppAttempts() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024, "testwordcount", "user1");
     amNodeManager.nodeHeartbeat(true);
     int maxAppAttempts = rm.getConfig().getInt(
@@ -895,7 +1083,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppAttemptsSlash() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     testAppAttemptsHelper(app1.getApplicationId().toString() + "/", app1,
@@ -906,7 +1094,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppAttemtpsDefault() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     RMApp app1 = rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     testAppAttemptsHelper(app1.getApplicationId().toString() + "/", app1, "");
@@ -916,7 +1104,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testInvalidAppAttempts() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024);
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
@@ -952,7 +1140,7 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testNonexistAppAttempts() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
     rm.submitApp(1024, "testwordcount", "user1");
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
@@ -1006,7 +1194,7 @@ public class TestRMWebServicesApps extends JerseyTest {
     // Verify these parallel arrays are the same
     int i = 0;
     for (RMAppAttempt attempt : attempts) {
-      verifyAppAttemptsInfo(jsonArray.getJSONObject(i), attempt);
+      verifyAppAttemptsInfo(jsonArray.getJSONObject(i), attempt, app.getUser());
       ++i;
     }
   }
@@ -1014,8 +1202,9 @@ public class TestRMWebServicesApps extends JerseyTest {
   @Test
   public void testAppAttemptsXML() throws JSONException, Exception {
     rm.start();
-    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
-    RMApp app1 = rm.submitApp(1024, "testwordcount", "user1");
+    String user = "user1";
+    MockNM amNodeManager = rm.registerNode("127.0.0.1:1234", 2048);
+    RMApp app1 = rm.submitApp(1024, "testwordcount", user);
     amNodeManager.nodeHeartbeat(true);
     WebResource r = resource();
     ClientResponse response = r.path("ws").path("v1").path("cluster")
@@ -1034,11 +1223,12 @@ public class TestRMWebServicesApps extends JerseyTest {
     assertEquals("incorrect number of elements", 1, nodes.getLength());
     NodeList attempt = dom.getElementsByTagName("appAttempt");
     assertEquals("incorrect number of elements", 1, attempt.getLength());
-    verifyAppAttemptsXML(attempt, app1.getCurrentAppAttempt());
+    verifyAppAttemptsXML(attempt, app1.getCurrentAppAttempt(), user);
     rm.stop();
   }
 
-  public void verifyAppAttemptsXML(NodeList nodes, RMAppAttempt appAttempt)
+  public void verifyAppAttemptsXML(NodeList nodes, RMAppAttempt appAttempt,
+      String user)
       throws JSONException, Exception {
 
     for (int i = 0; i < nodes.getLength(); i++) {
@@ -1050,11 +1240,12 @@ public class TestRMWebServicesApps extends JerseyTest {
           WebServicesTestUtils.getXmlString(element, "containerId"),
           WebServicesTestUtils.getXmlString(element, "nodeHttpAddress"),
           WebServicesTestUtils.getXmlString(element, "nodeId"),
-          WebServicesTestUtils.getXmlString(element, "logsLink"));
+          WebServicesTestUtils.getXmlString(element, "logsLink"), user);
     }
   }
 
-  public void verifyAppAttemptsInfo(JSONObject info, RMAppAttempt appAttempt)
+  public void verifyAppAttemptsInfo(JSONObject info, RMAppAttempt appAttempt,
+      String user)
       throws JSONException, Exception {
 
     assertEquals("incorrect number of elements", 6, info.length());
@@ -1062,12 +1253,12 @@ public class TestRMWebServicesApps extends JerseyTest {
     verifyAppAttemptInfoGeneric(appAttempt, info.getInt("id"),
         info.getLong("startTime"), info.getString("containerId"),
         info.getString("nodeHttpAddress"), info.getString("nodeId"),
-        info.getString("logsLink"));
+        info.getString("logsLink"), user);
   }
 
   public void verifyAppAttemptInfoGeneric(RMAppAttempt appAttempt, int id,
       long startTime, String containerId, String nodeHttpAddress, String nodeId,
-      String logsLink)
+      String logsLink, String user)
           throws JSONException, Exception {
 
     assertEquals("id doesn't match", appAttempt.getAppAttemptId()
@@ -1084,7 +1275,7 @@ public class TestRMWebServicesApps extends JerseyTest {
         logsLink.startsWith("http://"));
     assertTrue(
         "logsLink doesn't contain user info", logsLink.endsWith("/"
-        + appAttempt.getSubmissionContext().getAMContainerSpec().getUser()));
+        + user));
   }
 
 }

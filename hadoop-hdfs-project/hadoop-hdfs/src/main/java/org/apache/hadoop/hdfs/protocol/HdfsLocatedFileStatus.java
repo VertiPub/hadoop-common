@@ -17,9 +17,14 @@
  */
 package org.apache.hadoop.hdfs.protocol;
 
+import java.net.URI;
+
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
+import org.apache.hadoop.fs.LocatedFileStatus;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.hdfs.DFSUtil;
 
 /** 
  * Interface that represents the over the wire information
@@ -50,13 +55,27 @@ public class HdfsLocatedFileStatus extends HdfsFileStatus {
   public HdfsLocatedFileStatus(long length, boolean isdir,
       int block_replication, long blocksize, long modification_time,
       long access_time, FsPermission permission, String owner, String group,
-      byte[] symlink, byte[] path, long fileId, LocatedBlocks locations) {
+      byte[] symlink, byte[] path, long fileId, LocatedBlocks locations,
+      int childrenNum) {
     super(length, isdir, block_replication, blocksize, modification_time,
-        access_time, permission, owner, group, symlink, path, fileId);
+        access_time, permission, owner, group, symlink, path, fileId,
+        childrenNum);
     this.locations = locations;
   }
 	
   public LocatedBlocks getBlockLocations() {
     return locations;
+  }
+
+  final public LocatedFileStatus makeQualifiedLocated(URI defaultUri,
+      Path path) {
+    return new LocatedFileStatus(getLen(), isDir(), getReplication(),
+        getBlockSize(), getModificationTime(),
+        getAccessTime(),
+        getPermission(), getOwner(), getGroup(),
+        isSymlink() ? new Path(getSymlink()) : null,
+        (getFullPath(path)).makeQualified(
+            defaultUri, null), // fully-qualify path
+        DFSUtil.locatedBlocks2Locations(getBlockLocations()));
   }
 }

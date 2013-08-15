@@ -23,7 +23,6 @@ import junit.framework.Assert;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.yarn.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
@@ -33,6 +32,7 @@ import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.server.api.protocolrecords.NodeHeartbeatRequest;
 import org.apache.hadoop.yarn.server.api.protocolrecords.RegisterNodeManagerRequest;
+import org.apache.hadoop.yarn.server.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.server.resourcemanager.ClusterMetrics;
 import org.apache.hadoop.yarn.server.resourcemanager.NMLivelinessMonitor;
 import org.apache.hadoop.yarn.server.resourcemanager.NodesListManager;
@@ -43,7 +43,8 @@ import org.apache.hadoop.yarn.server.resourcemanager.ResourceTrackerService;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeEventType;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.SchedulerEventType;
 import org.apache.hadoop.yarn.server.resourcemanager.security.RMContainerTokenSecretManager;
-import org.apache.hadoop.yarn.util.Records;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
+import org.apache.hadoop.yarn.server.resourcemanager.security.NMTokenSecretManagerInRM;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -59,9 +60,9 @@ public class TestNMExpiry {
     }
 
     @Override
-    public void init(Configuration conf) {
+    public void serviceInit(Configuration conf) throws Exception {
       conf.setLong(YarnConfiguration.RM_NM_EXPIRY_INTERVAL_MS, 1000);
-      super.init(conf);
+      super.serviceInit(conf);
     }
   }
 
@@ -71,7 +72,7 @@ public class TestNMExpiry {
     // Dispatcher that processes events inline
     Dispatcher dispatcher = new InlineDispatcher();
     RMContext context = new RMContextImpl(dispatcher, null,
-        null, null, null, null, null, null);
+        null, null, null, null, null, null, null);
     dispatcher.register(SchedulerEventType.class,
         new InlineDispatcher.EmptyEventHandler());
     dispatcher.register(RMNodeEventType.class,
@@ -85,8 +86,12 @@ public class TestNMExpiry {
     RMContainerTokenSecretManager containerTokenSecretManager =
         new RMContainerTokenSecretManager(conf);
     containerTokenSecretManager.start();
+    NMTokenSecretManagerInRM nmTokenSecretManager =
+        new NMTokenSecretManagerInRM(conf);
+    nmTokenSecretManager.start();
     resourceTrackerService = new ResourceTrackerService(context,
-        nodesListManager, nmLivelinessMonitor, containerTokenSecretManager);
+        nodesListManager, nmLivelinessMonitor, containerTokenSecretManager,
+        nmTokenSecretManager);
     
     resourceTrackerService.init(conf);
     resourceTrackerService.start();
@@ -127,13 +132,11 @@ public class TestNMExpiry {
     String hostname1 = "localhost1";
     String hostname2 = "localhost2";
     String hostname3 = "localhost3";
-    Resource capability = recordFactory.newRecordInstance(Resource.class);
+    Resource capability = BuilderUtils.newResource(1024, 1);
 
     RegisterNodeManagerRequest request1 = recordFactory
         .newRecordInstance(RegisterNodeManagerRequest.class);
-    NodeId nodeId1 = Records.newRecord(NodeId.class);
-    nodeId1.setPort(0);
-    nodeId1.setHost(hostname1);
+    NodeId nodeId1 = NodeId.newInstance(hostname1, 0);
     request1.setNodeId(nodeId1);
     request1.setHttpPort(0);
     request1.setResource(capability);
@@ -141,9 +144,7 @@ public class TestNMExpiry {
 
     RegisterNodeManagerRequest request2 = recordFactory
         .newRecordInstance(RegisterNodeManagerRequest.class);
-    NodeId nodeId2 = Records.newRecord(NodeId.class);
-    nodeId2.setPort(0);
-    nodeId2.setHost(hostname2);
+    NodeId nodeId2 = NodeId.newInstance(hostname2, 0);
     request2.setNodeId(nodeId2);
     request2.setHttpPort(0);
     request2.setResource(capability);
@@ -159,9 +160,7 @@ public class TestNMExpiry {
 
     request3 = recordFactory
         .newRecordInstance(RegisterNodeManagerRequest.class);
-    NodeId nodeId3 = Records.newRecord(NodeId.class);
-    nodeId3.setPort(0);
-    nodeId3.setHost(hostname3);
+    NodeId nodeId3 = NodeId.newInstance(hostname3, 0);
     request3.setNodeId(nodeId3);
     request3.setHttpPort(0);
     request3.setResource(capability);

@@ -31,18 +31,23 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.UnsupportedFileSystemException;
-import org.apache.hadoop.yarn.YarnException;
+import org.apache.hadoop.service.AbstractService;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.event.Dispatcher;
 import org.apache.hadoop.yarn.event.EventHandler;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.server.nodemanager.ContainerExecutor;
-import org.apache.hadoop.yarn.server.nodemanager.LocalDirsHandlerService;
+import org.apache.hadoop.yarn.server.nodemanager.ContainerExecutor.ExitCode;
 import org.apache.hadoop.yarn.server.nodemanager.Context;
+import org.apache.hadoop.yarn.server.nodemanager.LocalDirsHandlerService;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.Application;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerEventType;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerExitEvent;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerState;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.ResourceLocalizationService;
-import org.apache.hadoop.yarn.service.AbstractService;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 /**
@@ -61,7 +66,8 @@ public class ContainersLauncher extends AbstractService
   private final Dispatcher dispatcher;
 
   private LocalDirsHandlerService dirsHandler;
-  private final ExecutorService containerLauncher =
+  @VisibleForTesting
+  public ExecutorService containerLauncher =
     Executors.newCachedThreadPool(
         new ThreadFactoryBuilder()
           .setNameFormat("ContainersLauncher #%d")
@@ -91,35 +97,37 @@ public class ContainersLauncher extends AbstractService
   }
 
   @Override
-  public void init(Configuration conf) {
+  protected void serviceInit(Configuration conf) throws Exception {
     try {
       //TODO Is this required?
       FileContext.getLocalFSFileContext(conf);
     } catch (UnsupportedFileSystemException e) {
-      throw new YarnException("Failed to start ContainersLauncher", e);
+      throw new YarnRuntimeException("Failed to start ContainersLauncher", e);
     }
-    super.init(conf);
+    super.serviceInit(conf);
   }
 
   @Override
-  public void stop() {
+  protected  void serviceStop() throws Exception {
     containerLauncher.shutdownNow();
-    super.stop();
+    super.serviceStop();
   }
 
+  @SuppressWarnings("unchecked")
   @Override
   public void handle(ContainersLauncherEvent event) {
     // TODO: ContainersLauncher launches containers one by one!!
     Container container = event.getContainer();
-    ContainerId containerId = container.getContainerID();
+    ContainerId containerId = container.getContainerId();
     switch (event.getType()) {
       case LAUNCH_CONTAINER:
         Application app =
           context.getApplications().get(
               containerId.getApplicationAttemptId().getApplicationId());
 
-        ContainerLaunch launch = new ContainerLaunch(getConfig(), dispatcher,
-            exec, app, event.getContainer(), dirsHandler);
+        ContainerLaunch launch =
+            new ContainerLaunch(context, getConfig(), dispatcher, exec, app,
+              event.getContainer(), dirsHandler);
         running.put(containerId,
             new RunningContainer(containerLauncher.submit(launch), 
                 launch));
@@ -133,9 +141,18 @@ public class ContainersLauncher extends AbstractService
         Future<Integer> rContainer = rContainerDatum.runningcontainer;
         if (rContainer != null 
             && !rContainer.isDone()) {
-          // Cancel the future so that it won't be launched 
-          // if it isn't already.
-          rContainer.cancel(false);
+          // Cancel the future so that it won't be launched if it isn't already.
+          // If it is going to be canceled, make sure CONTAINER_KILLED_ON_REQUEST
+          // will not be missed if the container is already at KILLING
+          if (rContainer.cancel(false)) {
+            if (container.getContainerState() == ContainerState.KILLING) {
+              dispatcher.getEventHandler().handle(
+                  new ContainerExitEvent(containerId,
+                      ContainerEventType.CONTAINER_KILLED_ON_REQUEST,
+                      ExitCode.TERMINATED.getExitCode(),
+                      "Container terminated before launch."));
+            }
+          }
         }
 
         // Cleanup a container whether it is running/killed/completed, so that

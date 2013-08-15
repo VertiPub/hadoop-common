@@ -63,6 +63,7 @@ enum UnixAclMask
   UX_U_WRITE   = 00200, // S_IWUSR
   UX_U_READ    = 00400, // S_IRUSR
   UX_DIRECTORY = 0040000, // S_IFDIR
+  UX_REGULAR   = 0100000, // S_IFREG
   UX_SYMLINK   = 0120000, // S_IFLNK
 };
 
@@ -104,11 +105,19 @@ void TaskUsage();
 int Symlink(__in int argc, __in_ecount(argc) wchar_t *argv[]);
 void SymlinkUsage();
 
+int Readlink(__in int argc, __in_ecount(argc) wchar_t *argv[]);
+void ReadlinkUsage();
+
 int SystemInfo();
 void SystemInfoUsage();
 
 DWORD GetFileInformationByName(__in LPCWSTR pathName,  __in BOOL followLink,
   __out LPBY_HANDLE_FILE_INFORMATION lpFileInformation);
+
+DWORD CheckAccessForCurrentUser(
+  __in PCWSTR pathName,
+  __in ACCESS_MASK requestedAccess,
+  __out BOOL *allowed);
 
 DWORD ConvertToLongPath(__in PCWSTR path, __deref_out PWSTR *newPath);
 
@@ -122,6 +131,13 @@ BOOL IsDirFileInfo(const BY_HANDLE_FILE_INFORMATION *fileInformation);
 
 DWORD FindFileOwnerAndPermission(
   __in LPCWSTR pathName,
+  __in BOOL followLink,
+  __out_opt LPWSTR *pOwnerName,
+  __out_opt LPWSTR *pGroupName,
+  __out_opt PINT pMask);
+
+DWORD FindFileOwnerAndPermissionByHandle(
+  __in HANDLE fileHandle,
   __out_opt LPWSTR *pOwnerName,
   __out_opt LPWSTR *pGroupName,
   __out_opt PINT pMask);
@@ -138,3 +154,5 @@ DWORD GetLocalGroupsForUser(__in LPCWSTR user,
   __out LPLOCALGROUP_USERS_INFO_0 *groups, __out LPDWORD entries);
 
 BOOL EnablePrivilege(__in LPCWSTR privilegeName);
+
+void GetLibraryName(__in LPCVOID lpAddress, __out LPWSTR *filename);

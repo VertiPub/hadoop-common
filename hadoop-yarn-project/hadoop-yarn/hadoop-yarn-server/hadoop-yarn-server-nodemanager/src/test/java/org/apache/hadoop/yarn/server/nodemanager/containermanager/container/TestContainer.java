@@ -18,7 +18,10 @@
 package org.apache.hadoop.yarn.server.nodemanager.containermanager.container;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
@@ -29,7 +32,6 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.util.AbstractMap.SimpleEntry;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -41,25 +43,36 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+
+import junit.framework.Assert;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceType;
 import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
 import org.apache.hadoop.yarn.api.records.Resource;
+import org.apache.hadoop.yarn.api.records.Token;
 import org.apache.hadoop.yarn.api.records.URL;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.event.Dispatcher;
 import org.apache.hadoop.yarn.event.DrainDispatcher;
 import org.apache.hadoop.yarn.event.EventHandler;
+import org.apache.hadoop.yarn.security.ContainerTokenIdentifier;
 import org.apache.hadoop.yarn.server.nodemanager.ContainerExecutor.ExitCode;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.ApplicationEvent;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.ApplicationEventType;
+import org.apache.hadoop.yarn.server.nodemanager.Context;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.AuxServicesEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.AuxServicesEventType;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.Application;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.ApplicationEvent;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.ApplicationEventType;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainersLauncher;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainersLauncherEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainersLauncherEventType;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.LocalResourceRequest;
@@ -72,7 +85,7 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.loghandler.eve
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.monitor.ContainersMonitorEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.monitor.ContainersMonitorEventType;
 import org.apache.hadoop.yarn.server.nodemanager.metrics.NodeManagerMetrics;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
 import org.junit.Test;
 import org.mockito.ArgumentMatcher;
 
@@ -80,7 +93,7 @@ public class TestContainer {
 
   final NodeManagerMetrics metrics = NodeManagerMetrics.create();
   final Configuration conf = new YarnConfiguration();
-
+  final String FAKE_LOCALIZATION_ERROR = "Fake localization error";
   
   /**
    * Verify correct container request events sent to localizer.
@@ -122,6 +135,7 @@ public class TestContainer {
 
       // all resources should be localized
       assertEquals(ContainerState.LOCALIZED, wc.c.getContainerState());
+      assertNotNull(wc.c.getLocalizedResources());
       for (Entry<Path, List<String>> loc : wc.c.getLocalizedResources()
           .entrySet()) {
         assertEquals(localPaths.remove(loc.getKey()), loc.getValue());
@@ -159,6 +173,7 @@ public class TestContainer {
       wc.containerKilledOnRequest();
       assertEquals(ContainerState.EXITED_WITH_FAILURE, 
           wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       verifyCleanupCall(wc);
     }
     finally {
@@ -181,6 +196,7 @@ public class TestContainer {
       wc.containerFailed(ExitCode.FORCE_KILLED.getExitCode());
       assertEquals(ContainerState.EXITED_WITH_FAILURE, 
           wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       verifyCleanupCall(wc);
     }
     finally {
@@ -203,7 +219,7 @@ public class TestContainer {
       wc.containerSuccessful();
       assertEquals(ContainerState.EXITED_WITH_SUCCESS,
           wc.c.getContainerState());
-      
+      assertNull(wc.c.getLocalizedResources());
       verifyCleanupCall(wc);
     }
     finally {
@@ -226,13 +242,43 @@ public class TestContainer {
       wc.containerSuccessful();
       wc.containerResourcesCleanup();
       assertEquals(ContainerState.DONE, wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       // Now in DONE, issue INIT
       wc.initContainer();
       // Verify still in DONE
       assertEquals(ContainerState.DONE, wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       verifyCleanupCall(wc);
     }
     finally {
+      if (wc != null) {
+        wc.finished();
+      }
+    }
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  // mocked generic
+  public void testLocalizationFailureAtDone() throws Exception {
+    WrappedContainer wc = null;
+    try {
+      wc = new WrappedContainer(6, 314159265358979L, 4344, "yak");
+      wc.initContainer();
+      wc.localizeResources();
+      wc.launchContainer();
+      reset(wc.localizerBus);
+      wc.containerSuccessful();
+      wc.containerResourcesCleanup();
+      assertEquals(ContainerState.DONE, wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
+      // Now in DONE, issue RESOURCE_FAILED as done by LocalizeRunner
+      wc.resourceFailedContainer();
+      // Verify still in DONE
+      assertEquals(ContainerState.DONE, wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
+      verifyCleanupCall(wc);
+    } finally {
       if (wc != null) {
         wc.finished();
       }
@@ -250,7 +296,9 @@ public class TestContainer {
       wc.launchContainer();
       reset(wc.localizerBus);
       wc.killContainer();
-      assertEquals(ContainerState.KILLING, wc.c.getContainerState());
+      assertEquals(ContainerState.CONTAINER_CLEANEDUP_AFTER_KILL,
+          wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       wc.containerKilledOnRequest();
       
       verifyCleanupCall(wc);
@@ -269,8 +317,30 @@ public class TestContainer {
       wc.initContainer();
       wc.failLocalizeResources(wc.getLocalResourceCount());
       assertEquals(ContainerState.LOCALIZATION_FAILED, wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       wc.killContainer();
       assertEquals(ContainerState.LOCALIZATION_FAILED, wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
+      verifyCleanupCall(wc);
+    } finally {
+      if (wc != null) {
+        wc.finished();
+      }
+    }
+  }
+
+  @Test
+  public void testKillOnLocalized() throws Exception {
+    WrappedContainer wc = null;
+    try {
+      wc = new WrappedContainer(17, 314159265358979L, 4344, "yak");
+      wc.initContainer();
+      wc.localizeResources();
+      assertEquals(ContainerState.LOCALIZED, wc.c.getContainerState());
+      wc.killContainer();
+      assertEquals(ContainerState.CONTAINER_CLEANEDUP_AFTER_KILL,
+          wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       verifyCleanupCall(wc);
     } finally {
       if (wc != null) {
@@ -291,9 +361,12 @@ public class TestContainer {
       }
       wc.failLocalizeResources(failCount);
       assertEquals(ContainerState.LOCALIZATION_FAILED, wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       wc.localizeResourcesFromInvalidState(failCount);
       assertEquals(ContainerState.LOCALIZATION_FAILED, wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       verifyCleanupCall(wc);
+      Assert.assertTrue(wc.getDiagnostics().contains(FAKE_LOCALIZATION_ERROR));
     } finally {
       if (wc != null) {
         wc.finished();
@@ -313,8 +386,10 @@ public class TestContainer {
       String key2 = lRsrcKeys.next();
       wc.failLocalizeSpecificResource(key1);
       assertEquals(ContainerState.LOCALIZATION_FAILED, wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       wc.failLocalizeSpecificResource(key2);
       assertEquals(ContainerState.LOCALIZATION_FAILED, wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       verifyCleanupCall(wc);
     } finally {
       if (wc != null) {
@@ -334,8 +409,10 @@ public class TestContainer {
       String key1 = lRsrcKeys.next();
       wc.killContainer();
       assertEquals(ContainerState.KILLING, wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       wc.failLocalizeSpecificResource(key1);
       assertEquals(ContainerState.KILLING, wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       verifyCleanupCall(wc);
     } finally {
       if (wc != null) {
@@ -376,7 +453,7 @@ public class TestContainer {
           public boolean matches(Object o) {
             ContainersLauncherEvent evt = (ContainersLauncherEvent) o;
             return evt.getType() == ContainersLauncherEventType.LAUNCH_CONTAINER
-              && wcf.cId == evt.getContainer().getContainerID();
+              && wcf.cId == evt.getContainer().getContainerId();
           }
         };
       verify(wc.launcherBus).handle(argThat(matchesLaunchReq));
@@ -395,9 +472,13 @@ public class TestContainer {
       wc.initContainer();
       wc.localizeResources();
       wc.killContainer();
-      assertEquals(ContainerState.KILLING, wc.c.getContainerState());
+      assertEquals(ContainerState.CONTAINER_CLEANEDUP_AFTER_KILL,
+          wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       wc.launchContainer();
-      assertEquals(ContainerState.KILLING, wc.c.getContainerState());
+      assertEquals(ContainerState.CONTAINER_CLEANEDUP_AFTER_KILL,
+          wc.c.getContainerState());
+      assertNull(wc.c.getLocalizedResources());
       wc.containerKilledOnRequest();
       verifyCleanupCall(wc);
     } finally {
@@ -525,11 +606,6 @@ public class TestContainer {
     return serviceData;
   }
 
-  private Container newContainer(Dispatcher disp, ContainerLaunchContext ctx,
-      org.apache.hadoop.yarn.api.records.Container container) {
-    return new ContainerImpl(conf, disp, ctx, container, null, metrics);
-  }
-  
   @SuppressWarnings("unchecked")
   private class WrappedContainer {
     final DrainDispatcher dispatcher;
@@ -539,20 +615,22 @@ public class TestContainer {
     final EventHandler<AuxServicesEvent> auxBus;
     final EventHandler<ApplicationEvent> appBus;
     final EventHandler<LogHandlerEvent> LogBus;
+    final ContainersLauncher launcher;
 
     final ContainerLaunchContext ctxt;
     final ContainerId cId;
     final Container c;
     final Map<String, LocalResource> localResources;
     final Map<String, ByteBuffer> serviceData;
-    final String user;
 
-    WrappedContainer(int appId, long timestamp, int id, String user) {
+    WrappedContainer(int appId, long timestamp, int id, String user)
+        throws IOException {
       this(appId, timestamp, id, user, true, false);
     }
 
+    @SuppressWarnings("rawtypes")
     WrappedContainer(int appId, long timestamp, int id, String user,
-        boolean withLocalRes, boolean withServiceData) {
+        boolean withLocalRes, boolean withServiceData) throws IOException {
       dispatcher = new DrainDispatcher();
       dispatcher.init(new Configuration());
 
@@ -568,18 +646,41 @@ public class TestContainer {
       dispatcher.register(AuxServicesEventType.class, auxBus);
       dispatcher.register(ApplicationEventType.class, appBus);
       dispatcher.register(LogHandlerEventType.class, LogBus);
-      this.user = user;
+
+      Context context = mock(Context.class);
+      when(context.getApplications()).thenReturn(
+          new ConcurrentHashMap<ApplicationId, Application>());
+      launcher = new ContainersLauncher(context, dispatcher, null, null);
+      // create a mock ExecutorService, which will not really launch
+      // ContainerLaunch at all.
+      launcher.containerLauncher = mock(ExecutorService.class);
+      Future future = mock(Future.class);
+      when(launcher.containerLauncher.submit
+          (any(Callable.class))).thenReturn(future);
+      when(future.isDone()).thenReturn(false);
+      when(future.cancel(false)).thenReturn(true);
+      launcher.init(new Configuration());
+      launcher.start();
+      dispatcher.register(ContainersLauncherEventType.class, launcher);
 
       ctxt = mock(ContainerLaunchContext.class);
       org.apache.hadoop.yarn.api.records.Container mockContainer =
           mock(org.apache.hadoop.yarn.api.records.Container.class);
       cId = BuilderUtils.newContainerId(appId, 1, timestamp, id);
-      when(ctxt.getUser()).thenReturn(this.user);
       when(mockContainer.getId()).thenReturn(cId);
 
       Resource resource = BuilderUtils.newResource(1024, 1);
       when(mockContainer.getResource()).thenReturn(resource);
-
+      String host = "127.0.0.1";
+      int port = 1234;
+      long currentTime = System.currentTimeMillis();
+      ContainerTokenIdentifier identifier =
+          new ContainerTokenIdentifier(cId, "127.0.0.1", user, resource,
+            currentTime + 10000L, 123, currentTime);
+      Token token =
+          BuilderUtils.newContainerToken(BuilderUtils.newNodeId(host, port),
+            "password".getBytes(), identifier);
+      when(mockContainer.getContainerToken()).thenReturn(token);
       if (withLocalRes) {
         Random r = new Random();
         long seed = r.nextLong();
@@ -602,7 +703,14 @@ public class TestContainer {
       }
       when(ctxt.getServiceData()).thenReturn(serviceData);
 
-      c = newContainer(dispatcher, ctxt, mockContainer);
+      c = new ContainerImpl(conf, dispatcher, ctxt, null, metrics, identifier);
+      dispatcher.register(ContainerEventType.class,
+          new EventHandler<ContainerEvent>() {
+            @Override
+            public void handle(ContainerEvent event) {
+                c.handle(event);
+            }
+      });
       dispatcher.start();
     }
 
@@ -616,6 +724,11 @@ public class TestContainer {
 
     public void initContainer() {
       c.handle(new ContainerEvent(cId, ContainerEventType.INIT_CONTAINER));
+      drainDispatcherEvents();
+    }
+
+    public void resourceFailedContainer() {
+      c.handle(new ContainerEvent(cId, ContainerEventType.RESOURCE_FAILED));
       drainDispatcherEvents();
     }
 
@@ -639,7 +752,7 @@ public class TestContainer {
         Path p = new Path(cache, rsrc.getKey());
         localPaths.put(p, Arrays.asList(rsrc.getKey()));
         // rsrc copied to p
-        c.handle(new ContainerResourceLocalizedEvent(c.getContainerID(), 
+        c.handle(new ContainerResourceLocalizedEvent(c.getContainerId(),
                  req, p));
       }
       drainDispatcherEvents();
@@ -661,8 +774,9 @@ public class TestContainer {
         throws URISyntaxException {
       LocalResource rsrc = localResources.get(rsrcKey);
       LocalResourceRequest req = new LocalResourceRequest(rsrc);
-      Exception e = new Exception("Fake localization error");
-      c.handle(new ContainerResourceFailedEvent(c.getContainerID(), req, e));
+      Exception e = new Exception(FAKE_LOCALIZATION_ERROR);
+      c.handle(new ContainerResourceFailedEvent(c.getContainerId(), req, e
+        .getMessage()));
       drainDispatcherEvents();
     }
 
@@ -676,9 +790,9 @@ public class TestContainer {
         }
         ++counter;
         LocalResourceRequest req = new LocalResourceRequest(rsrc.getValue());
-        Exception e = new Exception("Fake localization error");
-        c.handle(new ContainerResourceFailedEvent(c.getContainerID(), 
-                 req, e));
+        Exception e = new Exception(FAKE_LOCALIZATION_ERROR);
+        c.handle(new ContainerResourceFailedEvent(c.getContainerId(),
+                 req, e.getMessage()));
       }
       drainDispatcherEvents();     
     }
@@ -721,6 +835,10 @@ public class TestContainer {
     
     public int getLocalResourceCount() {
       return localResources.size();
+    }
+
+    public String getDiagnostics() {
+      return c.cloneAndGetContainerStatus().getDiagnostics();
     }
   }
 }

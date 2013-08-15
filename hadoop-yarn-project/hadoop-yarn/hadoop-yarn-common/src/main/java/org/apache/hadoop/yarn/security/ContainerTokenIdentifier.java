@@ -25,6 +25,8 @@ import java.io.IOException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
+import org.apache.hadoop.classification.InterfaceAudience.Public;
+import org.apache.hadoop.classification.InterfaceStability.Evolving;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
@@ -33,13 +35,14 @@ import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.Resource;
-import org.apache.hadoop.yarn.util.BuilderUtils;
 
 /**
  * TokenIdentifier for a container. Encodes {@link ContainerId},
  * {@link Resource} needed by the container and the target NMs host-address.
  * 
  */
+@Public
+@Evolving
 public class ContainerTokenIdentifier extends TokenIdentifier {
 
   private static Log LOG = LogFactory.getLog(ContainerTokenIdentifier.class);
@@ -52,15 +55,18 @@ public class ContainerTokenIdentifier extends TokenIdentifier {
   private Resource resource;
   private long expiryTimeStamp;
   private int masterKeyId;
+  private long rmIdentifier;
 
   public ContainerTokenIdentifier(ContainerId containerID, String hostName,
-      String appSubmitter, Resource r, long expiryTimeStamp, int masterKeyId) {
+      String appSubmitter, Resource r, long expiryTimeStamp, int masterKeyId,
+      long rmIdentifier) {
     this.containerId = containerID;
     this.nmHostAddr = hostName;
     this.appSubmitter = appSubmitter;
     this.resource = r;
     this.expiryTimeStamp = expiryTimeStamp;
     this.masterKeyId = masterKeyId;
+    this.rmIdentifier = rmIdentifier;
   }
 
   /**
@@ -93,6 +99,14 @@ public class ContainerTokenIdentifier extends TokenIdentifier {
     return this.masterKeyId;
   }
 
+  /**
+   * Get the RMIdentifier of RM in which containers are allocated
+   * @return RMIdentifier
+   */
+  public long getRMIdentifer() {
+    return this.rmIdentifier;
+  }
+
   @Override
   public void write(DataOutput out) throws IOException {
     LOG.debug("Writing ContainerTokenIdentifier to RPC layer: " + this);
@@ -109,23 +123,25 @@ public class ContainerTokenIdentifier extends TokenIdentifier {
     out.writeInt(this.resource.getVirtualCores());
     out.writeLong(this.expiryTimeStamp);
     out.writeInt(this.masterKeyId);
+    out.writeLong(this.rmIdentifier);
   }
 
   @Override
   public void readFields(DataInput in) throws IOException {
-    ApplicationId applicationId = BuilderUtils.newApplicationId(
-        in.readLong(), in.readInt());
-    ApplicationAttemptId applicationAttemptId = BuilderUtils
-        .newApplicationAttemptId(applicationId, in.readInt());
-    this.containerId = BuilderUtils.newContainerId(applicationAttemptId, in
-        .readInt());
+    ApplicationId applicationId =
+        ApplicationId.newInstance(in.readLong(), in.readInt());
+    ApplicationAttemptId applicationAttemptId =
+        ApplicationAttemptId.newInstance(applicationId, in.readInt());
+    this.containerId =
+        ContainerId.newInstance(applicationAttemptId, in.readInt());
     this.nmHostAddr = in.readUTF();
     this.appSubmitter = in.readUTF();
     int memory = in.readInt();
     int vCores = in.readInt();
-    this.resource = BuilderUtils.newResource(memory, vCores);
+    this.resource = Resource.newInstance(memory, vCores);
     this.expiryTimeStamp = in.readLong();
     this.masterKeyId = in.readInt();
+    this.rmIdentifier = in.readLong();
   }
 
   @Override

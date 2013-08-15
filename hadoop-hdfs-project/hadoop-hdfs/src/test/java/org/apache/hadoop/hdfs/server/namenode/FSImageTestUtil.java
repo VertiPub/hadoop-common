@@ -47,6 +47,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.permission.PermissionStatus;
+import org.apache.hadoop.hdfs.DFSUtil;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.server.common.Storage.StorageDirType;
 import org.apache.hadoop.hdfs.server.common.Storage.StorageDirectory;
@@ -61,6 +62,7 @@ import org.mockito.Mockito;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -217,8 +219,8 @@ public abstract class FSImageTestUtil {
         FsPermission.createImmutable((short)0755));
     for (int i = 1; i <= numDirs; i++) {
       String dirName = "dir" + i;
-      INodeDirectory dir = new INodeDirectory(newInodeId + i - 1, dirName,
-          perms);
+      INodeDirectory dir = new INodeDirectory(newInodeId + i - 1,
+          DFSUtil.string2Bytes(dirName), perms, 0L);
       editLog.logMkDir("/" + dirName, dir);
     }
     editLog.logSync();
@@ -553,5 +555,17 @@ public abstract class FSImageTestUtil {
    */
   public static long getNSQuota(FSNamesystem ns) {
     return ns.dir.rootDir.getNsQuota();
+  }
+  
+  public static void assertNNFilesMatch(MiniDFSCluster cluster) throws Exception {
+    List<File> curDirs = Lists.newArrayList();
+    curDirs.addAll(FSImageTestUtil.getNameNodeCurrentDirs(cluster, 0));
+    curDirs.addAll(FSImageTestUtil.getNameNodeCurrentDirs(cluster, 1));
+    
+    // Ignore seen_txid file, since the newly bootstrapped standby
+    // will have a higher seen_txid than the one it bootstrapped from.
+    Set<String> ignoredFiles = ImmutableSet.of("seen_txid");
+    FSImageTestUtil.assertParallelFilesAreIdentical(curDirs,
+        ignoredFiles);
   }
 }

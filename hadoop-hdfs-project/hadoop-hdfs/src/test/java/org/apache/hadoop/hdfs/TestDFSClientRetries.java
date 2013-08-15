@@ -90,6 +90,7 @@ import org.apache.hadoop.util.Time;
 import org.apache.log4j.Level;
 import org.junit.Assert;
 import org.junit.Test;
+import org.junit.Before;
 import org.mockito.Mockito;
 import org.mockito.internal.stubbing.answers.ThrowsException;
 import org.mockito.invocation.InvocationOnMock;
@@ -107,7 +108,7 @@ public class TestDFSClientRetries {
   final static private int MIN_SLEEP_TIME = 1000;
   public static final Log LOG =
     LogFactory.getLog(TestDFSClientRetries.class.getName());
-  final static private Configuration conf = new HdfsConfiguration();
+  static private Configuration conf = null;
  
  private static class TestServer extends Server {
     private boolean sleep;
@@ -155,6 +156,11 @@ public class TestDFSClientRetries {
       out.write(buf, 0, toWrite);
       len -= toWrite;
     }
+  }
+  
+  @Before
+  public void setupConf(){
+    conf = new HdfsConfiguration();
   }
   
   /**
@@ -241,17 +247,17 @@ public class TestDFSClientRetries {
                          anyString(),
                          any(ExtendedBlock.class),
                          any(DatanodeInfo[].class),
-                         anyLong())).thenAnswer(answer);
+                         anyLong(), any(String[].class))).thenAnswer(answer);
     
     Mockito.doReturn(
             new HdfsFileStatus(0, false, 1, 1024, 0, 0, new FsPermission(
                 (short) 777), "owner", "group", new byte[0], new byte[0],
-                1010)).when(mockNN).getFileInfo(anyString());
+                1010, 0)).when(mockNN).getFileInfo(anyString());
     
     Mockito.doReturn(
             new HdfsFileStatus(0, false, 1, 1024, 0, 0, new FsPermission(
                 (short) 777), "owner", "group", new byte[0], new byte[0],
-                1010))
+                1010, 0))
         .when(mockNN)
         .create(anyString(), (FsPermission) anyObject(), anyString(),
             (EnumSetWritable<CreateFlag>) anyObject(), anyBoolean(),
@@ -390,7 +396,7 @@ public class TestDFSClientRetries {
         }
       }).when(spyNN).addBlock(Mockito.anyString(), Mockito.anyString(),
           Mockito.<ExtendedBlock> any(), Mockito.<DatanodeInfo[]> any(),
-          Mockito.anyLong());
+          Mockito.anyLong(), Mockito.<String[]> any());
 
       doAnswer(new Answer<Boolean>() {
 
@@ -417,7 +423,7 @@ public class TestDFSClientRetries {
           }
         }
       }).when(spyNN).complete(Mockito.anyString(), Mockito.anyString(),
-          Mockito.<ExtendedBlock>any());
+          Mockito.<ExtendedBlock>any(), anyLong());
       
       OutputStream stm = client.create(file.toString(), true);
       try {
@@ -432,10 +438,10 @@ public class TestDFSClientRetries {
       Mockito.verify(spyNN, Mockito.atLeastOnce()).addBlock(
           Mockito.anyString(), Mockito.anyString(),
           Mockito.<ExtendedBlock> any(), Mockito.<DatanodeInfo[]> any(),
-          Mockito.anyLong());
+          Mockito.anyLong(), Mockito.<String[]> any());
       Mockito.verify(spyNN, Mockito.atLeastOnce()).complete(
           Mockito.anyString(), Mockito.anyString(),
-          Mockito.<ExtendedBlock>any());
+          Mockito.<ExtendedBlock>any(), anyLong());
       
       AppendTestUtil.check(fs, file, 10000);
     } finally {

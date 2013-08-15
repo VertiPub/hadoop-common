@@ -25,11 +25,16 @@ import java.util.List;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.classification.InterfaceAudience.Private;
+import org.apache.hadoop.classification.InterfaceStability.Unstable;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.yarn.api.records.QueueACL;
 import org.apache.hadoop.yarn.api.records.QueueUserACLInfo;
 import org.apache.hadoop.yarn.api.records.Resource;
+import org.apache.hadoop.yarn.util.resource.Resources;
 
+@Private
+@Unstable
 public class FSParentQueue extends FSQueue {
   private static final Log LOG = LogFactory.getLog(
       FSParentQueue.class.getName());
@@ -53,7 +58,7 @@ public class FSParentQueue extends FSQueue {
   public void recomputeShares() {
     policy.computeShares(childQueues, getFairShare());
     for (FSQueue childQueue : childQueues) {
-      childQueue.getMetrics().setAvailableResourcesToQueue(childQueue.getFairShare());
+      childQueue.getMetrics().setFairShare(childQueue.getFairShare());
       childQueue.recomputeShares();
     }
   }
@@ -87,8 +92,8 @@ public class FSParentQueue extends FSQueue {
             " now " + demand);
       }
       demand = Resources.add(demand, toAdd);
-      if (Resources.greaterThanOrEqual(demand, maxRes)) {
-        demand = maxRes;
+      demand = Resources.componentwiseMin(demand, maxRes);
+      if (Resources.equals(demand, maxRes)) {
         break;
       }
     }
@@ -135,16 +140,14 @@ public class FSParentQueue extends FSQueue {
     Resource assigned = Resources.none();
 
     // If this queue is over its limit, reject
-    if (Resources.greaterThan(getResourceUsage(),
-        queueMgr.getMaxResources(getName()))) {
+    if (!assignContainerPreCheck(node)) {
       return assigned;
     }
 
     Collections.sort(childQueues, policy.getComparator());
     for (FSQueue child : childQueues) {
       assigned = child.assignContainer(node);
-      if (node.getReservedContainer() != null
-          || Resources.greaterThan(assigned, Resources.none())) {
+      if (!Resources.equals(assigned, Resources.none())) {
         break;
       }
     }

@@ -56,6 +56,8 @@ import org.apache.hadoop.hdfs.server.namenode.ha.HAContext;
 import org.apache.hadoop.hdfs.server.namenode.ha.HAState;
 import org.apache.hadoop.hdfs.server.namenode.ha.StandbyState;
 import org.apache.hadoop.hdfs.server.namenode.metrics.NameNodeMetrics;
+import org.apache.hadoop.hdfs.server.namenode.startupprogress.StartupProgress;
+import org.apache.hadoop.hdfs.server.namenode.startupprogress.StartupProgressMetrics;
 import org.apache.hadoop.hdfs.server.protocol.DatanodeProtocol;
 import org.apache.hadoop.hdfs.server.protocol.JournalProtocol;
 import org.apache.hadoop.hdfs.server.protocol.NamenodeProtocol;
@@ -65,6 +67,7 @@ import org.apache.hadoop.hdfs.server.protocol.NamespaceInfo;
 import org.apache.hadoop.ipc.Server;
 import org.apache.hadoop.ipc.StandbyException;
 import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
+import org.apache.hadoop.metrics2.util.MBeans;
 import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.RefreshUserMappingsProtocol;
@@ -74,6 +77,7 @@ import org.apache.hadoop.security.authorize.RefreshAuthorizationPolicyProtocol;
 import org.apache.hadoop.tools.GetUserMappingsProtocol;
 import org.apache.hadoop.util.ExitUtil.ExitException;
 import org.apache.hadoop.util.GenericOptionsParser;
+import org.apache.hadoop.util.JvmPauseMonitor;
 import org.apache.hadoop.util.ServicePlugin;
 import org.apache.hadoop.util.StringUtils;
 
@@ -120,7 +124,7 @@ import com.google.common.collect.Lists;
  * NameNode state, for example partial blocksMap etc.
  **********************************************************/
 @InterfaceAudience.Private
-public class NameNode {
+public class NameNode implements NameNodeStatusMXBean {
   static{
     HdfsConfiguration.init();
   }
@@ -252,6 +256,8 @@ public class NameNode {
   private List<ServicePlugin> plugins;
   
   private NameNodeRpcServer rpcServer;
+
+  private JvmPauseMonitor pauseMonitor;
   
   /** Format a new filesystem.  Destroys any filesystem that may already
    * exist at this location.  **/
@@ -260,6 +266,10 @@ public class NameNode {
   }
 
   static NameNodeMetrics metrics;
+  private static final StartupProgress startupProgress = new StartupProgress();
+  static {
+    StartupProgressMetrics.register(startupProgress);
+  }
 
   /** Return the {@link FSNamesystem} object.
    * @return {@link FSNamesystem} object.
@@ -279,7 +289,16 @@ public class NameNode {
   public static NameNodeMetrics getNameNodeMetrics() {
     return metrics;
   }
-  
+
+  /**
+   * Returns object used for reporting namenode startup progress.
+   * 
+   * @return StartupProgress for reporting namenode startup progress
+   */
+  public static StartupProgress getStartupProgress() {
+    return startupProgress;
+  }
+
   public static InetSocketAddress getAddress(String address) {
     return NetUtils.createSocketAddr(address, DEFAULT_PORT);
   }
@@ -413,6 +432,15 @@ public class NameNode {
     return nodeRegistration;
   }
 
+  /* optimize ugi lookup for RPC operations to avoid a trip through
+   * UGI.getCurrentUser which is synch'ed
+   */
+  public static UserGroupInformation getRemoteUser() throws IOException {
+    UserGroupInformation ugi = Server.getRemoteUser();
+    return (ugi != null) ? ugi : UserGroupInformation.getCurrentUser();
+  }
+
+
   /**
    * Login as the configured user for the NameNode.
    */
@@ -432,16 +460,23 @@ public class NameNode {
     loginAsNameNodeUser(conf);
 
     NameNode.initMetrics(conf, this.getRole());
+
+    if (NamenodeRole.NAMENODE == role) {
+      startHttpServer(conf);
+      validateConfigurationSettingsOrAbort(conf);
+    }
     loadNamesystem(conf);
 
     rpcServer = createRpcServer(conf);
-    
-    try {
-      validateConfigurationSettings(conf);
-    } catch (IOException e) {
-      LOG.fatal(e.toString());
-      throw e;
+    if (NamenodeRole.NAMENODE == role) {
+      httpServer.setNameNodeAddress(getNameNodeAddress());
+      httpServer.setFSImage(getFSImage());
+    } else {
+      validateConfigurationSettingsOrAbort(conf);
     }
+    
+    pauseMonitor = new JvmPauseMonitor(conf);
+    pauseMonitor.start();
 
     startCommonServices(conf);
   }
@@ -477,10 +512,32 @@ public class NameNode {
     } 
   }
 
+  /**
+   * Validate NameNode configuration.  Log a fatal error and abort if
+   * configuration is invalid.
+   * 
+   * @param conf Configuration to validate
+   * @throws IOException thrown if conf is invalid
+   */
+  private void validateConfigurationSettingsOrAbort(Configuration conf)
+      throws IOException {
+    try {
+      validateConfigurationSettings(conf);
+    } catch (IOException e) {
+      LOG.fatal(e.toString());
+      throw e;
+    }
+  }
+
   /** Start the services common to active and standby states */
   private void startCommonServices(Configuration conf) throws IOException {
     namesystem.startCommonServices(conf, haContext);
-    startHttpServer(conf);
+    registerNNSMXBean();
+    if (NamenodeRole.NAMENODE != role) {
+      startHttpServer(conf);
+      httpServer.setNameNodeAddress(getNameNodeAddress());
+      httpServer.setFSImage(getFSImage());
+    }
     rpcServer.start();
     plugins = conf.getInstances(DFS_NAMENODE_PLUGINS_KEY,
         ServicePlugin.class);
@@ -501,6 +558,7 @@ public class NameNode {
   private void stopCommonServices() {
     if(namesystem != null) namesystem.close();
     if(rpcServer != null) rpcServer.stop();
+    if (pauseMonitor != null) pauseMonitor.stop();
     if (plugins != null) {
       for (ServicePlugin p : plugins) {
         try {
@@ -519,7 +577,7 @@ public class NameNode {
     if (trashInterval == 0) {
       return;
     } else if (trashInterval < 0) {
-      throw new IOException("Cannot start tresh emptier with negative interval."
+      throw new IOException("Cannot start trash emptier with negative interval."
           + " Set " + FS_TRASH_INTERVAL_KEY + " to a positive value.");
     }
     
@@ -548,6 +606,7 @@ public class NameNode {
   private void startHttpServer(final Configuration conf) throws IOException {
     httpServer = new NameNodeHttpServer(conf, this, getHttpServerAddress(conf));
     httpServer.start();
+    httpServer.setStartupProgress(startupProgress);
     setHttpServerAddress(conf);
   }
   
@@ -651,13 +710,14 @@ public class NameNode {
       }
     } catch (ServiceFailedException e) {
       LOG.warn("Encountered exception while exiting state ", e);
-    }
-    stopCommonServices();
-    if (metrics != null) {
-      metrics.shutdown();
-    }
-    if (namesystem != null) {
-      namesystem.shutdown();
+    } finally {
+      stopCommonServices();
+      if (metrics != null) {
+        metrics.shutdown();
+      }
+      if (namesystem != null) {
+        namesystem.shutdown();
+      }
     }
   }
 
@@ -673,7 +733,8 @@ public class NameNode {
   }
 
   /** get FSImage */
-  FSImage getFSImage() {
+  @VisibleForTesting
+  public FSImage getFSImage() {
     return namesystem.dir.fsImage;
   }
 
@@ -895,41 +956,49 @@ public class NameNode {
     FSEditLog sourceEditLog = fsns.getFSImage().editLog;
     
     long fromTxId = fsns.getFSImage().getMostRecentCheckpointTxId();
-    Collection<EditLogInputStream> streams = sourceEditLog.selectInputStreams(
-        fromTxId+1, 0);
-
-    // Set the nextTxid to the CheckpointTxId+1
-    newSharedEditLog.setNextTxId(fromTxId + 1);
     
-    // Copy all edits after last CheckpointTxId to shared edits dir
-    for (EditLogInputStream stream : streams) {
-      LOG.debug("Beginning to copy stream " + stream + " to shared edits");
-      FSEditLogOp op;
-      boolean segmentOpen = false;
-      while ((op = stream.readOp()) != null) {
-        if (LOG.isTraceEnabled()) {
-          LOG.trace("copying op: " + op);
-        }
-        if (!segmentOpen) {
-          newSharedEditLog.startLogSegment(op.txid, false);
-          segmentOpen = true;
-        }
-        
-        newSharedEditLog.logEdit(op);
+    Collection<EditLogInputStream> streams = null;
+    try {
+      streams = sourceEditLog.selectInputStreams(fromTxId + 1, 0);
 
-        if (op.opCode == FSEditLogOpCodes.OP_END_LOG_SEGMENT) {
+      // Set the nextTxid to the CheckpointTxId+1
+      newSharedEditLog.setNextTxId(fromTxId + 1);
+
+      // Copy all edits after last CheckpointTxId to shared edits dir
+      for (EditLogInputStream stream : streams) {
+        LOG.debug("Beginning to copy stream " + stream + " to shared edits");
+        FSEditLogOp op;
+        boolean segmentOpen = false;
+        while ((op = stream.readOp()) != null) {
+          if (LOG.isTraceEnabled()) {
+            LOG.trace("copying op: " + op);
+          }
+          if (!segmentOpen) {
+            newSharedEditLog.startLogSegment(op.txid, false);
+            segmentOpen = true;
+          }
+
+          newSharedEditLog.logEdit(op);
+
+          if (op.opCode == FSEditLogOpCodes.OP_END_LOG_SEGMENT) {
+            newSharedEditLog.logSync();
+            newSharedEditLog.endCurrentLogSegment(false);
+            LOG.debug("ending log segment because of END_LOG_SEGMENT op in "
+                + stream);
+            segmentOpen = false;
+          }
+        }
+
+        if (segmentOpen) {
+          LOG.debug("ending log segment because of end of stream in " + stream);
           newSharedEditLog.logSync();
           newSharedEditLog.endCurrentLogSegment(false);
-          LOG.debug("ending log segment because of END_LOG_SEGMENT op in " + stream);
           segmentOpen = false;
         }
       }
-      
-      if (segmentOpen) {
-        LOG.debug("ending log segment because of end of stream in " + stream);
-        newSharedEditLog.logSync();
-        newSharedEditLog.endCurrentLogSegment(false);
-        segmentOpen = false;
+    } finally {
+      if (streams != null) {
+        FSEditLog.closeAllStreams(streams);
       }
     }
   }
@@ -1308,6 +1377,43 @@ public class NameNode {
       return HAServiceState.INITIALIZING;
     }
     return state.getServiceState();
+  }
+
+  /**
+   * Register NameNodeStatusMXBean
+   */
+  private void registerNNSMXBean() {
+    MBeans.register("NameNode", "NameNodeStatus", this);
+  }
+
+  @Override // NameNodeStatusMXBean
+  public String getNNRole() {
+    String roleStr = "";
+    NamenodeRole role = getRole();
+    if (null != role) {
+      roleStr = role.toString();
+    }
+    return roleStr;
+  }
+
+  @Override // NameNodeStatusMXBean
+  public String getState() {
+    String servStateStr = "";
+    HAServiceState servState = getServiceState();
+    if (null != servState) {
+      servStateStr = servState.toString();
+    }
+    return servStateStr;
+  }
+
+  @Override // NameNodeStatusMXBean
+  public String getHostAndPort() {
+    return getNameNodeAddressHostPortString();
+  }
+
+  @Override // NameNodeStatusMXBean
+  public boolean isSecurityEnabled() {
+    return UserGroupInformation.isSecurityEnabled();
   }
 
   /**

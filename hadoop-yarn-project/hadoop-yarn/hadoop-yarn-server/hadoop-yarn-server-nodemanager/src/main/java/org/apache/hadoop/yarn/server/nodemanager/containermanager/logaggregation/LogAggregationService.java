@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.yarn.server.nodemanager.containermanager.logaggregation;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.security.PrivilegedExceptionAction;
 import java.util.Map;
@@ -31,18 +32,20 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.yarn.YarnException;
+import org.apache.hadoop.service.AbstractService;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationAccessType;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.Dispatcher;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.logaggregation.ContainerLogsRetentionPolicy;
 import org.apache.hadoop.yarn.logaggregation.LogAggregationUtils;
 import org.apache.hadoop.yarn.server.nodemanager.Context;
@@ -55,7 +58,6 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.loghandler.eve
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.loghandler.event.LogHandlerAppStartedEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.loghandler.event.LogHandlerContainerFinishedEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.loghandler.event.LogHandlerEvent;
-import org.apache.hadoop.yarn.service.AbstractService;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
@@ -112,7 +114,7 @@ public class LogAggregationService extends AbstractService implements
           .build());
   }
 
-  public synchronized void init(Configuration conf) {
+  protected void serviceInit(Configuration conf) throws Exception {
     this.remoteRootLogDir =
         new Path(conf.get(YarnConfiguration.NM_REMOTE_APP_LOG_DIR,
             YarnConfiguration.DEFAULT_NM_REMOTE_APP_LOG_DIR));
@@ -120,22 +122,22 @@ public class LogAggregationService extends AbstractService implements
         conf.get(YarnConfiguration.NM_REMOTE_APP_LOG_DIR_SUFFIX,
             YarnConfiguration.DEFAULT_NM_REMOTE_APP_LOG_DIR_SUFFIX);
 
-    super.init(conf);
+    super.serviceInit(conf);
   }
 
   @Override
-  public synchronized void start() {
+  protected void serviceStart() throws Exception {
     // NodeId is only available during start, the following cannot be moved
     // anywhere else.
     this.nodeId = this.context.getNodeId();
-    super.start();
+    super.serviceStart();
   }
   
   @Override
-  public synchronized void stop() {
+  protected void serviceStop() throws Exception {
     LOG.info(this.getName() + " waiting for pending aggregation during exit");
     stopAggregators();
-    super.stop();
+    super.serviceStop();
   }
    
   private void stopAggregators() {
@@ -161,38 +163,37 @@ public class LogAggregationService extends AbstractService implements
       LOG.warn("Some logs may not have been aggregated for " + appId);
     }
   }
-  
+
+  protected FileSystem getFileSystem(Configuration conf) throws IOException {
+    return FileSystem.get(conf);
+  }
+
   void verifyAndCreateRemoteLogDir(Configuration conf) {
-    // Checking the existance of the TLD
+    // Checking the existence of the TLD
     FileSystem remoteFS = null;
     try {
-      remoteFS = FileSystem.get(conf);
+      remoteFS = getFileSystem(conf);
     } catch (IOException e) {
-      throw new YarnException("Unable to get Remote FileSystem instance", e);
+      throw new YarnRuntimeException("Unable to get Remote FileSystem instance", e);
     }
-    boolean remoteExists = false;
+    boolean remoteExists = true;
     try {
-      remoteExists = remoteFS.exists(this.remoteRootLogDir);
-    } catch (IOException e) {
-      throw new YarnException("Failed to check for existence of remoteLogDir ["
-          + this.remoteRootLogDir + "]", e);
-    }
-    if (remoteExists) {
-      try {
-        FsPermission perms =
-            remoteFS.getFileStatus(this.remoteRootLogDir).getPermission();
-        if (!perms.equals(TLDIR_PERMISSIONS)) {
-          LOG.warn("Remote Root Log Dir [" + this.remoteRootLogDir
-              + "] already exist, but with incorrect permissions. "
-              + "Expected: [" + TLDIR_PERMISSIONS + "], Found: [" + perms
-              + "]." + " The cluster may have problems with multiple users.");
-        }
-      } catch (IOException e) {
-        throw new YarnException(
-            "Failed to check permissions for dir ["
-                + this.remoteRootLogDir + "]", e);
+      FsPermission perms =
+          remoteFS.getFileStatus(this.remoteRootLogDir).getPermission();
+      if (!perms.equals(TLDIR_PERMISSIONS)) {
+        LOG.warn("Remote Root Log Dir [" + this.remoteRootLogDir
+            + "] already exist, but with incorrect permissions. "
+            + "Expected: [" + TLDIR_PERMISSIONS + "], Found: [" + perms
+            + "]." + " The cluster may have problems with multiple users.");
       }
-    } else {
+    } catch (FileNotFoundException e) {
+      remoteExists = false;
+    } catch (IOException e) {
+      throw new YarnRuntimeException(
+          "Failed to check permissions for dir ["
+              + this.remoteRootLogDir + "]", e);
+    }
+    if (!remoteExists) {
       LOG.warn("Remote Root Log Dir [" + this.remoteRootLogDir
           + "] does not exist. Attempting to create it.");
       try {
@@ -202,7 +203,7 @@ public class LogAggregationService extends AbstractService implements
         remoteFS.mkdirs(qualified, new FsPermission(TLDIR_PERMISSIONS));
         remoteFS.setPermission(qualified, new FsPermission(TLDIR_PERMISSIONS));
       } catch (IOException e) {
-        throw new YarnException("Failed to create remoteLogDir ["
+        throw new YarnRuntimeException("Failed to create remoteLogDir ["
             + this.remoteRootLogDir + "]", e);
       }
     }
@@ -216,8 +217,26 @@ public class LogAggregationService extends AbstractService implements
 
   private void createDir(FileSystem fs, Path path, FsPermission fsPerm)
       throws IOException {
-    fs.mkdirs(path, new FsPermission(fsPerm));
-    fs.setPermission(path, new FsPermission(fsPerm));
+    FsPermission dirPerm = new FsPermission(fsPerm);
+    fs.mkdirs(path, dirPerm);
+    FsPermission umask = FsPermission.getUMask(fs.getConf());
+    if (!dirPerm.equals(dirPerm.applyUMask(umask))) {
+      fs.setPermission(path, new FsPermission(fsPerm));
+    }
+  }
+
+  private boolean checkExists(FileSystem fs, Path path, FsPermission fsPerm)
+      throws IOException {
+    boolean exists = true;
+    try {
+      FileStatus appDirStatus = fs.getFileStatus(path);
+      if (!APP_DIR_PERMISSIONS.equals(appDirStatus.getPermission())) {
+        fs.setPermission(path, APP_DIR_PERMISSIONS);
+      }
+    } catch (FileNotFoundException fnfe) {
+      exists = false;
+    }
+    return exists;
   }
 
   protected void createAppDir(final String user, final ApplicationId appId,
@@ -226,64 +245,50 @@ public class LogAggregationService extends AbstractService implements
       userUgi.doAs(new PrivilegedExceptionAction<Object>() {
         @Override
         public Object run() throws Exception {
-          // TODO: Reuse FS for user?
-          FileSystem remoteFS = null;
-          Path userDir = null;
-          Path suffixDir = null;
-          Path appDir = null;
           try {
-            remoteFS = FileSystem.get(getConfig());
-          } catch (IOException e) {
-            LOG.error("Failed to get remote FileSystem while processing app "
-                + appId, e);
-            throw e;
-          }
-          try {
-            userDir =
-                LogAggregationUtils.getRemoteLogUserDir(
+            // TODO: Reuse FS for user?
+            FileSystem remoteFS = getFileSystem(getConfig());
+
+            // Only creating directories if they are missing to avoid
+            // unnecessary load on the filesystem from all of the nodes
+            Path appDir = LogAggregationUtils.getRemoteAppLogDir(
+                LogAggregationService.this.remoteRootLogDir, appId, user,
+                LogAggregationService.this.remoteRootLogDirSuffix);
+            appDir = appDir.makeQualified(remoteFS.getUri(),
+                remoteFS.getWorkingDirectory());
+
+            if (!checkExists(remoteFS, appDir, APP_DIR_PERMISSIONS)) {
+              Path suffixDir = LogAggregationUtils.getRemoteLogSuffixedDir(
+                  LogAggregationService.this.remoteRootLogDir, user,
+                  LogAggregationService.this.remoteRootLogDirSuffix);
+              suffixDir = suffixDir.makeQualified(remoteFS.getUri(),
+                  remoteFS.getWorkingDirectory());
+
+              if (!checkExists(remoteFS, suffixDir, APP_DIR_PERMISSIONS)) {
+                Path userDir = LogAggregationUtils.getRemoteLogUserDir(
                     LogAggregationService.this.remoteRootLogDir, user);
-            userDir =
-                userDir.makeQualified(remoteFS.getUri(),
+                userDir = userDir.makeQualified(remoteFS.getUri(),
                     remoteFS.getWorkingDirectory());
-            createDir(remoteFS, userDir, APP_DIR_PERMISSIONS);
+
+                if (!checkExists(remoteFS, userDir, APP_DIR_PERMISSIONS)) {
+                  createDir(remoteFS, userDir, APP_DIR_PERMISSIONS);
+                }
+
+                createDir(remoteFS, suffixDir, APP_DIR_PERMISSIONS);
+              }
+
+              createDir(remoteFS, appDir, APP_DIR_PERMISSIONS);
+            }
           } catch (IOException e) {
-            LOG.error("Failed to create user dir [" + userDir
-                + "] while processing app " + appId);
-            throw e;
-          }
-          try {
-            suffixDir =
-                LogAggregationUtils.getRemoteLogSuffixedDir(
-                    LogAggregationService.this.remoteRootLogDir, user,
-                    LogAggregationService.this.remoteRootLogDirSuffix);
-            suffixDir =
-                suffixDir.makeQualified(remoteFS.getUri(),
-                    remoteFS.getWorkingDirectory());
-            createDir(remoteFS, suffixDir, APP_DIR_PERMISSIONS);
-          } catch (IOException e) {
-            LOG.error("Failed to create suffixed user dir [" + suffixDir
-                + "] while processing app " + appId);
-            throw e;
-          }
-          try {
-            appDir =
-                LogAggregationUtils.getRemoteAppLogDir(
-                    LogAggregationService.this.remoteRootLogDir, appId, user,
-                    LogAggregationService.this.remoteRootLogDirSuffix);
-            appDir =
-                appDir.makeQualified(remoteFS.getUri(),
-                    remoteFS.getWorkingDirectory());
-            createDir(remoteFS, appDir, APP_DIR_PERMISSIONS);
-          } catch (IOException e) {
-            LOG.error("Failed to  create application log dir [" + appDir
-                + "] while processing app " + appId);
+            LOG.error("Failed to setup application log directory for "
+                + appId, e);
             throw e;
           }
           return null;
         }
       });
     } catch (Exception e) {
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
   }
 
@@ -297,8 +302,8 @@ public class LogAggregationService extends AbstractService implements
       initAppAggregator(appId, user, credentials, logRetentionPolicy, appAcls);
       eventResponse = new ApplicationEvent(appId,
           ApplicationEventType.APPLICATION_LOG_HANDLING_INITED);
-    } catch (YarnException e) {
-      LOG.warn("Application failed to init aggregation: " + e.getMessage());
+    } catch (YarnRuntimeException e) {
+      LOG.warn("Application failed to init aggregation", e);
       eventResponse = new ApplicationEvent(appId,
           ApplicationEventType.APPLICATION_LOG_HANDLING_FAILED);
     }
@@ -323,7 +328,7 @@ public class LogAggregationService extends AbstractService implements
             getRemoteNodeLogFileForApp(appId, user), logRetentionPolicy,
             appAcls);
     if (this.appLogAggregators.putIfAbsent(appId, appLogAggregator) != null) {
-      throw new YarnException("Duplicate initApp for " + appId);
+      throw new YarnRuntimeException("Duplicate initApp for " + appId);
     }
     // wait until check for existing aggregator to create dirs
     try {
@@ -332,10 +337,10 @@ public class LogAggregationService extends AbstractService implements
     } catch (Exception e) {
       appLogAggregators.remove(appId);
       closeFileSystems(userUgi);
-      if (!(e instanceof YarnException)) {
-        e = new YarnException(e);
+      if (!(e instanceof YarnRuntimeException)) {
+        e = new YarnRuntimeException(e);
       }
-      throw (YarnException)e;
+      throw (YarnRuntimeException)e;
     }
 
 

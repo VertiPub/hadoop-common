@@ -24,6 +24,7 @@ import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p><code>ApplicationId</code> represents the <em>globally unique</em> 
@@ -37,8 +38,20 @@ import org.apache.hadoop.classification.InterfaceStability.Unstable;
 @Public
 @Stable
 public abstract class ApplicationId implements Comparable<ApplicationId> {
-  
+
+  @Private
+  @Unstable
   public static final String appIdStrPrefix = "application_";
+
+  @Private
+  @Unstable
+  public static ApplicationId newInstance(long clusterTimestamp, int id) {
+    ApplicationId appId = Records.newRecord(ApplicationId.class);
+    appId.setClusterTimestamp(clusterTimestamp);
+    appId.setId(id);
+    appId.build();
+    return appId;
+  }
 
   /**
    * Get the short integer identifier of the <code>ApplicationId</code>
@@ -52,20 +65,22 @@ public abstract class ApplicationId implements Comparable<ApplicationId> {
   
   @Private
   @Unstable
-  public abstract void setId(int id);
+  protected abstract void setId(int id);
   
   /**
    * Get the <em>start time</em> of the <code>ResourceManager</code> which is 
    * used to generate globally unique <code>ApplicationId</code>.
    * @return <em>start time</em> of the <code>ResourceManager</code>
    */
+  @Public
+  @Stable
   public abstract long getClusterTimestamp();
   
   @Private
   @Unstable
-  public abstract void setClusterTimestamp(long clusterTimestamp);
+  protected abstract void setClusterTimestamp(long clusterTimestamp);
 
-  
+  protected abstract void build();
   
   static final ThreadLocal<NumberFormat> appIdFormat =
     new ThreadLocal<NumberFormat>() {

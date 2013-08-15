@@ -51,9 +51,10 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.ContainerAlloca
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.YarnScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.SchedulerEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.SchedulerEventType;
-import org.apache.hadoop.yarn.server.resourcemanager.security.ApplicationTokenSecretManager;
+import org.apache.hadoop.yarn.server.resourcemanager.security.AMRMTokenSecretManager;
 import org.apache.hadoop.yarn.server.resourcemanager.security.ClientToAMTokenSecretManagerInRM;
 import org.apache.hadoop.yarn.server.resourcemanager.security.RMContainerTokenSecretManager;
+import org.apache.hadoop.yarn.server.resourcemanager.security.NMTokenSecretManagerInRM;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -144,8 +145,9 @@ public class TestRMAppTransitions {
     this.rmContext =
         new RMContextImpl(rmDispatcher, store,
           containerAllocationExpirer, amLivelinessMonitor, amFinishingMonitor,
-          null, new ApplicationTokenSecretManager(conf),
+          null, new AMRMTokenSecretManager(conf),
           new RMContainerTokenSecretManager(conf),
+          new NMTokenSecretManagerInRM(conf),
           new ClientToAMTokenSecretManagerInRM());
 
     rmDispatcher.register(RMAppAttemptEventType.class,
@@ -186,7 +188,7 @@ public class TestRMAppTransitions {
     RMApp application =
         new RMAppImpl(applicationId, rmContext, conf, name, user, queue,
           submissionContext, scheduler, masterService,
-          System.currentTimeMillis());
+          System.currentTimeMillis(), "YARN");
 
     testAppStartState(applicationId, user, name, queue, application);
     return application;

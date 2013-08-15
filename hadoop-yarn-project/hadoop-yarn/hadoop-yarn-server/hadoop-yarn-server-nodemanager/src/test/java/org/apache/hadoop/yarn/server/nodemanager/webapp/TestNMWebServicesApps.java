@@ -23,6 +23,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.StringReader;
 import java.util.HashMap;
 
@@ -33,6 +34,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
+import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.AsyncDispatcher;
 import org.apache.hadoop.yarn.event.Dispatcher;
@@ -46,7 +48,7 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.Ap
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 import org.apache.hadoop.yarn.server.nodemanager.webapp.WebServer.NMWebApp;
 import org.apache.hadoop.yarn.server.security.ApplicationACLsManager;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
 import org.apache.hadoop.yarn.webapp.GenericExceptionHandler;
 import org.apache.hadoop.yarn.webapp.WebApp;
 import org.apache.hadoop.yarn.webapp.WebServicesTestUtils;
@@ -91,9 +93,9 @@ public class TestNMWebServicesApps extends JerseyTest {
   private Injector injector = Guice.createInjector(new ServletModule() {
     @Override
     protected void configureServlets() {
-      nmContext = new NodeManager.NMContext(null);
-      nmContext.getNodeId().setHost("testhost.foo.com");
-      nmContext.getNodeId().setPort(9999);
+      nmContext = new NodeManager.NMContext(null, null);
+      NodeId nodeId = NodeId.newInstance("testhost.foo.com", 9999);
+      ((NodeManager.NMContext)nmContext).setNodeId(nodeId);
       resourceView = new ResourceView() {
         @Override
         public long getVmemAllocatedForContainers() {
@@ -177,7 +179,8 @@ public class TestNMWebServicesApps extends JerseyTest {
     assertEquals("apps isn't NULL", JSONObject.NULL, json.get("apps"));
   }
 
-  private HashMap<String, String> addAppContainers(Application app) {
+  private HashMap<String, String> addAppContainers(Application app) 
+      throws IOException {
     Dispatcher dispatcher = new AsyncDispatcher();
     ApplicationAttemptId appAttemptId = BuilderUtils.newApplicationAttemptId(
         app.getAppId(), 1);
@@ -185,16 +188,18 @@ public class TestNMWebServicesApps extends JerseyTest {
         app.getUser(), app.getAppId(), 1);
     Container container2 = new MockContainer(appAttemptId, dispatcher, conf,
         app.getUser(), app.getAppId(), 2);
-    nmContext.getContainers().put(container1.getContainerID(), container1);
-    nmContext.getContainers().put(container2.getContainerID(), container2);
+    nmContext.getContainers()
+        .put(container1.getContainerId(), container1);
+    nmContext.getContainers()
+        .put(container2.getContainerId(), container2);
 
-    app.getContainers().put(container1.getContainerID(), container1);
-    app.getContainers().put(container2.getContainerID(), container2);
+    app.getContainers().put(container1.getContainerId(), container1);
+    app.getContainers().put(container2.getContainerId(), container2);
     HashMap<String, String> hash = new HashMap<String, String>();
-    hash.put(container1.getContainerID().toString(), container1
-        .getContainerID().toString());
-    hash.put(container2.getContainerID().toString(), container2
-        .getContainerID().toString());
+    hash.put(container1.getContainerId().toString(), container1
+        .getContainerId().toString());
+    hash.put(container2.getContainerId().toString(), container2
+        .getContainerId().toString());
     return hash;
   }
 

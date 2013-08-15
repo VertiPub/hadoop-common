@@ -24,8 +24,8 @@ import java.net.InetSocketAddress;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.ipc.ProtobufRpcEngine;
 import org.apache.hadoop.ipc.RPC;
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
-import org.apache.hadoop.yarn.exceptions.impl.pb.YarnRemoteExceptionPBImpl;
+import org.apache.hadoop.yarn.exceptions.YarnException;
+import org.apache.hadoop.yarn.ipc.RPCUtil;
 import org.apache.hadoop.yarn.proto.YarnServerNodemanagerServiceProtos.LocalizerStatusProto;
 import org.apache.hadoop.yarn.server.nodemanager.api.LocalizationProtocol;
 import org.apache.hadoop.yarn.server.nodemanager.api.LocalizationProtocolPB;
@@ -56,13 +56,14 @@ public class LocalizationProtocolPBClientImpl implements LocalizationProtocol,
 
   @Override
   public LocalizerHeartbeatResponse heartbeat(LocalizerStatus status)
-    throws YarnRemoteException {
+    throws YarnException, IOException {
     LocalizerStatusProto statusProto = ((LocalizerStatusPBImpl)status).getProto();
     try {
       return new LocalizerHeartbeatResponsePBImpl(
           proxy.heartbeat(null, statusProto));
     } catch (ServiceException e) {
-      throw YarnRemoteExceptionPBImpl.unwrapAndThrowException(e);
+      RPCUtil.unwrapAndThrowException(e);
+      return null;
     }
   }
 

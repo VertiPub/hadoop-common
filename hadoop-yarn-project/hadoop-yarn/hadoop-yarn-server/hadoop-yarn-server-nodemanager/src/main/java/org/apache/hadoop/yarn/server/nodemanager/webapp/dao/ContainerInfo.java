@@ -26,10 +26,9 @@ import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlTransient;
 
-import org.apache.hadoop.yarn.api.ContainerExitStatus;
+import org.apache.hadoop.yarn.api.records.ContainerExitStatus;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.apache.hadoop.yarn.api.records.Resource;
-import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.nodemanager.Context;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 
@@ -60,7 +59,7 @@ public class ContainerInfo {
   public ContainerInfo(final Context nmContext, final Container container,
        String requestUri, String pathPrefix) {
 
-    this.id = container.getContainerID().toString();
+    this.id = container.getContainerId().toString();
     this.nodeId = nmContext.getNodeId().toString();
     ContainerStatus containerData = container.cloneAndGetContainerStatus();
     this.exitCode = containerData.getExitStatus();

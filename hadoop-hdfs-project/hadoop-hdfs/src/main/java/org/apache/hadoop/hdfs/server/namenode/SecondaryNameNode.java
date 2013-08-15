@@ -17,7 +17,16 @@
  */
 package org.apache.hadoop.hdfs.server.namenode;
 
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_ADMIN;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_METRICS_SESSION_ID_KEY;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NAMENODE_SECONDARY_HTTP_ADDRESS_DEFAULT;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NAMENODE_SECONDARY_HTTP_ADDRESS_KEY;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_SECONDARY_NAMENODE_KEYTAB_FILE_KEY;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_SECONDARY_NAMENODE_USER_NAME_KEY;
+import static org.apache.hadoop.util.ExitUtil.terminate;
+
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -42,23 +51,20 @@ import org.apache.hadoop.HadoopIllegalArgumentException;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
-import static org.apache.hadoop.hdfs.DFSConfigKeys.*;
-
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DFSUtil;
 import org.apache.hadoop.hdfs.HAUtil;
-import org.apache.hadoop.hdfs.NameNodeProxies;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
+import org.apache.hadoop.hdfs.NameNodeProxies;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.apache.hadoop.hdfs.server.common.HdfsServerConstants;
 import org.apache.hadoop.hdfs.server.common.InconsistentFSStateException;
 import org.apache.hadoop.hdfs.server.common.JspHelper;
 import org.apache.hadoop.hdfs.server.common.Storage.StorageDirectory;
 import org.apache.hadoop.hdfs.server.common.Storage.StorageState;
-
-import static org.apache.hadoop.util.ExitUtil.terminate;
-
 import org.apache.hadoop.hdfs.server.namenode.FileJournalManager.EditLogFile;
+import org.apache.hadoop.hdfs.server.namenode.NNStorage.NameNodeDirType;
+import org.apache.hadoop.hdfs.server.namenode.NNStorage.NameNodeFile;
 import org.apache.hadoop.hdfs.server.namenode.NNStorageRetentionManager.StoragePurger;
 import org.apache.hadoop.hdfs.server.protocol.NamenodeProtocol;
 import org.apache.hadoop.hdfs.server.protocol.RemoteEditLog;
@@ -72,7 +78,6 @@ import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authorize.AccessControlList;
-
 import org.apache.hadoop.util.Daemon;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.util.Time;
@@ -242,8 +247,9 @@ public class SecondaryNameNode implements Runnable {
                                   "/tmp/hadoop/dfs/namesecondary");    
     checkpointImage = new CheckpointStorage(conf, checkpointDirs, checkpointEditsDirs);
     checkpointImage.recoverCreate(commandLineOpts.shouldFormat());
+    checkpointImage.deleteTempEdits();
     
-    namesystem = new FSNamesystem(conf, checkpointImage);
+    namesystem = new FSNamesystem(conf, checkpointImage, true);
 
     // Initialize other scheduling parameters from the configuration
     checkpointConf = new CheckpointConf(conf);
@@ -365,7 +371,7 @@ public class SecondaryNameNode implements Runnable {
       try {
         // We may have lost our ticket since last checkpoint, log in again, just in case
         if(UserGroupInformation.isSecurityEnabled())
-          UserGroupInformation.getCurrentUser().reloginFromKeytab();
+          UserGroupInformation.getCurrentUser().checkTGTAndReloginFromKeytab();
         
         long now = Time.now();
 
@@ -814,7 +820,7 @@ public class SecondaryNameNode implements Runnable {
 
       @Override
       public void selectInputStreams(Collection<EditLogInputStream> streams,
-          long fromTxId, boolean inProgressOk) {
+          long fromTxId, boolean inProgressOk, boolean forReading) {
         Iterator<StorageDirectory> iter = storage.dirIterator();
         while (iter.hasNext()) {
           StorageDirectory dir = iter.next();
@@ -947,6 +953,31 @@ public class SecondaryNameNode implements Runnable {
         }
       }
     }
+
+    void deleteTempEdits() throws IOException {
+      FilenameFilter filter = new FilenameFilter() {
+        @Override
+        public boolean accept(File dir, String name) {
+          return name.matches(NameNodeFile.EDITS_TMP.getName()
+              + "_(\\d+)-(\\d+)_(\\d+)");
+        }
+      };
+      Iterator<StorageDirectory> it = storage.dirIterator(NameNodeDirType.EDITS);
+      for (;it.hasNext();) {
+        StorageDirectory dir = it.next();
+        File[] tempEdits = dir.getCurrentDir().listFiles(filter);
+        if (tempEdits != null) {
+          for (File t : tempEdits) {
+            boolean success = t.delete();
+            if (!success) {
+              LOG.warn("Failed to delete temporary edits file: "
+                  + t.getAbsolutePath());
+            }
+          }
+        }
+      }
+    }
+
   }
     
   static void doMerge(

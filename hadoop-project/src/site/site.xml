@@ -46,15 +46,19 @@
       <item name="Hadoop" href="http://hadoop.apache.org/"/>
     </breadcrumbs>
 
-    <menu name="Common" inherit="top">
+    <menu name="General" inherit="top">
       <item name="Overview" href="index.html"/>
       <item name="Single Node Setup" href="hadoop-project-dist/hadoop-common/SingleCluster.html"/>
       <item name="Cluster Setup" href="hadoop-project-dist/hadoop-common/ClusterSetup.html"/>
-      <item name="CLI Mini Cluster" href="hadoop-project-dist/hadoop-common/CLIMiniCluster.html"/>
+      <item name="Hadoop Commands Reference" href="hadoop-project-dist/hadoop-common/CommandsManual.html"/>
       <item name="File System Shell" href="hadoop-project-dist/hadoop-common/FileSystemShell.html"/>
+      <item name="Hadoop Compatibility" href="hadoop-project-dist/hadoop-common/Compatibility.html"/>
+    </menu>
+
+    <menu name="Common" inherit="top">
+      <item name="CLI Mini Cluster" href="hadoop-project-dist/hadoop-common/CLIMiniCluster.html"/>
       <item name="Native Libraries" href="hadoop-project-dist/hadoop-common/NativeLibraries.html"/>
       <item name="Superusers" href="hadoop-project-dist/hadoop-common/Superusers.html"/>
-      <item name="Hadoop Commands Reference" href="hadoop-project-dist/hadoop-common/CommandsManual.html"/>
       <item name="Service Level Authorization" href="hadoop-project-dist/hadoop-common/ServiceLevelAuth.html"/>
       <item name="HTTP Authentication" href="hadoop-project-dist/hadoop-common/HttpAuthentication.html"/>
     </menu>
@@ -64,6 +68,7 @@
       <item name="High Availability With QJM" href="hadoop-project-dist/hadoop-hdfs/HDFSHighAvailabilityWithQJM.html"/>
       <item name="High Availability With NFS" href="hadoop-project-dist/hadoop-hdfs/HDFSHighAvailabilityWithNFS.html"/>
       <item name="Federation" href="hadoop-project-dist/hadoop-hdfs/Federation.html"/>
+      <item name="HDFS Snapshots" href="hadoop-project-dist/hadoop-hdfs/HdfsSnapshots.html"/>
       <item name="HDFS Architecture" href="hadoop-project-dist/hadoop-hdfs/HdfsDesign.html"/>
       <item name="Edits Viewer" href="hadoop-project-dist/hadoop-hdfs/HdfsEditsViewer.html"/>
       <item name="Image Viewer" href="hadoop-project-dist/hadoop-hdfs/HdfsImageViewer.html"/>
@@ -78,6 +83,7 @@
     </menu>
 
     <menu name="MapReduce" inherit="top">
+      <item name="Compatibilty between Hadoop 1.x and Hadoop 2.x" href="hadoop-mapreduce-client/hadoop-mapreduce-client-core/MapReduce_Compatibility_Hadoop1_Hadoop2.html"/>
       <item name="Encrypted Shuffle" href="hadoop-mapreduce-client/hadoop-mapreduce-client-core/EncryptedShuffle.html"/>
       <item name="Pluggable Shuffle/Sort" href="hadoop-mapreduce-client/hadoop-mapreduce-client-core/PluggableShuffleAndPluggableSort.html"/>
     </menu>

@@ -18,7 +18,9 @@
 
 package org.apache.hadoop.yarn.server.api.impl.pb.service;
 
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
+import java.io.IOException;
+
+import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.proto.YarnServerCommonServiceProtos.NodeHeartbeatRequestProto;
 import org.apache.hadoop.yarn.proto.YarnServerCommonServiceProtos.NodeHeartbeatResponseProto;
 import org.apache.hadoop.yarn.proto.YarnServerCommonServiceProtos.RegisterNodeManagerRequestProto;
@@ -51,7 +53,9 @@ public class ResourceTrackerPBServiceImpl implements ResourceTrackerPB {
     try {
       RegisterNodeManagerResponse response = real.registerNodeManager(request);
       return ((RegisterNodeManagerResponsePBImpl)response).getProto();
-    } catch (YarnRemoteException e) {
+    } catch (YarnException e) {
+      throw new ServiceException(e);
+    } catch (IOException e) {
       throw new ServiceException(e);
     }
   }
@@ -63,7 +67,9 @@ public class ResourceTrackerPBServiceImpl implements ResourceTrackerPB {
     try {
       NodeHeartbeatResponse response = real.nodeHeartbeat(request);
       return ((NodeHeartbeatResponsePBImpl)response).getProto();
-    } catch (YarnRemoteException e) {
+    } catch (YarnException e) {
+      throw new ServiceException(e);
+    } catch (IOException e) {
       throw new ServiceException(e);
     }
   }

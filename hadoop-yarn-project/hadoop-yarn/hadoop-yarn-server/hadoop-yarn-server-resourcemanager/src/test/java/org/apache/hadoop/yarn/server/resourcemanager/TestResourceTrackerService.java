@@ -32,6 +32,8 @@ import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.apache.hadoop.yarn.api.records.NodeId;
+import org.apache.hadoop.yarn.api.records.NodeState;
+import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.Dispatcher;
 import org.apache.hadoop.yarn.event.DrainDispatcher;
@@ -42,6 +44,7 @@ import org.apache.hadoop.yarn.server.api.protocolrecords.RegisterNodeManagerResp
 import org.apache.hadoop.yarn.server.api.records.NodeAction;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.QueueMetrics;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.SchedulerEvent;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.junit.After;
 import org.junit.Test;
@@ -57,7 +60,7 @@ public class TestResourceTrackerService {
    * Test RM read NM next heartBeat Interval correctly from Configuration file,
    * and NM get next heartBeat Interval from RM correctly
    */
-  @Test (timeout = 5000)
+  @Test (timeout = 50000)
   public void testGetNextHeartBeatInterval() throws Exception {
     Configuration conf = new Configuration();
     conf.set(YarnConfiguration.RM_NM_HEARTBEAT_INTERVAL_MS, "4000");
@@ -257,14 +260,74 @@ public class TestResourceTrackerService {
     ResourceTrackerService resourceTrackerService = rm.getResourceTrackerService();
     RegisterNodeManagerRequest req = Records.newRecord(
         RegisterNodeManagerRequest.class);
-    NodeId nodeId = Records.newRecord(NodeId.class);
-    nodeId.setHost("host2");
-    nodeId.setPort(1234);
+    NodeId nodeId = NodeId.newInstance("host2", 1234);
     req.setNodeId(nodeId);
     req.setHttpPort(1234);
     // trying to register a invalid node.
     RegisterNodeManagerResponse response = resourceTrackerService.registerNodeManager(req);
     Assert.assertEquals(NodeAction.SHUTDOWN,response.getNodeAction());
+    Assert
+      .assertEquals(
+        "Disallowed NodeManager from  host2, Sending SHUTDOWN signal to the NodeManager.",
+        response.getDiagnosticsMessage());
+  }
+
+  @Test
+  public void testSetRMIdentifierInRegistration() throws Exception {
+
+    Configuration conf = new Configuration();
+    rm = new MockRM(conf);
+    rm.start();
+
+    MockNM nm = new MockNM("host1:1234", 5120, rm.getResourceTrackerService());
+    RegisterNodeManagerResponse response = nm.registerNode();
+
+    // Verify the RMIdentifier is correctly set in RegisterNodeManagerResponse
+    Assert.assertEquals(ResourceManager.clusterTimeStamp,
+      response.getRMIdentifier());
+  }
+
+  @Test
+  public void testNodeRegistrationWithMinimumAllocations() throws Exception {
+    Configuration conf = new Configuration();
+    conf.set(YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_MB, "2048");
+    conf.set(YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_VCORES, "4");
+    rm = new MockRM(conf);
+    rm.start();
+
+    ResourceTrackerService resourceTrackerService
+      = rm.getResourceTrackerService();
+    RegisterNodeManagerRequest req = Records.newRecord(
+        RegisterNodeManagerRequest.class);
+    NodeId nodeId = BuilderUtils.newNodeId("host", 1234);
+    req.setNodeId(nodeId);
+
+    Resource capability = BuilderUtils.newResource(1024, 1);
+    req.setResource(capability);
+    RegisterNodeManagerResponse response1 =
+        resourceTrackerService.registerNodeManager(req);
+    Assert.assertEquals(NodeAction.SHUTDOWN,response1.getNodeAction());
+    
+    capability.setMemory(2048);
+    capability.setVirtualCores(1);
+    req.setResource(capability);
+    RegisterNodeManagerResponse response2 =
+        resourceTrackerService.registerNodeManager(req);
+    Assert.assertEquals(NodeAction.SHUTDOWN,response2.getNodeAction());
+    
+    capability.setMemory(1024);
+    capability.setVirtualCores(4);
+    req.setResource(capability);
+    RegisterNodeManagerResponse response3 =
+        resourceTrackerService.registerNodeManager(req);
+    Assert.assertEquals(NodeAction.SHUTDOWN,response3.getNodeAction());
+    
+    capability.setMemory(2048);
+    capability.setVirtualCores(4);
+    req.setResource(capability);
+    RegisterNodeManagerResponse response4 =
+        resourceTrackerService.registerNodeManager(req);
+    Assert.assertEquals(NodeAction.NORMAL,response4.getNodeAction());
   }
 
   @Test
@@ -283,6 +346,8 @@ public class TestResourceTrackerService {
     nodeHeartbeat = nm2.nodeHeartbeat(
       new HashMap<ApplicationId, List<ContainerStatus>>(), true, -100);
     Assert.assertTrue(NodeAction.RESYNC.equals(nodeHeartbeat.getNodeAction()));
+    Assert.assertEquals("Too far behind rm response id:0 nm response id:-100",
+      nodeHeartbeat.getDiagnosticsMessage());
     checkRebootedNMCount(rm, ++initialMetricCount);
   }
 
@@ -327,15 +392,15 @@ public class TestResourceTrackerService {
       int count) throws Exception {
     
     int waitCount = 0;
-    while(rm.getRMContext().getRMNodes().get(nm1.getNodeId())
-        .getNodeHealthStatus().getIsNodeHealthy() == health
+    while((rm.getRMContext().getRMNodes().get(nm1.getNodeId())
+        .getState() != NodeState.UNHEALTHY) == health
         && waitCount++ < 20) {
       synchronized (this) {
         wait(100);
       }
     }
-    Assert.assertFalse(rm.getRMContext().getRMNodes().get(nm1.getNodeId())
-        .getNodeHealthStatus().getIsNodeHealthy() == health);
+    Assert.assertFalse((rm.getRMContext().getRMNodes().get(nm1.getNodeId())
+        .getState() != NodeState.UNHEALTHY) == health);
     Assert.assertEquals("Unhealthy metrics not incremented", count,
         ClusterMetrics.getMetrics().getUnhealthyNMs());
   }

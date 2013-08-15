@@ -20,8 +20,8 @@ package org.apache.hadoop.hdfs.server.blockmanagement;
 import java.util.Iterator;
 
 import org.apache.hadoop.hdfs.protocol.Block;
-import org.apache.hadoop.hdfs.util.GSet;
-import org.apache.hadoop.hdfs.util.LightWeightGSet;
+import org.apache.hadoop.util.GSet;
+import org.apache.hadoop.util.LightWeightGSet;
 
 /**
  * This class maintains the map from a block to its metadata.
@@ -57,7 +57,7 @@ class BlocksMap {
   /** Constant {@link LightWeightGSet} capacity. */
   private final int capacity;
   
-  private GSet<Block, BlockInfo> blocks;
+  private volatile GSet<Block, BlockInfo> blocks;
 
   BlocksMap(final float loadFactor) {
     // Use 2% of total memory to size the GSet capacity

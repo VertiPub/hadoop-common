@@ -59,9 +59,9 @@ import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
-import org.apache.hadoop.yarn.api.protocolrecords.GetAllApplicationsRequest;
-import org.apache.hadoop.yarn.api.protocolrecords.GetAllApplicationsResponse;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
+import org.apache.hadoop.yarn.api.protocolrecords.GetApplicationsRequest;
+import org.apache.hadoop.yarn.api.protocolrecords.GetApplicationsResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.GetApplicationReportRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.GetApplicationReportResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.GetClusterMetricsRequest;
@@ -79,15 +79,14 @@ import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
-import org.apache.hadoop.yarn.api.records.DelegationToken;
 import org.apache.hadoop.yarn.api.records.QueueInfo;
 import org.apache.hadoop.yarn.api.records.YarnApplicationState;
 import org.apache.hadoop.yarn.api.records.YarnClusterMetrics;
+import org.apache.hadoop.yarn.client.api.impl.YarnClientImpl;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.security.client.RMDelegationTokenIdentifier;
-import org.apache.hadoop.yarn.util.BuilderUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.log4j.Appender;
 import org.apache.log4j.Layout;
@@ -140,9 +139,7 @@ public class TestYARNRunner extends TestCase {
         ).when(yarnRunner).createApplicationSubmissionContext(any(Configuration.class),
             any(String.class), any(Credentials.class));
 
-    appId = recordFactory.newRecordInstance(ApplicationId.class);
-    appId.setClusterTimestamp(System.currentTimeMillis());
-    appId.setId(1);
+    appId = ApplicationId.newInstance(System.currentTimeMillis(), 1);
     jobId = TypeConverter.fromYarn(appId);
     if (testWorkDir.exists()) {
       FileContext.getLocalFSFileContext().delete(new Path(testWorkDir.toString()), true);
@@ -201,11 +198,12 @@ public class TestYARNRunner extends TestCase {
   @Test(timeout=20000)
   public void testResourceMgrDelegate() throws Exception {
     /* we not want a mock of resource mgr delegate */
-    final ClientRMProtocol clientRMProtocol = mock(ClientRMProtocol.class);
+    final ApplicationClientProtocol clientRMProtocol = mock(ApplicationClientProtocol.class);
     ResourceMgrDelegate delegate = new ResourceMgrDelegate(conf) {
       @Override
-      public synchronized void start() {
-        this.rmClient = clientRMProtocol;
+      protected void serviceStart() throws Exception {
+        assertTrue(this.client instanceof YarnClientImpl);
+        ((YarnClientImpl) this.client).setRMClient(clientRMProtocol);
       }
     };
     /* make sure kill calls finish application master */
@@ -215,10 +213,10 @@ public class TestYARNRunner extends TestCase {
     verify(clientRMProtocol).forceKillApplication(any(KillApplicationRequest.class));
 
     /* make sure getalljobs calls get all applications */
-    when(clientRMProtocol.getAllApplications(any(GetAllApplicationsRequest.class))).
-    thenReturn(recordFactory.newRecordInstance(GetAllApplicationsResponse.class));
+    when(clientRMProtocol.getApplications(any(GetApplicationsRequest.class))).
+    thenReturn(recordFactory.newRecordInstance(GetApplicationsResponse.class));
     delegate.getAllJobs();
-    verify(clientRMProtocol).getAllApplications(any(GetAllApplicationsRequest.class));
+    verify(clientRMProtocol).getApplications(any(GetApplicationsRequest.class));
 
     /* make sure getapplication report is called */
     when(clientRMProtocol.getApplicationReport(any(GetApplicationReportRequest.class)))
@@ -285,11 +283,12 @@ public class TestYARNRunner extends TestCase {
       token.setKind(RMDelegationTokenIdentifier.KIND_NAME);
 
       // Setup mock history token
-      DelegationToken historyToken = BuilderUtils.newDelegationToken(
-          new byte[0], MRDelegationTokenIdentifier.KIND_NAME.toString(),
-          new byte[0], hsTokenSevice.toString());
-      GetDelegationTokenResponse getDtResponse = Records
-          .newRecord(GetDelegationTokenResponse.class);
+      org.apache.hadoop.yarn.api.records.Token historyToken =
+          org.apache.hadoop.yarn.api.records.Token.newInstance(new byte[0],
+            MRDelegationTokenIdentifier.KIND_NAME.toString(), new byte[0],
+            hsTokenSevice.toString());
+      GetDelegationTokenResponse getDtResponse =
+          Records.newRecord(GetDelegationTokenResponse.class);
       getDtResponse.setDelegationToken(historyToken);
 
       // mock services
@@ -309,13 +308,13 @@ public class TestYARNRunner extends TestCase {
       YARNRunner yarnRunner = new YARNRunner(conf, rmDelegate, clientCache);
 
       // No HS token if no RM token
-      yarnRunner.addHistoyToken(creds);
+      yarnRunner.addHistoryToken(creds);
       verify(mockHsProxy, times(0)).getDelegationToken(
           any(GetDelegationTokenRequest.class));
 
       // No HS token if RM token, but secirity disabled.
       creds.addToken(new Text("rmdt"), token);
-      yarnRunner.addHistoyToken(creds);
+      yarnRunner.addHistoryToken(creds);
       verify(mockHsProxy, times(0)).getDelegationToken(
           any(GetDelegationTokenRequest.class));
 
@@ -325,18 +324,18 @@ public class TestYARNRunner extends TestCase {
       creds = new Credentials();
 
       // No HS token if no RM token, security enabled
-      yarnRunner.addHistoyToken(creds);
+      yarnRunner.addHistoryToken(creds);
       verify(mockHsProxy, times(0)).getDelegationToken(
           any(GetDelegationTokenRequest.class));
 
       // HS token if RM token present, security enabled
       creds.addToken(new Text("rmdt"), token);
-      yarnRunner.addHistoyToken(creds);
+      yarnRunner.addHistoryToken(creds);
       verify(mockHsProxy, times(1)).getDelegationToken(
           any(GetDelegationTokenRequest.class));
 
       // No additional call to get HS token if RM and HS token present
-      yarnRunner.addHistoyToken(creds);
+      yarnRunner.addHistoryToken(creds);
       verify(mockHsProxy, times(1)).getDelegationToken(
           any(GetDelegationTokenRequest.class));
     } finally {
@@ -361,8 +360,8 @@ public class TestYARNRunner extends TestCase {
             // check that the renewer matches the cluster's RM principal
             assertEquals(masterPrincipal, request.getRenewer() );
 
-            DelegationToken token =
-                recordFactory.newRecordInstance(DelegationToken.class);
+            org.apache.hadoop.yarn.api.records.Token token =
+                recordFactory.newRecordInstance(org.apache.hadoop.yarn.api.records.Token.class);
             // none of these fields matter for the sake of the test
             token.setKind("");
             token.setService("");
@@ -408,10 +407,6 @@ public class TestYARNRunner extends TestCase {
     
     File jobsplitmetainfo = new File(testWorkDir, MRJobConfig.JOB_SPLIT_METAINFO);
     out = new FileOutputStream(jobsplitmetainfo);
-    out.close();
-    
-    File appTokens = new File(testWorkDir, MRJobConfig.APPLICATION_TOKENS_FILE);
-    out = new FileOutputStream(appTokens);
     out.close();
     
     ApplicationSubmissionContext submissionContext = 
@@ -478,10 +473,6 @@ public class TestYARNRunner extends TestCase {
     
     File jobsplitmetainfo = new File(testWorkDir, MRJobConfig.JOB_SPLIT_METAINFO);
     out = new FileOutputStream(jobsplitmetainfo);
-    out.close();
-    
-    File appTokens = new File(testWorkDir, MRJobConfig.APPLICATION_TOKENS_FILE);
-    out = new FileOutputStream(appTokens);
     out.close();
     
     @SuppressWarnings("unused")

@@ -18,9 +18,10 @@
 
 package org.apache.hadoop.fs;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
 import java.net.URI;
-import java.util.*;
+import java.util.Random;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
@@ -103,7 +104,8 @@ public class LocalFileSystem extends ChecksumFileSystem {
       String device = new DF(f, getConf()).getMount();
       File parent = f.getParentFile();
       File dir = null;
-      while (parent!=null && parent.canWrite() && parent.toString().startsWith(device)) {
+      while (parent != null && FileUtil.canWrite(parent) &&
+          parent.toString().startsWith(device)) {
         dir = parent;
         parent = parent.getParentFile();
       }
@@ -130,6 +132,8 @@ public class LocalFileSystem extends ChecksumFileSystem {
       }
       // move checksum file too
       File checkFile = ((RawLocalFileSystem)fs).pathToFile(getChecksumFile(p));
+      // close the stream before rename to release the file handle
+      sums.close();
       b = checkFile.renameTo(new File(badDir, checkFile.getName()+suffix));
       if (!b) {
           LOG.warn("Ignoring failure of renameTo");
@@ -138,5 +142,26 @@ public class LocalFileSystem extends ChecksumFileSystem {
       LOG.warn("Error moving bad file " + p + ": " + e);
     }
     return false;
+  }
+
+  @Override
+  public boolean supportsSymlinks() {
+    return true;
+  }
+
+  @Override
+  public void createSymlink(Path target, Path link, boolean createParent)
+      throws IOException {
+    fs.createSymlink(target, link, createParent);
+  }
+
+  @Override
+  public FileStatus getFileLinkStatus(final Path f) throws IOException {
+    return fs.getFileLinkStatus(f);
+  }
+
+  @Override
+  public Path getLinkTarget(Path f) throws IOException {
+    return fs.getLinkTarget(f);
   }
 }

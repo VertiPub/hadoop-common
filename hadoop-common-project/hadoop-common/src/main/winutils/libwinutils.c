@@ -567,7 +567,7 @@ static DWORD GetEffectiveRightsForSid(PSECURITY_DESCRIPTOR psd,
   PSID pSid,
   PACCESS_MASK pAccessRights)
 {
-  AUTHZ_RESOURCE_MANAGER_HANDLE hManager;
+  AUTHZ_RESOURCE_MANAGER_HANDLE hManager = NULL;
   LUID unusedId = { 0 };
   AUTHZ_CLIENT_CONTEXT_HANDLE hAuthzClientContext = NULL;
   DWORD dwRtnCode = ERROR_SUCCESS;
@@ -581,6 +581,10 @@ static DWORD GetEffectiveRightsForSid(PSECURITY_DESCRIPTOR psd,
     return GetLastError();
   }
 
+  // Pass AUTHZ_SKIP_TOKEN_GROUPS to the function to avoid querying user group
+  // information for access check. This allows us to model POSIX permissions
+  // on Windows, where a user can have less permissions than a group it
+  // belongs to.
   if(!AuthzInitializeContextFromSid(AUTHZ_SKIP_TOKEN_GROUPS,
     pSid, hManager, NULL, unusedId, NULL, &hAuthzClientContext))
   {
@@ -594,15 +598,179 @@ static DWORD GetEffectiveRightsForSid(PSECURITY_DESCRIPTOR psd,
     ret = dwRtnCode;
     goto GetEffectiveRightsForSidEnd;
   }
-  if (!AuthzFreeContext(hAuthzClientContext))
-  {
-    ret = GetLastError();
-    goto GetEffectiveRightsForSidEnd;
-  }
 
 GetEffectiveRightsForSidEnd:
+  if (hManager != NULL)
+  {
+    (void)AuthzFreeResourceManager(hManager);
+  }
+  if (hAuthzClientContext != NULL)
+  {
+    (void)AuthzFreeContext(hAuthzClientContext);
+  }
+
   return ret;
 }
+
+//----------------------------------------------------------------------------
+// Function: CheckAccessForCurrentUser
+//
+// Description:
+//   Checks if the current process has the requested access rights on the given
+//   path. Based on the following MSDN article:
+//   http://msdn.microsoft.com/en-us/library/windows/desktop/ff394771(v=vs.85).aspx
+//
+// Returns:
+//   ERROR_SUCCESS: on success
+//
+DWORD CheckAccessForCurrentUser(
+  __in PCWSTR pathName,
+  __in ACCESS_MASK requestedAccess,
+  __out BOOL *allowed)
+{
+  DWORD dwRtnCode = ERROR_SUCCESS;
+
+  LPWSTR longPathName = NULL;
+  HANDLE hProcessToken = NULL;
+  PSECURITY_DESCRIPTOR pSd = NULL;
+
+  AUTHZ_RESOURCE_MANAGER_HANDLE hManager = NULL;
+  AUTHZ_CLIENT_CONTEXT_HANDLE hAuthzClientContext = NULL;
+  LUID Luid = {0, 0};
+
+  ACCESS_MASK currentUserAccessRights = 0;
+
+  // Prepend the long path prefix if needed
+  dwRtnCode = ConvertToLongPath(pathName, &longPathName);
+  if (dwRtnCode != ERROR_SUCCESS)
+  {
+    goto CheckAccessEnd;
+  }
+
+  // Get SD of the given path. OWNER and DACL security info must be
+  // requested, otherwise, AuthzAccessCheck fails with invalid parameter
+  // error.
+  dwRtnCode = GetNamedSecurityInfo(longPathName, SE_FILE_OBJECT,
+    OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
+    DACL_SECURITY_INFORMATION,
+    NULL, NULL, NULL, NULL, &pSd);
+  if (dwRtnCode != ERROR_SUCCESS)
+  {
+    goto CheckAccessEnd;
+  }
+
+  // Get current process token
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hProcessToken))
+  {
+    dwRtnCode = GetLastError();
+    goto CheckAccessEnd;
+  }
+
+  if (!AuthzInitializeResourceManager(AUTHZ_RM_FLAG_NO_AUDIT, NULL, NULL,
+    NULL, NULL, &hManager))
+  {
+    dwRtnCode = GetLastError();
+    goto CheckAccessEnd;
+  }
+
+  if(!AuthzInitializeContextFromToken(0, hProcessToken, hManager, NULL,
+    Luid, NULL, &hAuthzClientContext))
+  {
+    dwRtnCode = GetLastError();
+    goto CheckAccessEnd;
+  }
+
+  dwRtnCode = GetAccess(hAuthzClientContext, pSd, &currentUserAccessRights);
+  if (dwRtnCode != ERROR_SUCCESS)
+  {
+    goto CheckAccessEnd;
+  }
+
+  *allowed = ((currentUserAccessRights & requestedAccess) == requestedAccess);
+
+CheckAccessEnd:
+  LocalFree(longPathName);
+  LocalFree(pSd);
+  if (hProcessToken != NULL)
+  {
+    CloseHandle(hProcessToken);
+  }
+  if (hManager != NULL)
+  {
+    (void)AuthzFreeResourceManager(hManager);
+  }
+  if (hAuthzClientContext != NULL)
+  {
+    (void)AuthzFreeContext(hAuthzClientContext);
+  }
+
+  return dwRtnCode;
+}
+
+
+//----------------------------------------------------------------------------
+// Function: FindFileOwnerAndPermissionByHandle
+//
+// Description:
+//	Find the owner, primary group and permissions of a file object given the
+//  the file object handle. The function will always follow symbolic links.
+//
+// Returns:
+//	ERROR_SUCCESS: on success
+//  Error code otherwise
+//
+// Notes:
+//  - Caller needs to destroy the memeory of owner and group names by calling
+//    LocalFree() function.
+//
+//  - If the user or group name does not exist, the user or group SID will be
+//    returned as the name.
+//
+DWORD FindFileOwnerAndPermissionByHandle(
+  __in HANDLE fileHandle,
+  __out_opt LPWSTR *pOwnerName,
+  __out_opt LPWSTR *pGroupName,
+  __out_opt PINT pMask)
+{
+  LPWSTR path = NULL;
+  DWORD cchPathLen = 0;
+  DWORD dwRtnCode = ERROR_SUCCESS;
+
+  DWORD ret = ERROR_SUCCESS;
+
+  dwRtnCode = GetFinalPathNameByHandle(fileHandle, path, cchPathLen, 0);
+  if (dwRtnCode == 0)
+  {
+    ret = GetLastError();
+    goto FindFileOwnerAndPermissionByHandleEnd;
+  }
+  cchPathLen = dwRtnCode;
+  path = (LPWSTR) LocalAlloc(LPTR, cchPathLen * sizeof(WCHAR));
+  if (path == NULL)
+  {
+    ret = GetLastError();
+    goto FindFileOwnerAndPermissionByHandleEnd;
+  }
+
+  dwRtnCode = GetFinalPathNameByHandle(fileHandle, path, cchPathLen, 0);
+  if (dwRtnCode != cchPathLen - 1)
+  {
+    ret = GetLastError();
+    goto FindFileOwnerAndPermissionByHandleEnd;
+  }
+
+  dwRtnCode = FindFileOwnerAndPermission(path, TRUE, pOwnerName, pGroupName, pMask);
+  if (dwRtnCode != ERROR_SUCCESS)
+  {
+    ret = dwRtnCode;
+    goto FindFileOwnerAndPermissionByHandleEnd;
+  }
+
+FindFileOwnerAndPermissionByHandleEnd:
+  LocalFree(path);
+  return ret;
+}
+
 
 //----------------------------------------------------------------------------
 // Function: FindFileOwnerAndPermission
@@ -623,6 +791,7 @@ GetEffectiveRightsForSidEnd:
 //
 DWORD FindFileOwnerAndPermission(
   __in LPCWSTR pathName,
+  __in BOOL followLink,
   __out_opt LPWSTR *pOwnerName,
   __out_opt LPWSTR *pGroupName,
   __out_opt PINT pMask)
@@ -636,6 +805,9 @@ DWORD FindFileOwnerAndPermission(
   PSID psidEveryone = NULL;
   DWORD cbSid = SECURITY_MAX_SID_SIZE;
   PACL pDacl = NULL;
+
+  BOOL isSymlink;
+  BY_HANDLE_FILE_INFORMATION fileInformation;
 
   ACCESS_MASK ownerAccessRights = 0;
   ACCESS_MASK groupAccessRights = 0;
@@ -697,6 +869,28 @@ DWORD FindFileOwnerAndPermission(
   }
 
   if (pMask == NULL) goto FindFileOwnerAndPermissionEnd;
+
+  dwRtnCode = GetFileInformationByName(pathName,
+    followLink, &fileInformation);
+  if (dwRtnCode != ERROR_SUCCESS)
+  {
+    ret = dwRtnCode;
+    goto FindFileOwnerAndPermissionEnd;
+  }
+
+  dwRtnCode = SymbolicLinkCheck(pathName, &isSymlink);
+  if (dwRtnCode != ERROR_SUCCESS)
+  {
+    ret = dwRtnCode;
+    goto FindFileOwnerAndPermissionEnd;
+  }
+
+  if (isSymlink)
+    *pMask |= UX_SYMLINK;
+  else if (IsDirFileInfo(&fileInformation))
+    *pMask |= UX_DIRECTORY;
+  else
+    *pMask |= UX_REGULAR;
 
   if ((dwRtnCode = GetEffectiveRightsForSid(pSd,
     psidOwner, &ownerAccessRights)) != ERROR_SUCCESS)
@@ -1514,4 +1708,52 @@ void ReportErrorCode(LPCWSTR func, DWORD err)
     fwprintf(stderr, L"%s error code: %d.\n", func, err);
   }
   if (msg != NULL) LocalFree(msg);
+}
+
+//----------------------------------------------------------------------------
+// Function: GetLibraryName
+//
+// Description:
+//  Given an address, get the file name of the library from which it was loaded.
+//
+// Returns:
+//  None
+//
+// Notes:
+// - The function allocates heap memory and points the filename out parameter to
+//   the newly allocated memory, which will contain the name of the file.
+//
+// - If there is any failure, then the function frees the heap memory it
+//   allocated and sets the filename out parameter to NULL.
+//
+void GetLibraryName(LPCVOID lpAddress, LPWSTR *filename)
+{
+  SIZE_T ret = 0;
+  DWORD size = MAX_PATH;
+  HMODULE mod = NULL;
+  DWORD err = ERROR_SUCCESS;
+
+  MEMORY_BASIC_INFORMATION mbi;
+  ret = VirtualQuery(lpAddress, &mbi, sizeof(mbi));
+  if (ret == 0) goto cleanup;
+  mod = mbi.AllocationBase;
+
+  do {
+    *filename = (LPWSTR) realloc(*filename, size * sizeof(WCHAR));
+    if (*filename == NULL) goto cleanup;
+    GetModuleFileName(mod, *filename, size);
+    size <<= 1;
+    err = GetLastError();
+  } while (err == ERROR_INSUFFICIENT_BUFFER);
+
+  if (err != ERROR_SUCCESS) goto cleanup;
+
+  return;
+
+cleanup:
+  if (*filename != NULL)
+  {
+    free(*filename);
+    *filename = NULL;
+  }
 }

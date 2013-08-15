@@ -445,13 +445,18 @@ public class QuorumJournalManager implements JournalManager {
   public void close() throws IOException {
     loggers.close();
   }
+  
+  public void selectInputStreams(Collection<EditLogInputStream> streams,
+      long fromTxnId, boolean inProgressOk) throws IOException {
+    selectInputStreams(streams, fromTxnId, inProgressOk, true);
+  }
 
   @Override
   public void selectInputStreams(Collection<EditLogInputStream> streams,
-      long fromTxnId, boolean inProgressOk) throws IOException {
+      long fromTxnId, boolean inProgressOk, boolean forReading) throws IOException {
 
     QuorumCall<AsyncLogger, RemoteEditLogManifest> q =
-        loggers.getEditLogManifest(fromTxnId);
+        loggers.getEditLogManifest(fromTxnId, forReading, inProgressOk);
     Map<AsyncLogger, RemoteEditLogManifest> resps =
         loggers.waitForWriteQuorum(q, selectInputStreamsTimeoutMs,
             "selectInputStreams");
@@ -475,8 +480,7 @@ public class QuorumJournalManager implements JournalManager {
         allStreams.add(elis);
       }
     }
-    JournalSet.chainAndMakeRedundantStreams(
-        streams, allStreams, fromTxnId, inProgressOk);
+    JournalSet.chainAndMakeRedundantStreams(streams, allStreams, fromTxnId);
   }
   
   @Override

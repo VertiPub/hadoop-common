@@ -47,10 +47,10 @@ import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptEventType;
 import org.apache.hadoop.mapreduce.v2.app.rm.RMHeartbeatHandler;
 import org.apache.hadoop.mapreduce.v2.util.MRApps;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.service.AbstractService;
 import org.apache.hadoop.util.StringUtils;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.event.EventHandler;
-import org.apache.hadoop.yarn.service.AbstractService;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
@@ -87,8 +87,8 @@ public class CommitterEventHandler extends AbstractService
   }
 
   @Override
-  public void init(Configuration conf) {
-    super.init(conf);
+  protected void serviceInit(Configuration conf) throws Exception {
+    super.serviceInit(conf);
     commitThreadCancelTimeoutMs = conf.getInt(
         MRJobConfig.MR_AM_COMMITTER_CANCEL_TIMEOUT_MS,
         MRJobConfig.DEFAULT_MR_AM_COMMITTER_CANCEL_TIMEOUT_MS);
@@ -103,12 +103,12 @@ public class CommitterEventHandler extends AbstractService
       endCommitSuccessFile = MRApps.getEndJobCommitSuccessFile(conf, user, jobId);
       endCommitFailureFile = MRApps.getEndJobCommitFailureFile(conf, user, jobId);
     } catch (IOException e) {
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
   }
 
   @Override
-  public void start() {    
+  protected void serviceStart() throws Exception {
     ThreadFactory tf = new ThreadFactoryBuilder()
       .setNameFormat("CommitterEvent Processor #%d")
       .build();
@@ -134,7 +134,7 @@ public class CommitterEventHandler extends AbstractService
     });
     eventHandlingThread.setName("CommitterEvent Handler");
     eventHandlingThread.start();
-    super.start();
+    super.serviceStart();
   }
 
 
@@ -143,19 +143,23 @@ public class CommitterEventHandler extends AbstractService
     try {
       eventQueue.put(event);
     } catch (InterruptedException e) {
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
   }
 
   @Override
-  public void stop() {
+  protected void serviceStop() throws Exception {
     if (stopped.getAndSet(true)) {
       // return if already stopped
       return;
     }
-    eventHandlingThread.interrupt();
-    launcherPool.shutdown();
-    super.stop();
+    if (eventHandlingThread != null) {
+      eventHandlingThread.interrupt();
+    }
+    if (launcherPool != null) {
+      launcherPool.shutdown();
+    }
+    super.serviceStop();
   }
 
   private synchronized void jobCommitStarted() throws IOException {
@@ -218,7 +222,7 @@ public class CommitterEventHandler extends AbstractService
         handleTaskAbort((CommitterTaskAbortEvent) event);
         break;
       default:
-        throw new YarnException("Unexpected committer event "
+        throw new YarnRuntimeException("Unexpected committer event "
             + event.toString());
       }
     }

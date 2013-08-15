@@ -56,12 +56,12 @@ import org.apache.hadoop.mapreduce.v2.app.job.event.TaskTAttemptEvent;
 import org.apache.hadoop.mapreduce.v2.app.metrics.MRAppMetrics;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.token.Token;
-import org.apache.hadoop.yarn.Clock;
-import org.apache.hadoop.yarn.SystemClock;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.event.EventHandler;
 import org.apache.hadoop.yarn.event.InlineDispatcher;
+import org.apache.hadoop.yarn.util.Clock;
 import org.apache.hadoop.yarn.util.Records;
+import org.apache.hadoop.yarn.util.SystemClock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -224,9 +224,7 @@ public class TestTaskImpl {
     metrics = mock(MRAppMetrics.class);  
     dataLocations = new String[1];
     
-    appId = Records.newRecord(ApplicationId.class);
-    appId.setClusterTimestamp(System.currentTimeMillis());
-    appId.setId(1);
+    appId = ApplicationId.newInstance(System.currentTimeMillis(), 1);
 
     jobId = Records.newRecord(JobId.class);
     jobId.setId(1);

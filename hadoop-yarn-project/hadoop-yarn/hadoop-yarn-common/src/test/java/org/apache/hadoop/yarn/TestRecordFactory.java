@@ -20,6 +20,7 @@ package org.apache.hadoop.yarn;
 
 import junit.framework.Assert;
 
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factories.impl.pb.RecordFactoryPBImpl;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateRequest;
@@ -38,7 +39,7 @@ public class TestRecordFactory {
       AllocateResponse response =
           pbRecordFactory.newRecordInstance(AllocateResponse.class);
       Assert.assertEquals(AllocateResponsePBImpl.class, response.getClass());
-    } catch (YarnException e) {
+    } catch (YarnRuntimeException e) {
       e.printStackTrace();
       Assert.fail("Failed to crete record");
     }
@@ -47,7 +48,7 @@ public class TestRecordFactory {
       AllocateRequest response =
           pbRecordFactory.newRecordInstance(AllocateRequest.class);
       Assert.assertEquals(AllocateRequestPBImpl.class, response.getClass());
-    } catch (YarnException e) {
+    } catch (YarnRuntimeException e) {
       e.printStackTrace();
       Assert.fail("Failed to crete record");
     }

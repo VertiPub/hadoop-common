@@ -19,6 +19,12 @@
        <Package name="org.apache.hadoop.record.compiler.generated" />
      </Match>
      <Match>
+       <Package name="org.apache.hadoop.security.proto" />
+     </Match>
+     <Match>
+       <Package name="org.apache.hadoop.tools.proto" />
+     </Match>
+     <Match>
        <Bug pattern="EI_EXPOSE_REP" />
      </Match>
      <Match>
@@ -98,6 +104,11 @@
      <Match>
        <Class name="org.apache.hadoop.mapred.Task$TaskReporter" />
        <Method name="run" />
+       <Bug pattern="DM_EXIT" />
+     </Match>
+     <Match>
+       <Class name="org.apache.hadoop.util.ProgramDriver" />
+       <Method name="driver" />
        <Bug pattern="DM_EXIT" />
      </Match>
      <!--
@@ -314,5 +325,27 @@
        <Class name="org.apache.hadoop.ipc.Client$Connection" />
        <Field name="in" />
        <Bug pattern="IS2_INCONSISTENT_SYNC" />
+     </Match>
+     <!-- 
+       The switch condition for INITIATE is expected to fallthru to RESPONSE
+       to process initial sasl response token included in the INITIATE
+     -->
+     <Match>
+       <Class name="org.apache.hadoop.ipc.Server$Connection" />
+       <Method name="processSaslMessage" />
+       <Bug pattern="SF_SWITCH_FALLTHROUGH" />
+     </Match>
+
+     <!-- Synchronization performed on util.concurrent instance. -->
+     <Match>
+       <Class name="org.apache.hadoop.service.AbstractService" />
+       <Method name="stop" />
+       <Bug code="JLM" />
+     </Match>
+
+     <Match>
+       <Class name="org.apache.hadoop.service.AbstractService" />
+       <Method name="waitForServiceToStop" />
+       <Bug code="JLM" />
      </Match>
  </FindBugsFilter>

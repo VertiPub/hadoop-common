@@ -221,6 +221,7 @@ public class JsonUtil {
     m.put("blockSize", status.getBlockSize());
     m.put("replication", status.getReplication());
     m.put("fileId", status.getFileId());
+    m.put("childrenNum", status.getChildrenNum());
     return includeType ? toJsonString(FileStatus.class, m): JSON.toString(m);
   }
 
@@ -247,9 +248,12 @@ public class JsonUtil {
     final short replication = (short) (long) (Long) m.get("replication");
     final long fileId = m.containsKey("fileId") ? (Long) m.get("fileId")
         : INodeId.GRANDFATHER_INODE_ID;
+    Long childrenNumLong = (Long) m.get("childrenNum");
+    final int childrenNum = (childrenNumLong == null) ? -1
+            : childrenNumLong.intValue();
     return new HdfsFileStatus(len, type == PathType.DIRECTORY, replication,
         blockSize, mTime, aTime, permission, owner, group,
-        symlink, DFSUtil.string2Bytes(localName), fileId);
+        symlink, DFSUtil.string2Bytes(localName), fileId, childrenNum);
   }
 
   /** Convert an ExtendedBlock to a Json map. */

@@ -296,7 +296,7 @@ public class Job extends JobContextImpl implements JobContext {
    * it, if necessary
    */
   synchronized void ensureFreshStatus() 
-      throws IOException, InterruptedException {
+      throws IOException {
     if (System.currentTimeMillis() - statustime > MAX_JOBSTATUS_AGE) {
       updateStatus();
     }
@@ -306,13 +306,18 @@ public class Job extends JobContextImpl implements JobContext {
    * immediately
    * @throws IOException
    */
-  synchronized void updateStatus() throws IOException, InterruptedException {
-    this.status = ugi.doAs(new PrivilegedExceptionAction<JobStatus>() {
-      @Override
-      public JobStatus run() throws IOException, InterruptedException {
-        return cluster.getClient().getJobStatus(status.getJobID());
-      }
-    });
+  synchronized void updateStatus() throws IOException {
+    try {
+      this.status = ugi.doAs(new PrivilegedExceptionAction<JobStatus>() {
+        @Override
+        public JobStatus run() throws IOException, InterruptedException {
+          return cluster.getClient().getJobStatus(status.getJobID());
+        }
+      });
+    }
+    catch (InterruptedException ie) {
+      throw new IOException(ie);
+    }
     if (this.status == null) {
       throw new IOException("Job status not available ");
     }
@@ -537,7 +542,7 @@ public class Job extends JobContextImpl implements JobContext {
    * @return the progress of the job's map-tasks.
    * @throws IOException
    */
-  public float mapProgress() throws IOException, InterruptedException {
+  public float mapProgress() throws IOException {
     ensureState(JobState.RUNNING);
     ensureFreshStatus();
     return status.getMapProgress();
@@ -550,7 +555,7 @@ public class Job extends JobContextImpl implements JobContext {
    * @return the progress of the job's reduce-tasks.
    * @throws IOException
    */
-  public float reduceProgress() throws IOException, InterruptedException {
+  public float reduceProgress() throws IOException {
     ensureState(JobState.RUNNING);
     ensureFreshStatus();
     return status.getReduceProgress();
@@ -576,7 +581,7 @@ public class Job extends JobContextImpl implements JobContext {
    * @return the progress of the job's setup-tasks.
    * @throws IOException
    */
-  public float setupProgress() throws IOException, InterruptedException {
+  public float setupProgress() throws IOException {
     ensureState(JobState.RUNNING);
     ensureFreshStatus();
     return status.getSetupProgress();
@@ -589,7 +594,7 @@ public class Job extends JobContextImpl implements JobContext {
    * @return <code>true</code> if the job is complete, else <code>false</code>.
    * @throws IOException
    */
-  public boolean isComplete() throws IOException, InterruptedException {
+  public boolean isComplete() throws IOException {
     ensureState(JobState.RUNNING);
     updateStatus();
     return status.isJobComplete();
@@ -601,7 +606,7 @@ public class Job extends JobContextImpl implements JobContext {
    * @return <code>true</code> if the job succeeded, else <code>false</code>.
    * @throws IOException
    */
-  public boolean isSuccessful() throws IOException, InterruptedException {
+  public boolean isSuccessful() throws IOException {
     ensureState(JobState.RUNNING);
     updateStatus();
     return status.getState() == JobStatus.State.SUCCEEDED;
@@ -613,9 +618,14 @@ public class Job extends JobContextImpl implements JobContext {
    * 
    * @throws IOException
    */
-  public void killJob() throws IOException, InterruptedException {
+  public void killJob() throws IOException {
     ensureState(JobState.RUNNING);
-    cluster.getClient().killJob(getJobID());
+    try {
+      cluster.getClient().killJob(getJobID());
+    }
+    catch (InterruptedException ie) {
+      throw new IOException(ie);
+    }
   }
 
   /**
@@ -665,15 +675,45 @@ public class Job extends JobContextImpl implements JobContext {
    * Get events indicating completion (success/failure) of component tasks.
    *  
    * @param startFrom index to start fetching events from
-   * @return an array of {@link TaskCompletionEvent}s
+   * @return an array of {@link org.apache.hadoop.mapred.TaskCompletionEvent}s
    * @throws IOException
    */
-  public TaskCompletionEvent[] getTaskCompletionEvents(final int startFrom) 
-      throws IOException {
+  public org.apache.hadoop.mapred.TaskCompletionEvent[]
+    getTaskCompletionEvents(final int startFrom) throws IOException {
     try {
-      return getTaskCompletionEvents(startFrom, 10);
+      TaskCompletionEvent[] events = getTaskCompletionEvents(startFrom, 10);
+      org.apache.hadoop.mapred.TaskCompletionEvent[] retEvents =
+          new org.apache.hadoop.mapred.TaskCompletionEvent[events.length];
+      for (int i = 0; i < events.length; i++) {
+        retEvents[i] = org.apache.hadoop.mapred.TaskCompletionEvent.downgrade
+            (events[i]);
+      }
+      return retEvents;
     } catch (InterruptedException ie) {
-      throw new RuntimeException(ie);
+      throw new IOException(ie);
+    }
+  }
+
+  /**
+   * Kill indicated task attempt.
+   * @param taskId the id of the task to kill.
+   * @param shouldFail if <code>true</code> the task is failed and added
+   *                   to failed tasks list, otherwise it is just killed,
+   *                   w/o affecting job failure status.
+   */
+  @Private
+  public boolean killTask(final TaskAttemptID taskId,
+                          final boolean shouldFail) throws IOException {
+    ensureState(JobState.RUNNING);
+    try {
+      return ugi.doAs(new PrivilegedExceptionAction<Boolean>() {
+        public Boolean run() throws IOException, InterruptedException {
+          return cluster.getClient().killTask(taskId, shouldFail);
+        }
+      });
+    }
+    catch (InterruptedException ie) {
+      throw new IOException(ie);
     }
   }
 
@@ -683,14 +723,9 @@ public class Job extends JobContextImpl implements JobContext {
    * @param taskId the id of the task to be terminated.
    * @throws IOException
    */
-  public boolean killTask(final TaskAttemptID taskId) 
-      throws IOException, InterruptedException {
-    ensureState(JobState.RUNNING);
-    return ugi.doAs(new PrivilegedExceptionAction<Boolean>() {
-      public Boolean run() throws IOException, InterruptedException {
-        return cluster.getClient().killTask(taskId, false);
-      }
-    });
+  public void killTask(final TaskAttemptID taskId)
+      throws IOException {
+    killTask(taskId, false);
   }
 
   /**
@@ -699,15 +734,9 @@ public class Job extends JobContextImpl implements JobContext {
    * @param taskId the id of the task to be terminated.
    * @throws IOException
    */
-  public boolean failTask(final TaskAttemptID taskId) 
-      throws IOException, InterruptedException {
-    ensureState(JobState.RUNNING);
-    return ugi.doAs(new PrivilegedExceptionAction<Boolean>() {
-      @Override
-      public Boolean run() throws IOException, InterruptedException {
-        return cluster.getClient().killTask(taskId, true);
-      }
-    });
+  public void failTask(final TaskAttemptID taskId)
+      throws IOException {
+    killTask(taskId, true);
   }
 
   /**
@@ -718,14 +747,19 @@ public class Job extends JobContextImpl implements JobContext {
    * @throws IOException
    */
   public Counters getCounters() 
-      throws IOException, InterruptedException {
+      throws IOException {
     ensureState(JobState.RUNNING);
-    return ugi.doAs(new PrivilegedExceptionAction<Counters>() {
-      @Override
-      public Counters run() throws IOException, InterruptedException {
-        return cluster.getClient().getJobCounters(getJobID());
-      }
-    });
+    try {
+      return ugi.doAs(new PrivilegedExceptionAction<Counters>() {
+        @Override
+        public Counters run() throws IOException, InterruptedException {
+          return cluster.getClient().getJobCounters(getJobID());
+        }
+      });
+    }
+    catch (InterruptedException ie) {
+      throw new IOException(ie);
+    }
   }
 
   /**

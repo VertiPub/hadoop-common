@@ -32,6 +32,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.WrappedJvmID;
 import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.JobID;
@@ -81,23 +82,23 @@ import org.apache.hadoop.mapreduce.v2.util.MRApps;
 import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
 import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.yarn.Clock;
-import org.apache.hadoop.yarn.ClusterInfo;
-import org.apache.hadoop.yarn.SystemClock;
-import org.apache.hadoop.yarn.YarnException;
+import org.apache.hadoop.service.Service;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.NodeId;
+import org.apache.hadoop.yarn.api.records.Resource;
+import org.apache.hadoop.yarn.api.records.Token;
 import org.apache.hadoop.yarn.event.EventHandler;
-import org.apache.hadoop.yarn.factories.RecordFactory;
-import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.service.Service;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
+import org.apache.hadoop.yarn.security.ContainerTokenIdentifier;
 import org.apache.hadoop.yarn.state.StateMachine;
 import org.apache.hadoop.yarn.state.StateMachineFactory;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.util.Clock;
+import org.apache.hadoop.yarn.util.SystemClock;
 
 
 /**
@@ -119,18 +120,13 @@ public class MRApp extends MRAppMaster {
   public static int NM_PORT = 1234;
   public static int NM_HTTP_PORT = 8042;
 
-  private static final RecordFactory recordFactory =
-      RecordFactoryProvider.getRecordFactory(null);
-
   //if true, tasks complete automatically as soon as they are launched
   protected boolean autoComplete = false;
 
   static ApplicationId applicationId;
 
   static {
-    applicationId = recordFactory.newRecordInstance(ApplicationId.class);
-    applicationId.setClusterTimestamp(0);
-    applicationId.setId(0);
+    applicationId = ApplicationId.newInstance(0, 0);
   }
 
   public MRApp(int maps, int reduces, boolean autoComplete, String testName,
@@ -144,7 +140,7 @@ public class MRApp extends MRAppMaster {
   }
   
   @Override
-  protected void downloadTokensAndSetupUGI(Configuration conf) {
+  protected void initJobCredentialsAndUGI(Configuration conf) {
     // Fake a shuffle secret that normally is provided by the job client.
     String shuffleSecret = "fake-shuffle-secret";
     TokenCache.setShuffleSecretKey(shuffleSecret.getBytes(), getCredentials());
@@ -153,9 +149,7 @@ public class MRApp extends MRAppMaster {
   private static ApplicationAttemptId getApplicationAttemptId(
       ApplicationId applicationId, int startCount) {
     ApplicationAttemptId applicationAttemptId =
-        recordFactory.newRecordInstance(ApplicationAttemptId.class);
-    applicationAttemptId.setApplicationId(applicationId);
-    applicationAttemptId.setAttemptId(startCount);
+        ApplicationAttemptId.newInstance(applicationId, startCount);
     return applicationAttemptId;
   }
   
@@ -164,7 +158,7 @@ public class MRApp extends MRAppMaster {
     ApplicationAttemptId appAttemptId =
         getApplicationAttemptId(applicationId, startCount);
     ContainerId containerId =
-        BuilderUtils.newContainerId(appAttemptId, startCount);
+        ContainerId.newInstance(appAttemptId, startCount);
     return containerId;
   }
 
@@ -202,7 +196,7 @@ public class MRApp extends MRAppMaster {
         FileContext.getLocalFSFileContext().delete(testAbsPath, true);
       } catch (Exception e) {
         LOG.warn("COULD NOT CLEANUP: " + testAbsPath, e);
-        throw new YarnException("could not cleanup test dir", e);
+        throw new YarnRuntimeException("could not cleanup test dir", e);
       }
     }
 
@@ -212,7 +206,7 @@ public class MRApp extends MRAppMaster {
   }
 
   @Override
-  public void init(Configuration conf) {
+  protected void serviceInit(Configuration conf) throws Exception {
     try {
       //Create the staging directory if it does not exist
       String user = UserGroupInformation.getCurrentUser().getShortUserName();
@@ -220,20 +214,16 @@ public class MRApp extends MRAppMaster {
       FileSystem fs = getFileSystem(conf);
       fs.mkdirs(stagingDir);
     } catch (Exception e) {
-      throw new YarnException("Error creating staging dir", e);
+      throw new YarnRuntimeException("Error creating staging dir", e);
     }
     
-    super.init(conf);
+    super.serviceInit(conf);
     if (this.clusterInfo != null) {
-      getContext().getClusterInfo().setMinContainerCapability(
-          this.clusterInfo.getMinContainerCapability());
       getContext().getClusterInfo().setMaxContainerCapability(
           this.clusterInfo.getMaxContainerCapability());
     } else {
-      getContext().getClusterInfo().setMinContainerCapability(
-          BuilderUtils.newResource(1024, 1));
       getContext().getClusterInfo().setMaxContainerCapability(
-          BuilderUtils.newResource(10240, 1));
+          Resource.newInstance(10240, 1));
     }
   }
 
@@ -367,15 +357,20 @@ public class MRApp extends MRAppMaster {
   }
 
   public void waitForState(Service.STATE finalState) throws Exception {
-    int timeoutSecs = 0;
-    while (!finalState.equals(getServiceState()) && timeoutSecs++ < 20) {
-      System.out.println("MRApp State is : " + getServiceState()
-          + " Waiting for state : " + finalState);
-      Thread.sleep(500);
+    if (finalState == Service.STATE.STOPPED) {
+       Assert.assertTrue("Timeout while waiting for MRApp to stop",
+           waitForServiceToStop(20 * 1000));
+    } else {
+      int timeoutSecs = 0;
+      while (!finalState.equals(getServiceState()) && timeoutSecs++ < 20) {
+        System.out.println("MRApp State is : " + getServiceState()
+            + " Waiting for state : " + finalState);
+        Thread.sleep(500);
+      }
+      System.out.println("MRApp State is : " + getServiceState());
+      Assert.assertEquals("MRApp state is not correct (timedout)", finalState,
+          getServiceState());
     }
-    System.out.println("MRApp State is : " + getServiceState());
-    Assert.assertEquals("MRApp state is not correct (timedout)", finalState,
-        getServiceState());
   }
 
   public void verifyCompleted() {
@@ -409,7 +404,7 @@ public class MRApp extends MRAppMaster {
     try {
       currentUser = UserGroupInformation.getCurrentUser();
     } catch (IOException e) {
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
     Job newJob = new TestJob(getJobId(), getAttemptID(), conf, 
     		getDispatcher().getEventHandler(),
@@ -514,12 +509,18 @@ public class MRApp extends MRAppMaster {
 
      @Override
       public void handle(ContainerAllocatorEvent event) {
-        ContainerId cId = recordFactory.newRecordInstance(ContainerId.class);
-        cId.setApplicationAttemptId(getContext().getApplicationAttemptId());
-        cId.setId(containerCount++);
-        NodeId nodeId = BuilderUtils.newNodeId(NM_HOST, NM_PORT);
-        Container container = BuilderUtils.newContainer(cId, nodeId,
-            NM_HOST + ":" + NM_HTTP_PORT, null, null, null);
+        ContainerId cId =
+            ContainerId.newInstance(getContext().getApplicationAttemptId(),
+              containerCount++);
+        NodeId nodeId = NodeId.newInstance(NM_HOST, NM_PORT);
+        Resource resource = Resource.newInstance(1234, 2);
+        ContainerTokenIdentifier containerTokenIdentifier =
+            new ContainerTokenIdentifier(cId, nodeId.toString(), "user",
+              resource, System.currentTimeMillis() + 10000, 42, 42);
+        Token containerToken = newContainerToken(nodeId, "password".getBytes(),
+              containerTokenIdentifier);
+        Container container = Container.newInstance(cId, nodeId,
+            NM_HOST + ":" + NM_HTTP_PORT, resource, null, containerToken);
         JobID id = TypeConverter.fromYarn(applicationId);
         JobId jobId = TypeConverter.toYarn(id);
         getContext().getEventHandler().handle(new JobHistoryEvent(jobId, 
@@ -689,5 +690,37 @@ public class MRApp extends MRAppMaster {
     }
   }
 
+  public static Token newContainerToken(NodeId nodeId,
+      byte[] password, ContainerTokenIdentifier tokenIdentifier) {
+    // RPC layer client expects ip:port as service for tokens
+    InetSocketAddress addr =
+        NetUtils.createSocketAddrForHost(nodeId.getHost(), nodeId.getPort());
+    // NOTE: use SecurityUtil.setTokenService if this becomes a "real" token
+    Token containerToken =
+        Token.newInstance(tokenIdentifier.getBytes(),
+          ContainerTokenIdentifier.KIND.toString(), password, SecurityUtil
+            .buildTokenService(addr).toString());
+    return containerToken;
+  }
+
+
+  public static ContainerId newContainerId(int appId, int appAttemptId,
+      long timestamp, int containerId) {
+    ApplicationId applicationId = ApplicationId.newInstance(timestamp, appId);
+    ApplicationAttemptId applicationAttemptId =
+        ApplicationAttemptId.newInstance(applicationId, appAttemptId);
+    return ContainerId.newInstance(applicationAttemptId, containerId);
+  }
+
+  public static ContainerTokenIdentifier newContainerTokenIdentifier(
+      Token containerToken) throws IOException {
+    org.apache.hadoop.security.token.Token<ContainerTokenIdentifier> token =
+        new org.apache.hadoop.security.token.Token<ContainerTokenIdentifier>(
+            containerToken.getIdentifier()
+                .array(), containerToken.getPassword().array(), new Text(
+                containerToken.getKind()),
+            new Text(containerToken.getService()));
+    return token.decodeIdentifier();
+  }
 }
  

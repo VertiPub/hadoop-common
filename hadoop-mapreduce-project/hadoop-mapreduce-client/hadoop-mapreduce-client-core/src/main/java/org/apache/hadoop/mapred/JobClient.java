@@ -29,6 +29,7 @@ import java.util.List;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
@@ -136,6 +137,20 @@ import org.apache.hadoop.util.ToolRunner;
 @InterfaceAudience.Public
 @InterfaceStability.Stable
 public class JobClient extends CLI {
+
+  @InterfaceAudience.Private
+  public static final String MAPREDUCE_CLIENT_RETRY_POLICY_ENABLED_KEY =
+      "mapreduce.jobclient.retry.policy.enabled";
+  @InterfaceAudience.Private
+  public static final boolean MAPREDUCE_CLIENT_RETRY_POLICY_ENABLED_DEFAULT =
+      false;
+  @InterfaceAudience.Private
+  public static final String MAPREDUCE_CLIENT_RETRY_POLICY_SPEC_KEY =
+      "mapreduce.jobclient.retry.policy.spec";
+  @InterfaceAudience.Private
+  public static final String MAPREDUCE_CLIENT_RETRY_POLICY_SPEC_DEFAULT =
+      "10000,6,60000,10"; // t1,n1,t2,n2,...
+
   public static enum TaskStatusFilter { NONE, KILLED, FAILED, SUCCEEDED, ALL }
   private TaskStatusFilter taskOutputFilter = TaskStatusFilter.FAILED; 
   
@@ -209,11 +224,7 @@ public class JobClient extends CLI {
      * completed.
      */
     public float mapProgress() throws IOException {
-      try {
-        return job.mapProgress();
-      } catch (InterruptedException ie) {
-        throw new IOException(ie);
-      }
+      return job.mapProgress();
     }
 
     /**
@@ -221,11 +232,7 @@ public class JobClient extends CLI {
      * completed.
      */
     public float reduceProgress() throws IOException {
-      try {
-        return job.reduceProgress();
-      } catch (InterruptedException ie) {
-        throw new IOException(ie);
-      }
+      return job.reduceProgress();
     }
 
     /**
@@ -245,33 +252,21 @@ public class JobClient extends CLI {
      * completed.
      */
     public float setupProgress() throws IOException {
-      try {
-        return job.setupProgress();
-      } catch (InterruptedException ie) {
-        throw new IOException(ie);
-      }
+      return job.setupProgress();
     }
 
     /**
      * Returns immediately whether the whole job is done yet or not.
      */
     public synchronized boolean isComplete() throws IOException {
-      try {
-        return job.isComplete();
-      } catch (InterruptedException ie) {
-        throw new IOException(ie);
-      }
+      return job.isComplete();
     }
 
     /**
      * True iff job completed successfully.
      */
     public synchronized boolean isSuccessful() throws IOException {
-      try {
-        return job.isSuccessful();
-      } catch (InterruptedException ie) {
-        throw new IOException(ie);
-      }
+      return job.isSuccessful();
     }
 
     /**
@@ -302,11 +297,7 @@ public class JobClient extends CLI {
      * Tells the service to terminate the current job.
      */
     public synchronized void killJob() throws IOException {
-      try {
-        job.killJob();
-      } catch (InterruptedException ie) {
-        throw new IOException(ie);
-      }
+      job.killJob();
     }
    
     
@@ -331,14 +322,10 @@ public class JobClient extends CLI {
      */
     public synchronized void killTask(TaskAttemptID taskId,
         boolean shouldFail) throws IOException {
-      try {
-        if (shouldFail) {
-          job.failTask(taskId);
-        } else {
-          job.killTask(taskId);
-        }
-      } catch (InterruptedException ie) {
-        throw new IOException(ie);
+      if (shouldFail) {
+        job.failTask(taskId);
+      } else {
+        job.killTask(taskId);
       }
     }
 
@@ -378,16 +365,12 @@ public class JobClient extends CLI {
      * Returns the counters for this job
      */
     public Counters getCounters() throws IOException {
-      try { 
-        Counters result = null;
-        org.apache.hadoop.mapreduce.Counters temp = job.getCounters();
-        if(temp != null) {
-          result = Counters.downgrade(temp);
-        }
-        return result;
-      } catch (InterruptedException ie) {
-        throw new IOException(ie);
+      Counters result = null;
+      org.apache.hadoop.mapreduce.Counters temp = job.getCounters();
+      if(temp != null) {
+        result = Counters.downgrade(temp);
       }
+      return result;
     }
     
     @Override
@@ -557,6 +540,12 @@ public class JobClient extends CLI {
    */
   public RunningJob submitJob(final JobConf conf) throws FileNotFoundException,
                                                   IOException {
+    return submitJobInternal(conf);
+  }
+
+  @InterfaceAudience.Private
+  public RunningJob submitJobInternal(final JobConf conf)
+      throws FileNotFoundException, IOException {
     try {
       conf.setBooleanIfUnset("mapred.mapper.new-api", false);
       conf.setBooleanIfUnset("mapred.reducer.new-api", false);
@@ -722,19 +711,18 @@ public class JobClient extends CLI {
   public ClusterStatus getClusterStatus() throws IOException {
     try {
       return clientUgi.doAs(new PrivilegedExceptionAction<ClusterStatus>() {
-        public ClusterStatus run()  throws IOException, InterruptedException {
+        public ClusterStatus run() throws IOException, InterruptedException {
           ClusterMetrics metrics = cluster.getClusterStatus();
-          return new ClusterStatus(metrics.getTaskTrackerCount(),
-              metrics.getBlackListedTaskTrackerCount(), cluster.getTaskTrackerExpiryInterval(),
-              metrics.getOccupiedMapSlots(),
-              metrics.getOccupiedReduceSlots(), metrics.getMapSlotCapacity(),
-              metrics.getReduceSlotCapacity(),
-              cluster.getJobTrackerStatus(),
-              metrics.getDecommissionedTaskTrackerCount());
+          return new ClusterStatus(metrics.getTaskTrackerCount(), metrics
+            .getBlackListedTaskTrackerCount(), cluster
+            .getTaskTrackerExpiryInterval(), metrics.getOccupiedMapSlots(),
+            metrics.getOccupiedReduceSlots(), metrics.getMapSlotCapacity(),
+            metrics.getReduceSlotCapacity(), cluster.getJobTrackerStatus(),
+            metrics.getDecommissionedTaskTrackerCount(), metrics
+              .getGrayListedTaskTrackerCount());
         }
       });
-    }
-      catch (InterruptedException ie) {
+    } catch (InterruptedException ie) {
       throw new IOException(ie);
     }
   }
@@ -987,6 +975,50 @@ public class JobClient extends CLI {
       return null;
     } catch (InterruptedException ie) {
       return null;
+    }
+  }
+
+  /**
+   * Checks if the job directory is clean and has all the required components
+   * for (re) starting the job
+   */
+  public static boolean isJobDirValid(Path jobDirPath, FileSystem fs)
+      throws IOException {
+    FileStatus[] contents = fs.listStatus(jobDirPath);
+    int matchCount = 0;
+    if (contents != null && contents.length >= 2) {
+      for (FileStatus status : contents) {
+        if ("job.xml".equals(status.getPath().getName())) {
+          ++matchCount;
+        }
+        if ("job.split".equals(status.getPath().getName())) {
+          ++matchCount;
+        }
+      }
+      if (matchCount == 2) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Fetch the staging area directory for the application
+   * 
+   * @return path to staging area directory
+   * @throws IOException
+   */
+  public Path getStagingAreaDir() throws IOException {
+    try {
+      return clientUgi.doAs(new PrivilegedExceptionAction<Path>() {
+        @Override
+        public Path run() throws IOException, InterruptedException {
+          return cluster.getStagingAreaDir();
+        }
+      });
+    } catch (InterruptedException ie) {
+      // throw RuntimeException instead for compatibility reasons
+      throw new RuntimeException(ie);
     }
   }
 

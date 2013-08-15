@@ -16,6 +16,12 @@
  * limitations under the License.
  */
 
+/**
+ * These .proto interfaces are private and stable.
+ * Please see http://wiki.apache.org/hadoop/Compatibility
+ * for what changes are allowed for a *stable* .proto interface.
+ */
+
 // This file contains protocol buffers that are used throughout HDFS -- i.e.
 // by the client, server, and data transfer protocols.
 
@@ -25,6 +31,7 @@ option java_generic_services = true;
 option java_generate_equals_and_hash = true;
 package hadoop.hdfs;
 
+import "HAServiceProtocol.proto";
 import "hdfs.proto";
 
 /**
@@ -179,11 +186,7 @@ message StorageReportProto {
  * txid - Highest transaction ID this NN has seen
  */
 message NNHAStatusHeartbeatProto {
-  enum State {
-    ACTIVE = 0;
-    STANDBY = 1;
-  }
-  required State state = 1; 
+  required hadoop.common.HAServiceStateProto state = 1;
   required uint64 txid = 2;
 }
 

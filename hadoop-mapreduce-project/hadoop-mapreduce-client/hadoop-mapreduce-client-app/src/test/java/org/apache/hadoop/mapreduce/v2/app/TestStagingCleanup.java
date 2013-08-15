@@ -49,13 +49,14 @@ import org.apache.hadoop.mapreduce.v2.app.rm.RMHeartbeatHandler;
 import org.apache.hadoop.mapreduce.v2.util.MRApps;
 import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.yarn.YarnException;
+import org.apache.hadoop.service.AbstractService;
+import org.apache.hadoop.service.Service;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
+import org.apache.hadoop.yarn.api.records.ContainerId;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.service.AbstractService;
-import org.apache.hadoop.yarn.util.BuilderUtils;
 import org.junit.Test;
 
 
@@ -80,16 +81,13 @@ import org.junit.Test;
      String user = UserGroupInformation.getCurrentUser().getShortUserName();
      Path stagingDir = MRApps.getStagingAreaDir(conf, user);
      when(fs.exists(stagingDir)).thenReturn(true);
-     ApplicationAttemptId attemptId = recordFactory.newRecordInstance(
-         ApplicationAttemptId.class);
-     attemptId.setAttemptId(0);
-     ApplicationId appId = recordFactory.newRecordInstance(ApplicationId.class);
-     appId.setClusterTimestamp(System.currentTimeMillis());
-     appId.setId(0);
-     attemptId.setApplicationId(appId);
+     ApplicationId appId = ApplicationId.newInstance(System.currentTimeMillis(),
+        0);
+     ApplicationAttemptId attemptId = ApplicationAttemptId.newInstance(appId, 0);
      JobId jobid = recordFactory.newRecordInstance(JobId.class);
      jobid.setAppId(appId);
      ContainerAllocator mockAlloc = mock(ContainerAllocator.class);
+     Assert.assertTrue(MRJobConfig.DEFAULT_MR_AM_MAX_ATTEMPTS > 1);
      MRAppMaster appMaster = new TestMRApp(attemptId, mockAlloc,
          JobStateInternal.RUNNING, MRJobConfig.DEFAULT_MR_AM_MAX_ATTEMPTS);
      appMaster.init(conf);
@@ -108,16 +106,13 @@ import org.junit.Test;
      String user = UserGroupInformation.getCurrentUser().getShortUserName();
      Path stagingDir = MRApps.getStagingAreaDir(conf, user);
      when(fs.exists(stagingDir)).thenReturn(true);
-     ApplicationAttemptId attemptId = recordFactory.newRecordInstance(
-         ApplicationAttemptId.class);
-     attemptId.setAttemptId(0);
-     ApplicationId appId = recordFactory.newRecordInstance(ApplicationId.class);
-     appId.setClusterTimestamp(System.currentTimeMillis());
-     appId.setId(0);
-     attemptId.setApplicationId(appId);
+     ApplicationId appId = ApplicationId.newInstance(System.currentTimeMillis(),
+         0);
+     ApplicationAttemptId attemptId = ApplicationAttemptId.newInstance(appId, 0);
      ContainerAllocator mockAlloc = mock(ContainerAllocator.class);
+     Assert.assertTrue(MRJobConfig.DEFAULT_MR_AM_MAX_ATTEMPTS > 1);
      MRAppMaster appMaster = new TestMRApp(attemptId, mockAlloc,
-         JobStateInternal.REBOOT, 4);
+         JobStateInternal.REBOOT, MRJobConfig.DEFAULT_MR_AM_MAX_ATTEMPTS);
      appMaster.init(conf);
      appMaster.start();
      //shutdown the job, not the lastRetry
@@ -135,16 +130,12 @@ import org.junit.Test;
      String user = UserGroupInformation.getCurrentUser().getShortUserName();
      Path stagingDir = MRApps.getStagingAreaDir(conf, user);
      when(fs.exists(stagingDir)).thenReturn(true);
-     ApplicationAttemptId attemptId = recordFactory.newRecordInstance(
-         ApplicationAttemptId.class);
-     attemptId.setAttemptId(1);
-     ApplicationId appId = recordFactory.newRecordInstance(ApplicationId.class);
-     appId.setClusterTimestamp(System.currentTimeMillis());
-     appId.setId(0);
-     attemptId.setApplicationId(appId);
+     ApplicationId appId = ApplicationId.newInstance(System.currentTimeMillis(),
+         0);
+     ApplicationAttemptId attemptId = ApplicationAttemptId.newInstance(appId, 1);
      ContainerAllocator mockAlloc = mock(ContainerAllocator.class);
      MRAppMaster appMaster = new TestMRApp(attemptId, mockAlloc,
-         JobStateInternal.REBOOT, MRJobConfig.DEFAULT_MR_AM_MAX_ATTEMPTS);
+         JobStateInternal.REBOOT, 1); //no retry
      appMaster.init(conf);
      appMaster.start();
      //shutdown the job, is lastRetry
@@ -163,13 +154,9 @@ import org.junit.Test;
      String user = UserGroupInformation.getCurrentUser().getShortUserName();
      Path stagingDir = MRApps.getStagingAreaDir(conf, user);
      when(fs.exists(stagingDir)).thenReturn(true);
-     ApplicationAttemptId attemptId = recordFactory.newRecordInstance(
-         ApplicationAttemptId.class);
-     attemptId.setAttemptId(0);
-     ApplicationId appId = recordFactory.newRecordInstance(ApplicationId.class);
-     appId.setClusterTimestamp(System.currentTimeMillis());
-     appId.setId(0);
-     attemptId.setApplicationId(appId);
+     ApplicationId appId = ApplicationId.newInstance(System.currentTimeMillis(),
+         0);
+     ApplicationAttemptId attemptId = ApplicationAttemptId.newInstance(appId, 0);
      JobId jobid = recordFactory.newRecordInstance(JobId.class);
      jobid.setAppId(appId);
      ContainerAllocator mockAlloc = mock(ContainerAllocator.class);
@@ -191,23 +178,21 @@ import org.junit.Test;
      String user = UserGroupInformation.getCurrentUser().getShortUserName();
      Path stagingDir = MRApps.getStagingAreaDir(conf, user);
      when(fs.exists(stagingDir)).thenReturn(true);
-     ApplicationAttemptId attemptId = recordFactory.newRecordInstance(
-         ApplicationAttemptId.class);
-     attemptId.setAttemptId(1);
-     ApplicationId appId = recordFactory.newRecordInstance(ApplicationId.class);
-     appId.setClusterTimestamp(System.currentTimeMillis());
-     appId.setId(0);
-     attemptId.setApplicationId(appId);
+     ApplicationId appId = ApplicationId.newInstance(System.currentTimeMillis(),
+         0);
+     ApplicationAttemptId attemptId = ApplicationAttemptId.newInstance(appId, 1);
      JobId jobid = recordFactory.newRecordInstance(JobId.class);
      jobid.setAppId(appId);
      ContainerAllocator mockAlloc = mock(ContainerAllocator.class);
-     MRAppMaster appMaster = new TestMRApp(attemptId, mockAlloc,
-         MRJobConfig.DEFAULT_MR_AM_MAX_ATTEMPTS);
+     MRAppMaster appMaster = new TestMRApp(attemptId, mockAlloc, 1); //no retry
      appMaster.init(conf);
+     assertTrue("appMaster.isLastAMRetry() is false", appMaster.isLastAMRetry());
      //simulate the process being killed
      MRAppMaster.MRAppMasterShutdownHook hook = 
        new MRAppMaster.MRAppMasterShutdownHook(appMaster);
      hook.run();
+     assertTrue("MRAppMaster isn't stopped",
+                appMaster.isInState(Service.STATE.STOPPED));
      verify(fs).delete(stagingJobPath, true);
    }
 
@@ -218,7 +203,7 @@ import org.junit.Test;
 
      public TestMRApp(ApplicationAttemptId applicationAttemptId, 
          ContainerAllocator allocator, int maxAppAttempts) {
-       super(applicationAttemptId, BuilderUtils.newContainerId(
+       super(applicationAttemptId, ContainerId.newInstance(
            applicationAttemptId, 1), "testhost", 2222, 3333,
            System.currentTimeMillis(), maxAppAttempts);
        this.allocator = allocator;
@@ -259,8 +244,8 @@ import org.junit.Test;
      }
 
      @Override
-     public void start() {
-       super.start();
+     public void serviceStart() throws Exception {
+       super.serviceStart();
        DefaultMetricsSystem.shutdown();
      }
 
@@ -285,7 +270,7 @@ import org.junit.Test;
      }
 
      @Override
-     protected void downloadTokensAndSetupUGI(Configuration conf) {
+     protected void initJobCredentialsAndUGI(Configuration conf) {
      }
 
      public boolean getTestIsLastAMRetry(){
@@ -311,7 +296,7 @@ import org.junit.Test;
       try {
         currentUser = UserGroupInformation.getCurrentUser();
       } catch (IOException e) {
-        throw new YarnException(e);
+        throw new YarnRuntimeException(e);
       }
       Job newJob = new TestJob(getJobId(), getAttemptID(), conf,
           getDispatcher().getEventHandler(),
@@ -348,9 +333,9 @@ import org.junit.Test;
       }
 
       @Override
-      public synchronized void stop() {
+      protected void serviceStop() throws Exception {
         stoppedContainerAllocator = true;
-        super.stop();
+        super.serviceStop();
       }
     }
 

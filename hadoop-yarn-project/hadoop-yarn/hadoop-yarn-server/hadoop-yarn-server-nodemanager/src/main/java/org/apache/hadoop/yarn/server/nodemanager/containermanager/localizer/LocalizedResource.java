@@ -17,7 +17,6 @@
 */
 package org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer;
 
-import java.util.EnumSet;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.concurrent.Semaphore;
@@ -42,7 +41,6 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.even
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.event.ResourceReleaseEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.event.ResourceRequestEvent;
 import org.apache.hadoop.yarn.state.InvalidStateTransitonException;
-import org.apache.hadoop.yarn.state.MultipleArcTransition;
 import org.apache.hadoop.yarn.state.SingleArcTransition;
 import org.apache.hadoop.yarn.state.StateMachine;
 import org.apache.hadoop.yarn.state.StateMachineFactory;
@@ -114,12 +112,17 @@ public class LocalizedResource implements EventHandler<ResourceEvent> {
       .append(getState() == ResourceState.LOCALIZED
           ? getLocalPath() + "," + getSize()
           : "pending").append(",[");
-    for (ContainerId c : ref) {
-      sb.append("(").append(c.toString()).append(")");
+    try {
+      this.readLock.lock();
+      for (ContainerId c : ref) {
+        sb.append("(").append(c.toString()).append(")");
+      }
+      sb.append("],").append(getTimestamp()).append(",").append(getState())
+        .append("}");
+      return sb.toString();
+    } finally {
+      this.readLock.unlock();
     }
-    sb.append("],").append(getTimestamp()).append(",")
-      .append(getState()).append("}");
-    return sb.toString();
   }
 
   private void release(ContainerId container) {
@@ -190,8 +193,8 @@ public class LocalizedResource implements EventHandler<ResourceEvent> {
         LOG.warn("Can't handle this event at current state", e);
       }
       if (oldState != newState) {
-        LOG.info("Resource " + resourcePath + " transitioned from "
-            + oldState
+        LOG.info("Resource " + resourcePath + (localPath != null ? 
+          "(->" + localPath + ")": "") + " transitioned from " + oldState
             + " to " + newState);
       }
     } finally {
@@ -251,11 +254,10 @@ public class LocalizedResource implements EventHandler<ResourceEvent> {
       ResourceFailedLocalizationEvent failedEvent =
           (ResourceFailedLocalizationEvent) event;
       Queue<ContainerId> containers = rsrc.ref;
-      Throwable failureCause = failedEvent.getCause();
       for (ContainerId container : containers) {
         rsrc.dispatcher.getEventHandler().handle(
           new ContainerResourceFailedEvent(container, failedEvent
-            .getLocalResourceRequest(), failureCause));
+            .getLocalResourceRequest(), failedEvent.getDiagnosticMessage()));
       }
     }
   }

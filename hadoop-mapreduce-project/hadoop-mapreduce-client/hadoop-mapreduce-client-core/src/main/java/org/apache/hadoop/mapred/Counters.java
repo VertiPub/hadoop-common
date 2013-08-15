@@ -26,6 +26,7 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.text.ParseException;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Iterator;
 
 import org.apache.commons.collections.IteratorUtils;
@@ -42,7 +43,7 @@ import org.apache.hadoop.mapreduce.counters.FrameworkCounterGroup;
 import org.apache.hadoop.mapreduce.counters.GenericCounter;
 import org.apache.hadoop.mapreduce.counters.Limits;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormatCounter;
-import org.apache.hadoop.mapreduce.util.CountersStrings;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormatCounter;
 
 import com.google.common.collect.Iterators;
 
@@ -62,6 +63,13 @@ public class Counters
     extends AbstractCounters<Counters.Counter, Counters.Group> {
   
   public static int MAX_COUNTER_LIMIT = Limits.COUNTERS_MAX;
+  public static int MAX_GROUP_LIMIT = Limits.GROUPS_MAX;
+  private static HashMap<String, String> depricatedCounterMap =
+      new HashMap<String, String>();
+  
+  static {
+    initDepricatedMap();
+  }
   
   public Counters() {
     super(groupFactory);
@@ -71,6 +79,27 @@ public class Counters
     super(newCounters, groupFactory);
   }
 
+  @SuppressWarnings({ "deprecation" })
+  private static void initDepricatedMap() {
+    depricatedCounterMap.put(FileInputFormat.Counter.class.getName(),
+      FileInputFormatCounter.class.getName());
+    depricatedCounterMap.put(FileOutputFormat.Counter.class.getName(),
+      FileOutputFormatCounter.class.getName());
+    depricatedCounterMap.put(
+      org.apache.hadoop.mapreduce.lib.input.FileInputFormat.Counter.class
+        .getName(), FileInputFormatCounter.class.getName());
+    depricatedCounterMap.put(
+      org.apache.hadoop.mapreduce.lib.output.FileOutputFormat.Counter.class
+        .getName(), FileOutputFormatCounter.class.getName());
+  }
+
+  private static String getNewGroupKey(String oldGroup) {
+    if (depricatedCounterMap.containsKey(oldGroup)) {
+      return depricatedCounterMap.get(oldGroup);
+    }
+    return null;
+  }
+  
   /**
    * Downgrade new {@link org.apache.hadoop.mapreduce.Counters} to old Counters
    * @param newCounters new Counters
@@ -443,6 +472,10 @@ public class Counters
                " BYTES_READ as counter name instead");
       return findCounter(FileInputFormatCounter.BYTES_READ);
     }
+    String newGroupKey = getNewGroupKey(group);
+    if (newGroupKey != null) {
+      group = newGroupKey;
+    }
     return getGroup(group).getCounterForName(name);
   }
 
@@ -594,5 +627,22 @@ public class Counters
   public static Counters fromEscapedCompactString(String compactString)
       throws ParseException {
     return parseEscapedCompactString(compactString, new Counters());
+  }
+
+  /**
+   * Counter exception thrown when the number of counters exceed the limit
+   */
+  public static class CountersExceededException extends RuntimeException {
+
+    private static final long serialVersionUID = 1L;
+
+    public CountersExceededException(String msg) {
+      super(msg);
+    }
+
+    // Only allows chaining of related exceptions
+    public CountersExceededException(CountersExceededException cause) {
+      super(cause);
+    }
   }
 }

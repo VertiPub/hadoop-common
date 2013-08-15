@@ -21,16 +21,20 @@ import java.util.List;
 
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
-import org.apache.hadoop.yarn.api.ContainerExitStatus;
+import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
+import org.apache.hadoop.yarn.api.records.ContainerExitStatus;
+import org.apache.hadoop.yarn.api.records.ResourceBlacklistRequest;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerState;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.api.records.ResourceRequest;
+import org.apache.hadoop.yarn.exceptions.InvalidResourceBlacklistRequestException;
+import org.apache.hadoop.yarn.exceptions.InvalidResourceRequestException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.ResourceCalculator;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
+import org.apache.hadoop.yarn.util.resource.ResourceCalculator;
+import org.apache.hadoop.yarn.util.resource.Resources;
 
 /**
  * Utilities shared by schedulers. 
@@ -86,15 +90,50 @@ public class SchedulerUtils {
    * the memory for each request is a multiple of minMemory and is not zero.
    */
   public static void normalizeRequests(
+    List<ResourceRequest> asks,
+    ResourceCalculator resourceCalculator,
+    Resource clusterResource,
+    Resource minimumResource,
+    Resource maximumResource) {
+    for (ResourceRequest ask : asks) {
+      normalizeRequest(
+        ask, resourceCalculator, clusterResource, minimumResource,
+        maximumResource, minimumResource);
+    }
+  }
+
+  /**
+   * Utility method to normalize a resource request, by insuring that the
+   * requested memory is a multiple of minMemory and is not zero.
+   */
+  public static void normalizeRequest(
+    ResourceRequest ask,
+    ResourceCalculator resourceCalculator,
+    Resource clusterResource,
+    Resource minimumResource,
+    Resource maximumResource) {
+    Resource normalized =
+      Resources.normalize(
+        resourceCalculator, ask.getCapability(), minimumResource,
+        maximumResource, minimumResource);
+    ask.setCapability(normalized);
+  }
+
+  /**
+   * Utility method to normalize a list of resource requests, by insuring that
+   * the memory for each request is a multiple of minMemory and is not zero.
+   */
+  public static void normalizeRequests(
       List<ResourceRequest> asks,
       ResourceCalculator resourceCalculator, 
       Resource clusterResource,
       Resource minimumResource,
-      Resource maximumResource) {
+      Resource maximumResource,
+      Resource incrementResource) {
     for (ResourceRequest ask : asks) {
       normalizeRequest(
           ask, resourceCalculator, clusterResource, minimumResource,
-          maximumResource);
+          maximumResource, incrementResource);
     }
   }
 
@@ -107,17 +146,21 @@ public class SchedulerUtils {
       ResourceCalculator resourceCalculator, 
       Resource clusterResource,
       Resource minimumResource,
-      Resource maximumResource) {
+      Resource maximumResource,
+      Resource incrementResource) {
     Resource normalized = 
         Resources.normalize(
             resourceCalculator, ask.getCapability(), minimumResource,
-            maximumResource);
+            maximumResource, incrementResource);
     ask.setCapability(normalized);
   }
 
   /**
    * Utility method to validate a resource request, by insuring that the
    * requested memory/vcore is non-negative and not greater than max
+   * 
+   * @throws <code>InvalidResourceRequestException</code> when there is invalid
+   *         request
    */
   public static void validateResourceRequest(ResourceRequest resReq,
       Resource maximumResource) throws InvalidResourceRequestException {
@@ -140,16 +183,4 @@ public class SchedulerUtils {
           + ", maxVirtualCores=" + maximumResource.getVirtualCores());
     }
   }
-
-  /**
-   * Utility method to validate a list resource requests, by insuring that the
-   * requested memory/vcore is non-negative and not greater than max
-   */
-  public static void validateResourceRequests(List<ResourceRequest> ask,
-      Resource maximumResource) throws InvalidResourceRequestException {
-    for (ResourceRequest resReq : ask) {
-      validateResourceRequest(resReq, maximumResource);
-    }
-  }
-
 }

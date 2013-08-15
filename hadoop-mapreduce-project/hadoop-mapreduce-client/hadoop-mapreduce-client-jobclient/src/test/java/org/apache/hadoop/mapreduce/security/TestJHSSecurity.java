@@ -22,7 +22,6 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
-import java.lang.reflect.UndeclaredThrowableException;
 import java.net.InetSocketAddress;
 import java.security.PrivilegedAction;
 import java.security.PrivilegedExceptionAction;
@@ -46,11 +45,10 @@ import org.apache.hadoop.mapreduce.v2.jobhistory.JHAdminConfig;
 import org.apache.hadoop.mapreduce.v2.util.MRBuilderUtils;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.UserGroupInformation.AuthenticationMethod;
-import org.apache.hadoop.yarn.api.records.DelegationToken;
+import org.apache.hadoop.yarn.api.records.Token;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
 import org.apache.hadoop.yarn.ipc.YarnRPC;
-import org.apache.hadoop.yarn.util.ProtoUtils;
+import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;
@@ -109,7 +107,7 @@ public class TestJHSSecurity {
       loggedInUser.setAuthenticationMethod(AuthenticationMethod.KERBEROS);
 
 
-      DelegationToken token = getDelegationToken(loggedInUser, hsService,
+      Token token = getDelegationToken(loggedInUser, hsService,
           loggedInUser.getShortUserName());
       tokenFetchTime = System.currentTimeMillis();
       LOG.info("Got delegation token at: " + tokenFetchTime);
@@ -123,7 +121,7 @@ public class TestJHSSecurity {
       jobReportRequest.setJobId(MRBuilderUtils.newJobId(123456, 1, 1));
       try {
         clientUsingDT.getJobReport(jobReportRequest);
-      } catch (YarnRemoteException e) {
+      } catch (IOException e) {
         Assert.assertEquals("Unknown job job_123456_0001", e.getMessage());
       }
       
@@ -146,7 +144,7 @@ public class TestJHSSecurity {
       // Valid token because of renewal.
       try {
         clientUsingDT.getJobReport(jobReportRequest);
-      } catch (UndeclaredThrowableException e) {
+      } catch (IOException e) {
         Assert.assertEquals("Unknown job job_123456_0001", e.getMessage());
       }
       
@@ -160,7 +158,7 @@ public class TestJHSSecurity {
       try {
         clientUsingDT.getJobReport(jobReportRequest);
         fail("Should not have succeeded with an expired token");
-      } catch (UndeclaredThrowableException e) {
+      } catch (IOException e) {
         assertTrue(e.getCause().getMessage().contains("is expired"));
       }
       
@@ -182,7 +180,7 @@ public class TestJHSSecurity {
       
       try {
         clientUsingDT.getJobReport(jobReportRequest);
-      } catch (UndeclaredThrowableException e) {
+      } catch (IOException e) {
         fail("Unexpected exception" + e);
       }
       cancelDelegationToken(loggedInUser, hsService, token);
@@ -199,7 +197,7 @@ public class TestJHSSecurity {
       try {
         clientUsingDT.getJobReport(jobReportRequest);
         fail("Should not have succeeded with a cancelled delegation token");
-      } catch (UndeclaredThrowableException e) {
+      } catch (IOException e) {
       }
 
 
@@ -209,16 +207,16 @@ public class TestJHSSecurity {
     }
   }
 
-  private DelegationToken getDelegationToken(
+  private Token getDelegationToken(
       final UserGroupInformation loggedInUser,
       final MRClientProtocol hsService, final String renewerString)
       throws IOException, InterruptedException {
     // Get the delegation token directly as it is a little difficult to setup
     // the kerberos based rpc.
-    DelegationToken token = loggedInUser
-        .doAs(new PrivilegedExceptionAction<DelegationToken>() {
+    Token token = loggedInUser
+        .doAs(new PrivilegedExceptionAction<Token>() {
           @Override
-          public DelegationToken run() throws YarnRemoteException {
+          public Token run() throws IOException {
             GetDelegationTokenRequest request = Records
                 .newRecord(GetDelegationTokenRequest.class);
             request.setRenewer(renewerString);
@@ -230,12 +228,12 @@ public class TestJHSSecurity {
   }
 
   private long renewDelegationToken(final UserGroupInformation loggedInUser,
-      final MRClientProtocol hsService, final DelegationToken dToken)
+      final MRClientProtocol hsService, final Token dToken)
       throws IOException, InterruptedException {
     long nextExpTime = loggedInUser.doAs(new PrivilegedExceptionAction<Long>() {
 
       @Override
-      public Long run() throws YarnRemoteException {
+      public Long run() throws IOException {
         RenewDelegationTokenRequest request = Records
             .newRecord(RenewDelegationTokenRequest.class);
         request.setDelegationToken(dToken);
@@ -246,12 +244,12 @@ public class TestJHSSecurity {
   }
 
   private void cancelDelegationToken(final UserGroupInformation loggedInUser,
-      final MRClientProtocol hsService, final DelegationToken dToken)
+      final MRClientProtocol hsService, final Token dToken)
       throws IOException, InterruptedException {
 
     loggedInUser.doAs(new PrivilegedExceptionAction<Void>() {
       @Override
-      public Void run() throws YarnRemoteException {
+      public Void run() throws IOException {
         CancelDelegationTokenRequest request = Records
             .newRecord(CancelDelegationTokenRequest.class);
         request.setDelegationToken(dToken);
@@ -261,10 +259,10 @@ public class TestJHSSecurity {
     });
   }
 
-  private MRClientProtocol getMRClientProtocol(DelegationToken token,
+  private MRClientProtocol getMRClientProtocol(Token token,
       final InetSocketAddress hsAddress, String user, final Configuration conf) {
     UserGroupInformation ugi = UserGroupInformation.createRemoteUser(user);
-    ugi.addToken(ProtoUtils.convertFromProtoFormat(token, hsAddress));
+    ugi.addToken(ConverterUtils.convertFromYarn(token, hsAddress));
 
     final YarnRPC rpc = YarnRPC.create(conf);
     MRClientProtocol hsWithDT = ugi

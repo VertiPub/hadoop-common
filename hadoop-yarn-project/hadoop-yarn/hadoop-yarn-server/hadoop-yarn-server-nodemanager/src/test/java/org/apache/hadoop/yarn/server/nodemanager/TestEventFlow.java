@@ -20,31 +20,34 @@ package org.apache.hadoop.yarn.server.nodemanager;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.yarn.api.protocolrecords.StartContainerRequest;
-import org.apache.hadoop.yarn.api.protocolrecords.StopContainerRequest;
+import org.apache.hadoop.yarn.api.protocolrecords.StartContainersRequest;
+import org.apache.hadoop.yarn.api.protocolrecords.StopContainersRequest;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.api.records.ContainerState;
-import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.AsyncDispatcher;
 import org.apache.hadoop.yarn.event.Dispatcher;
+import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.server.api.ResourceTracker;
 import org.apache.hadoop.yarn.server.nodemanager.NodeManager.NMContext;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.BaseContainerManagerTest;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.TestContainerManager;
 import org.apache.hadoop.yarn.server.nodemanager.metrics.NodeManagerMetrics;
 import org.apache.hadoop.yarn.server.nodemanager.security.NMContainerTokenSecretManager;
+import org.apache.hadoop.yarn.server.nodemanager.security.NMTokenSecretManagerInNM;
 import org.apache.hadoop.yarn.server.security.ApplicationACLsManager;
 import org.junit.Test;
-import static org.mockito.Mockito.*;
 
 
 public class TestEventFlow {
@@ -58,10 +61,11 @@ public class TestEventFlow {
       TestEventFlow.class.getName() + "-localLogDir").getAbsoluteFile();
   private static File remoteLogDir = new File("target",
       TestEventFlow.class.getName() + "-remoteLogDir").getAbsoluteFile();
-
+  private static final long SIMULATED_RM_IDENTIFIER = 1234;
+  
   @Test
   public void testSuccessfulContainerLaunch() throws InterruptedException,
-      IOException {
+      IOException, YarnException {
 
     FileContext localFS = FileContext.getLocalFSFileContext();
 
@@ -73,7 +77,14 @@ public class TestEventFlow {
     remoteLogDir.mkdir();
 
     YarnConfiguration conf = new YarnConfiguration();
-    Context context = new NMContext(new NMContainerTokenSecretManager(conf));
+    
+    Context context = new NMContext(new NMContainerTokenSecretManager(conf),
+        new NMTokenSecretManagerInNM()) {
+      @Override
+      public int getHttpPort() {
+        return 1234;
+      }
+    };
 
     conf.set(YarnConfiguration.NM_LOCAL_DIRS, localDir.getAbsolutePath());
     conf.set(YarnConfiguration.NM_LOG_DIRS, localLogDir.getAbsolutePath());
@@ -96,48 +107,58 @@ public class TestEventFlow {
         return new LocalRMInterface();
       };
 
+          @Override
+          protected void stopRMProxy() {
+            return;
+          }
+
       @Override
       protected void startStatusUpdater() {
         return; // Don't start any updating thread.
+      }
+
+      @Override
+      public long getRMIdentifier() {
+        return SIMULATED_RM_IDENTIFIER;
       }
     };
 
     DummyContainerManager containerManager =
         new DummyContainerManager(context, exec, del, nodeStatusUpdater,
           metrics, new ApplicationACLsManager(conf), dirsHandler);
+    nodeStatusUpdater.init(conf);
+    ((NMContext)context).setContainerManager(containerManager);
+    nodeStatusUpdater.start();
     containerManager.init(conf);
     containerManager.start();
 
     ContainerLaunchContext launchContext = 
         recordFactory.newRecordInstance(ContainerLaunchContext.class);
-    ContainerId cID = recordFactory.newRecordInstance(ContainerId.class);
-    ApplicationId applicationId =
-        recordFactory.newRecordInstance(ApplicationId.class);
-    applicationId.setClusterTimestamp(0);
-    applicationId.setId(0);
-    ApplicationAttemptId applicationAttemptId = 
-        recordFactory.newRecordInstance(ApplicationAttemptId.class);
-    applicationAttemptId.setApplicationId(applicationId);
-    applicationAttemptId.setAttemptId(0);
-    cID.setApplicationAttemptId(applicationAttemptId);
-    Container mockContainer = mock(Container.class);
-    when(mockContainer.getId()).thenReturn(cID);
-    when(mockContainer.getResource()).thenReturn(recordFactory
-        .newRecordInstance(Resource.class));
-    launchContext.setUser("testing");
-    StartContainerRequest request = 
-        recordFactory.newRecordInstance(StartContainerRequest.class);
-    request.setContainerLaunchContext(launchContext);
-    request.setContainer(mockContainer);
-    containerManager.startContainer(request);
+    ApplicationId applicationId = ApplicationId.newInstance(0, 0);
+    ApplicationAttemptId applicationAttemptId =
+        ApplicationAttemptId.newInstance(applicationId, 0);
+    ContainerId cID = ContainerId.newInstance(applicationAttemptId, 0);
+
+    String user = "testing";
+    StartContainerRequest scRequest =
+        StartContainerRequest.newInstance(launchContext,
+          TestContainerManager.createContainerToken(cID,
+            SIMULATED_RM_IDENTIFIER, context.getNodeId(), user,
+            context.getContainerTokenSecretManager()));
+    List<StartContainerRequest> list = new ArrayList<StartContainerRequest>();
+    list.add(scRequest);
+    StartContainersRequest allRequests =
+        StartContainersRequest.newInstance(list);
+    containerManager.startContainers(allRequests);
 
     BaseContainerManagerTest.waitForContainerState(containerManager, cID,
         ContainerState.RUNNING);
 
-    StopContainerRequest stopRequest = 
-        recordFactory.newRecordInstance(StopContainerRequest.class);
-    stopRequest.setContainerId(cID);
-    containerManager.stopContainer(stopRequest);
+    List<ContainerId> containerIds = new ArrayList<ContainerId>();
+    containerIds.add(cID);
+    StopContainersRequest stopRequest =
+        StopContainersRequest.newInstance(containerIds);
+    containerManager.stopContainers(stopRequest);
     BaseContainerManagerTest.waitForContainerState(containerManager, cID,
         ContainerState.COMPLETE);
 

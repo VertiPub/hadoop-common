@@ -92,14 +92,12 @@ import org.apache.hadoop.mapreduce.v2.util.MRBuilderUtils;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.util.ReflectionUtils;
-import org.apache.hadoop.yarn.Clock;
-import org.apache.hadoop.yarn.ClusterInfo;
-import org.apache.hadoop.yarn.SystemClock;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.event.EventHandler;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.util.Clock;
+import org.apache.hadoop.yarn.util.SystemClock;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -1407,7 +1405,7 @@ public class TestRecovery {
 
   private MapTaskImpl getMockMapTask(long clusterTimestamp, EventHandler eh) {
 
-    ApplicationId appId = BuilderUtils.newApplicationId(clusterTimestamp, 1);
+    ApplicationId appId = ApplicationId.newInstance(clusterTimestamp, 1);
     JobId jobId = MRBuilderUtils.newJobId(appId, 1);
 
     int partitions = 2;
@@ -1425,8 +1423,6 @@ public class TestRecovery {
     when(minContainerRequirements.getMemory()).thenReturn(1000);
 
     ClusterInfo clusterInfo = mock(ClusterInfo.class);
-    when(clusterInfo.getMinContainerCapability()).thenReturn(
-        minContainerRequirements);
     AppContext appContext = mock(AppContext.class);
     when(appContext.getClusterInfo()).thenReturn(clusterInfo);
 
@@ -1596,7 +1592,7 @@ public class TestRecovery {
     }
 
     @Override
-    protected void downloadTokensAndSetupUGI(Configuration conf) {
+    protected void initJobCredentialsAndUGI(Configuration conf) {
       // do NOT put a shuffle secret in the job credentials
     }
   }

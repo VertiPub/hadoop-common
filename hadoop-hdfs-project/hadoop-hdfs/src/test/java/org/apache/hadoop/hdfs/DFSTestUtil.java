@@ -30,9 +30,11 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -48,13 +50,18 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.CommonConfigurationKeys;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileSystem.Statistics;
+import org.apache.hadoop.fs.Options.Rename;
+import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.MiniDFSCluster.NameNodeInfo;
 import org.apache.hadoop.hdfs.client.HdfsDataInputStream;
@@ -91,6 +98,8 @@ import com.google.common.base.Joiner;
 
 /** Utilities for HDFS tests */
 public class DFSTestUtil {
+
+  private static final Log LOG = LogFactory.getLog(DFSTestUtil.class);
   
   private static Random gen = new Random();
   private static String[] dirNames = {
@@ -561,7 +570,7 @@ public class DFSTestUtil {
   }
   
   public static ExtendedBlock getFirstBlock(FileSystem fs, Path path) throws IOException {
-    HdfsDataInputStream in = (HdfsDataInputStream)((DistributedFileSystem)fs).open(path);
+    HdfsDataInputStream in = (HdfsDataInputStream) fs.open(path);
     in.readByte();
     return in.getCurrentBlock();
   }  
@@ -569,6 +578,12 @@ public class DFSTestUtil {
   public static List<LocatedBlock> getAllBlocks(FSDataInputStream in)
       throws IOException {
     return ((HdfsDataInputStream) in).getAllBlocks();
+  }
+
+  public static List<LocatedBlock> getAllBlocks(FileSystem fs, Path path)
+      throws IOException {
+    HdfsDataInputStream in = (HdfsDataInputStream) fs.open(path);
+    return in.getAllBlocks();
   }
 
   public static Token<BlockTokenIdentifier> getBlockToken(
@@ -607,6 +622,25 @@ public class DFSTestUtil {
     InputStream is = new ByteArrayInputStream(s.getBytes());
     FSDataOutputStream os = fs.append(p);
     IOUtils.copyBytes(is, os, s.length(), true);
+  }
+  
+  /**
+   * Append specified length of bytes to a given file
+   * @param fs The file system
+   * @param p Path of the file to append
+   * @param length Length of bytes to append to the file
+   * @throws IOException
+   */
+  public static void appendFile(FileSystem fs, Path p, int length)
+      throws IOException {
+    assert fs.exists(p);
+    assert length >= 0;
+    byte[] toAppend = new byte[length];
+    Random random = new Random();
+    random.nextBytes(toAppend);
+    FSDataOutputStream out = fs.append(p);
+    out.write(toAppend);
+    out.close();
   }
   
   /**
@@ -723,7 +757,11 @@ public class DFSTestUtil {
     File file = new File(filename);
     DataInputStream in = new DataInputStream(new FileInputStream(file));
     byte[] content = new byte[(int)file.length()];
-    in.readFully(content);
+    try {
+      in.readFully(content);
+    } finally {
+      IOUtils.cleanup(LOG, in);
+    }
     return content;
   }
 
@@ -830,6 +868,25 @@ public class DFSTestUtil {
     return new DatanodeRegistration(getLocalDatanodeID(),
         new StorageInfo(), new ExportedBlockKeys(), VersionInfo.getVersion());
   }
+  
+  /** Copy one file's contents into the other **/
+  public static void copyFile(File src, File dest) throws IOException {
+    InputStream in = null;
+    OutputStream out = null;
+    
+    try {
+      in = new FileInputStream(src);
+      out = new FileOutputStream(dest);
+
+      byte [] b = new byte[1024];
+      while( in.read(b)  > 0 ) {
+        out.write(b);
+      }
+    } finally {
+      if(in != null) in.close();
+      if(out != null) out.close();
+    }
+  }
 
   public static class Builder {
     private int maxLevels = 3;
@@ -867,5 +924,103 @@ public class DFSTestUtil {
     public DFSTestUtil build() {
       return new DFSTestUtil(nFiles, maxLevels, maxSize, minSize);
     }
+  }
+  
+  /**
+   * Run a set of operations and generate all edit logs
+   */
+  public static void runOperations(MiniDFSCluster cluster,
+      DistributedFileSystem filesystem, Configuration conf, long blockSize, 
+      int nnIndex) throws IOException {
+    // create FileContext for rename2
+    FileContext fc = FileContext.getFileContext(cluster.getURI(0), conf);
+    
+    // OP_ADD 0
+    final Path pathFileCreate = new Path("/file_create");
+    FSDataOutputStream s = filesystem.create(pathFileCreate);
+    // OP_CLOSE 9
+    s.close();
+    // OP_RENAME_OLD 1
+    final Path pathFileMoved = new Path("/file_moved");
+    filesystem.rename(pathFileCreate, pathFileMoved);
+    // OP_DELETE 2
+    filesystem.delete(pathFileMoved, false);
+    // OP_MKDIR 3
+    Path pathDirectoryMkdir = new Path("/directory_mkdir");
+    filesystem.mkdirs(pathDirectoryMkdir);
+    // OP_ALLOW_SNAPSHOT 29
+    filesystem.allowSnapshot(pathDirectoryMkdir);
+    // OP_DISALLOW_SNAPSHOT 30
+    filesystem.disallowSnapshot(pathDirectoryMkdir);
+    // OP_CREATE_SNAPSHOT 26
+    String ssName = "snapshot1";
+    filesystem.allowSnapshot(pathDirectoryMkdir);
+    filesystem.createSnapshot(pathDirectoryMkdir, ssName);
+    // OP_RENAME_SNAPSHOT 28
+    String ssNewName = "snapshot2";
+    filesystem.renameSnapshot(pathDirectoryMkdir, ssName, ssNewName);
+    // OP_DELETE_SNAPSHOT 27
+    filesystem.deleteSnapshot(pathDirectoryMkdir, ssNewName);
+    // OP_SET_REPLICATION 4
+    s = filesystem.create(pathFileCreate);
+    s.close();
+    filesystem.setReplication(pathFileCreate, (short)1);
+    // OP_SET_PERMISSIONS 7
+    Short permission = 0777;
+    filesystem.setPermission(pathFileCreate, new FsPermission(permission));
+    // OP_SET_OWNER 8
+    filesystem.setOwner(pathFileCreate, new String("newOwner"), null);
+    // OP_CLOSE 9 see above
+    // OP_SET_GENSTAMP 10 see above
+    // OP_SET_NS_QUOTA 11 obsolete
+    // OP_CLEAR_NS_QUOTA 12 obsolete
+    // OP_TIMES 13
+    long mtime = 1285195527000L; // Wed, 22 Sep 2010 22:45:27 GMT
+    long atime = mtime;
+    filesystem.setTimes(pathFileCreate, mtime, atime);
+    // OP_SET_QUOTA 14
+    filesystem.setQuota(pathDirectoryMkdir, 1000L, 
+        HdfsConstants.QUOTA_DONT_SET);
+    // OP_RENAME 15
+    fc.rename(pathFileCreate, pathFileMoved, Rename.NONE);
+    // OP_CONCAT_DELETE 16
+    Path   pathConcatTarget = new Path("/file_concat_target");
+    Path[] pathConcatFiles  = new Path[2];
+    pathConcatFiles[0]      = new Path("/file_concat_0");
+    pathConcatFiles[1]      = new Path("/file_concat_1");
+
+    long length = blockSize * 3; // multiple of blocksize for concat
+    short replication = 1;
+    long seed = 1;
+    DFSTestUtil.createFile(filesystem, pathConcatTarget, length, replication,
+        seed);
+    DFSTestUtil.createFile(filesystem, pathConcatFiles[0], length, replication,
+        seed);
+    DFSTestUtil.createFile(filesystem, pathConcatFiles[1], length, replication,
+        seed);
+    filesystem.concat(pathConcatTarget, pathConcatFiles);
+    
+    // OP_SYMLINK 17
+    Path pathSymlink = new Path("/file_symlink");
+    fc.createSymlink(pathConcatTarget, pathSymlink, false);
+    
+    // OP_REASSIGN_LEASE 22
+    String filePath = "/hard-lease-recovery-test";
+    byte[] bytes = "foo-bar-baz".getBytes();
+    DFSClientAdapter.stopLeaseRenewer(filesystem);
+    FSDataOutputStream leaseRecoveryPath = filesystem.create(new Path(filePath));
+    leaseRecoveryPath.write(bytes);
+    leaseRecoveryPath.hflush();
+    // Set the hard lease timeout to 1 second.
+    cluster.setLeasePeriod(60 * 1000, 1000, nnIndex);
+    // wait for lease recovery to complete
+    LocatedBlocks locatedBlocks;
+    do {
+      try {
+        Thread.sleep(1000);
+      } catch (InterruptedException e) {}
+      locatedBlocks = DFSClientAdapter.callGetBlockLocations(
+          cluster.getNameNodeRpc(nnIndex), filePath, 0L, bytes.length);
+    } while (locatedBlocks.isUnderConstruction());
   }
 }

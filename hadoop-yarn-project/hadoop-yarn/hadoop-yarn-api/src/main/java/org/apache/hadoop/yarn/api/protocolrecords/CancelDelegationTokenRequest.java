@@ -18,17 +18,37 @@
 
 package org.apache.hadoop.yarn.api.protocolrecords;
 
-import org.apache.hadoop.classification.InterfaceAudience.Public;
-import org.apache.hadoop.classification.InterfaceStability.Evolving;
-import org.apache.hadoop.yarn.api.records.DelegationToken;
+import org.apache.hadoop.classification.InterfaceAudience.Private;
+import org.apache.hadoop.classification.InterfaceStability.Unstable;
+import org.apache.hadoop.yarn.api.records.Token;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * The request issued by the client to the {@code ResourceManager} to cancel a
  * delegation token.
  */
-@Public
-@Evolving
-public interface CancelDelegationTokenRequest {
-  DelegationToken getDelegationToken();
-  void setDelegationToken(DelegationToken dToken);
+@Private
+@Unstable
+public abstract class CancelDelegationTokenRequest {
+
+  @Private
+  @Unstable
+  public static CancelDelegationTokenRequest newInstance(Token dToken) {
+    CancelDelegationTokenRequest request =
+        Records.newRecord(CancelDelegationTokenRequest.class);
+    request.setDelegationToken(dToken);
+    return request;
+  }
+
+  /**
+   * Get the delegation token requested to be cancelled.
+   * @return the delegation token requested to be cancelled.
+   */
+  @Private
+  @Unstable
+  public abstract Token getDelegationToken();
+
+  @Private
+  @Unstable
+  public abstract void setDelegationToken(Token dToken);
 }

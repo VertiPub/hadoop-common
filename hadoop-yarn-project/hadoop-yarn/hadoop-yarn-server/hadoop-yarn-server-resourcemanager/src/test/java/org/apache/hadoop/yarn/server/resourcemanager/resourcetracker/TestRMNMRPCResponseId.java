@@ -21,19 +21,20 @@ package org.apache.hadoop.yarn.server.resourcemanager.resourcetracker;
 import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.yarn.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.event.Dispatcher;
 import org.apache.hadoop.yarn.event.Event;
 import org.apache.hadoop.yarn.event.EventHandler;
 import org.apache.hadoop.yarn.event.InlineDispatcher;
+import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.server.api.protocolrecords.NodeHeartbeatRequest;
 import org.apache.hadoop.yarn.server.api.protocolrecords.NodeHeartbeatResponse;
 import org.apache.hadoop.yarn.server.api.protocolrecords.RegisterNodeManagerRequest;
 import org.apache.hadoop.yarn.server.api.records.NodeAction;
+import org.apache.hadoop.yarn.server.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.server.resourcemanager.NMLivelinessMonitor;
 import org.apache.hadoop.yarn.server.resourcemanager.NodesListManager;
 import org.apache.hadoop.yarn.server.resourcemanager.RMContext;
@@ -43,7 +44,8 @@ import org.apache.hadoop.yarn.server.resourcemanager.ResourceTrackerService;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeEventType;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.SchedulerEventType;
 import org.apache.hadoop.yarn.server.resourcemanager.security.RMContainerTokenSecretManager;
-import org.apache.hadoop.yarn.util.Records;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
+import org.apache.hadoop.yarn.server.resourcemanager.security.NMTokenSecretManagerInRM;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -57,6 +59,7 @@ public class TestRMNMRPCResponseId {
 
   @Before
   public void setUp() {
+    Configuration conf = new Configuration();
     // Dispatcher that processes events inline
     Dispatcher dispatcher = new InlineDispatcher();
     dispatcher.register(SchedulerEventType.class, new EventHandler<Event>() {
@@ -67,17 +70,19 @@ public class TestRMNMRPCResponseId {
     });
     RMContext context =
         new RMContextImpl(dispatcher, null, null, null, null,
-          null, null, null);
+          null, new RMContainerTokenSecretManager(conf),
+          new NMTokenSecretManagerInRM(conf), null);
     dispatcher.register(RMNodeEventType.class,
         new ResourceManager.NodeEventDispatcher(context));
     NodesListManager nodesListManager = new NodesListManager(context);
-    Configuration conf = new Configuration();
     nodesListManager.init(conf);
-    RMContainerTokenSecretManager containerTokenSecretManager =
-        new RMContainerTokenSecretManager(conf);
+    
+    context.getContainerTokenSecretManager().rollMasterKey();
+    context.getNMTokenSecretManager().rollMasterKey();
     resourceTrackerService = new ResourceTrackerService(context,
         nodesListManager, new NMLivelinessMonitor(dispatcher),
-        containerTokenSecretManager);
+        context.getContainerTokenSecretManager(),
+        context.getNMTokenSecretManager());
     resourceTrackerService.init(conf);
   }
   
@@ -87,13 +92,11 @@ public class TestRMNMRPCResponseId {
   }
 
   @Test
-  public void testRPCResponseId() throws IOException {
+  public void testRPCResponseId() throws IOException, YarnException {
     String node = "localhost";
-    Resource capability = recordFactory.newRecordInstance(Resource.class);
+    Resource capability = BuilderUtils.newResource(1024, 1);
     RegisterNodeManagerRequest request = recordFactory.newRecordInstance(RegisterNodeManagerRequest.class);
-    nodeId = Records.newRecord(NodeId.class);
-    nodeId.setHost(node);
-    nodeId.setPort(1234);
+    nodeId = NodeId.newInstance(node, 1234);
     request.setNodeId(nodeId);
     request.setHttpPort(0);
     request.setResource(capability);
@@ -131,5 +134,7 @@ public class TestRMNMRPCResponseId {
     nodeStatus.setResponseId(0);
     response = resourceTrackerService.nodeHeartbeat(nodeHeartBeatRequest);
     Assert.assertTrue(NodeAction.RESYNC.equals(response.getNodeAction()));
+    Assert.assertEquals("Too far behind rm response id:2 nm response id:0",
+      response.getDiagnosticsMessage());
   }
 }

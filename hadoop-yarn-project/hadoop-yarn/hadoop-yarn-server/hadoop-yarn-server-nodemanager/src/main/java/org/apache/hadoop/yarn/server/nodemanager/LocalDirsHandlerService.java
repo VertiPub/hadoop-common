@@ -32,10 +32,10 @@ import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.LocalDirAllocator;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.service.AbstractService;
 import org.apache.hadoop.util.StringUtils;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.service.AbstractService;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 
 /**
  * The class which provides functionality of checking the health of the local
@@ -88,7 +88,7 @@ public class LocalDirsHandlerService extends AbstractService {
    */
   private final class MonitoringTimerTask extends TimerTask {
 
-    public MonitoringTimerTask(Configuration conf) throws YarnException {
+    public MonitoringTimerTask(Configuration conf) throws YarnRuntimeException {
       localDirs = new DirectoryCollection(
           validatePaths(conf.getTrimmedStrings(YarnConfiguration.NM_LOCAL_DIRS)));
       logDirs = new DirectoryCollection(
@@ -113,7 +113,7 @@ public class LocalDirsHandlerService extends AbstractService {
    * 
    */
   @Override
-  public void init(Configuration config) {
+  protected void serviceInit(Configuration config) throws Exception {
     // Clone the configuration as we may do modifications to dirs-list
     Configuration conf = new Configuration(config);
     diskHealthCheckInterval = conf.getLong(
@@ -126,13 +126,13 @@ public class LocalDirsHandlerService extends AbstractService {
         YarnConfiguration.NM_MIN_HEALTHY_DISKS_FRACTION,
         YarnConfiguration.DEFAULT_NM_MIN_HEALTHY_DISKS_FRACTION);
     lastDisksCheckTime = System.currentTimeMillis();
-    super.init(conf);
+    super.serviceInit(conf);
 
     FileContext localFs;
     try {
       localFs = FileContext.getLocalFSFileContext(config);
     } catch (IOException e) {
-      throw new YarnException("Unable to get the local filesystem", e);
+      throw new YarnRuntimeException("Unable to get the local filesystem", e);
     }
     FsPermission perm = new FsPermission((short)0755);
     boolean createSucceeded = localDirs.createNonExistentDirs(localFs, perm);
@@ -150,24 +150,24 @@ public class LocalDirsHandlerService extends AbstractService {
    * Method used to start the disk health monitoring, if enabled.
    */
   @Override
-  public void start() {
+  protected void serviceStart() throws Exception {
     if (isDiskHealthCheckerEnabled) {
       dirsHandlerScheduler = new Timer("DiskHealthMonitor-Timer", true);
       dirsHandlerScheduler.scheduleAtFixedRate(monitoringTimerTask,
           diskHealthCheckInterval, diskHealthCheckInterval);
     }
-    super.start();
+    super.serviceStart();
   }
 
   /**
    * Method used to terminate the disk health monitoring service.
    */
   @Override
-  public void stop() {
+  protected void serviceStop() throws Exception {
     if (dirsHandlerScheduler != null) {
       dirsHandlerScheduler.cancel();
     }
-    super.stop();
+    super.serviceStop();
   }
 
   /**
@@ -311,13 +311,13 @@ public class LocalDirsHandlerService extends AbstractService {
         } else {
           LOG.warn(paths[i] + " is not a valid path. Path should be with "
               + FILE_SCHEME + " scheme or without scheme");
-          throw new YarnException(paths[i]
+          throw new YarnRuntimeException(paths[i]
               + " is not a valid path. Path should be with " + FILE_SCHEME
               + " scheme or without scheme");
         }
       } catch (IllegalArgumentException e) {
         LOG.warn(e.getMessage());
-        throw new YarnException(paths[i]
+        throw new YarnRuntimeException(paths[i]
             + " is not a valid path. Path should be with " + FILE_SCHEME
             + " scheme or without scheme");
       }

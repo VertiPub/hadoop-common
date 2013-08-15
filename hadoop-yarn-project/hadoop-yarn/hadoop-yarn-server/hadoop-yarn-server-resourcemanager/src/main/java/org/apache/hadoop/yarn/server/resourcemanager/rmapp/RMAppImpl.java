@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.yarn.server.resourcemanager.rmapp;
 
+import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -32,14 +33,14 @@ import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.util.ExitUtil;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.api.records.ApplicationResourceUsageReport;
 import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
-import org.apache.hadoop.yarn.api.records.ClientToken;
 import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.NodeState;
@@ -47,6 +48,9 @@ import org.apache.hadoop.yarn.api.records.YarnApplicationState;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.Dispatcher;
 import org.apache.hadoop.yarn.event.EventHandler;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
+import org.apache.hadoop.yarn.security.AMRMTokenIdentifier;
+import org.apache.hadoop.yarn.security.client.ClientToAMTokenIdentifier;
 import org.apache.hadoop.yarn.server.resourcemanager.ApplicationMasterService;
 import org.apache.hadoop.yarn.server.resourcemanager.RMAppManagerEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.RMAppManagerEventType;
@@ -54,22 +58,22 @@ import org.apache.hadoop.yarn.server.resourcemanager.RMContext;
 import org.apache.hadoop.yarn.server.resourcemanager.recovery.RMStateStore.ApplicationState;
 import org.apache.hadoop.yarn.server.resourcemanager.recovery.RMStateStore.RMState;
 import org.apache.hadoop.yarn.server.resourcemanager.recovery.Recoverable;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMAppNodeUpdateEvent.RMAppNodeUpdateType;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttempt;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttemptEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttemptEventType;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttemptImpl;
+import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttemptState;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeCleanAppEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.YarnScheduler;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
 import org.apache.hadoop.yarn.state.InvalidStateTransitonException;
 import org.apache.hadoop.yarn.state.MultipleArcTransition;
 import org.apache.hadoop.yarn.state.SingleArcTransition;
 import org.apache.hadoop.yarn.state.StateMachine;
 import org.apache.hadoop.yarn.state.StateMachineFactory;
-import org.apache.hadoop.yarn.util.BuilderUtils;
-import org.apache.hadoop.yarn.util.Records;
+import org.apache.hadoop.yarn.util.resource.Resources;
 
 public class RMAppImpl implements RMApp, Recoverable {
 
@@ -81,7 +85,6 @@ public class RMAppImpl implements RMApp, Recoverable {
   private final RMContext rmContext;
   private final Configuration conf;
   private final String user;
-  private final String queue;
   private final String name;
   private final ApplicationSubmissionContext submissionContext;
   private final Dispatcher dispatcher;
@@ -95,11 +98,13 @@ public class RMAppImpl implements RMApp, Recoverable {
       = new LinkedHashMap<ApplicationAttemptId, RMAppAttempt>();
   private final long submitTime;
   private final Set<RMNode> updatedNodes = new HashSet<RMNode>();
+  private final String applicationType;
 
   // Mutable fields
   private long startTime;
   private long finishTime;
   private RMAppAttempt currentAttempt;
+  private String queue;
   @SuppressWarnings("rawtypes")
   private EventHandler handler;
   private static final FinalTransition FINAL_TRANSITION = new FinalTransition();
@@ -228,7 +233,7 @@ public class RMAppImpl implements RMApp, Recoverable {
       Configuration config, String name, String user, String queue,
       ApplicationSubmissionContext submissionContext,
       YarnScheduler scheduler,
-      ApplicationMasterService masterService, long submitTime) {
+      ApplicationMasterService masterService, long submitTime, String applicationType) {
 
     this.applicationId = applicationId;
     this.name = name;
@@ -243,6 +248,7 @@ public class RMAppImpl implements RMApp, Recoverable {
     this.masterService = masterService;
     this.submitTime = submitTime;
     this.startTime = System.currentTimeMillis();
+    this.applicationType = applicationType;
 
     int globalMaxAppAttempts = conf.getInt(YarnConfiguration.RM_AM_MAX_ATTEMPTS,
         YarnConfiguration.DEFAULT_RM_AM_MAX_ATTEMPTS);
@@ -339,6 +345,11 @@ public class RMAppImpl implements RMApp, Recoverable {
   public String getQueue() {
     return this.queue;
   }
+  
+  @Override
+  public void setQueue(String queue) {
+    this.queue = queue;
+  }
 
   @Override
   public String getName() {
@@ -387,7 +398,7 @@ public class RMAppImpl implements RMApp, Recoverable {
     case FAILED:
       return YarnApplicationState.FAILED;
     }
-    throw new YarnException("Unknown state passed!");
+    throw new YarnRuntimeException("Unknown state passed!");
   }
 
   private FinalApplicationStatus createFinalApplicationStatus(RMAppState state) {
@@ -406,7 +417,7 @@ public class RMAppImpl implements RMApp, Recoverable {
     case KILLED:
       return FinalApplicationStatus.KILLED;
     }
-    throw new YarnException("Unknown state passed!");
+    throw new YarnRuntimeException("Unknown state passed!");
   }
 
   @Override
@@ -428,7 +439,7 @@ public class RMAppImpl implements RMApp, Recoverable {
 
     try {
       ApplicationAttemptId currentApplicationAttemptId = null;
-      ClientToken clientToken = null;
+      org.apache.hadoop.yarn.api.records.Token clientToAMToken = null;
       String trackingUrl = UNAVAILABLE;
       String host = UNAVAILABLE;
       String origTrackingUrl = UNAVAILABLE;
@@ -437,18 +448,47 @@ public class RMAppImpl implements RMApp, Recoverable {
           DUMMY_APPLICATION_RESOURCE_USAGE_REPORT;
       FinalApplicationStatus finishState = getFinalApplicationStatus();
       String diags = UNAVAILABLE;
+      float progress = 0.0f;
+      org.apache.hadoop.yarn.api.records.Token amrmToken = null;
       if (allowAccess) {
         if (this.currentAttempt != null) {
           currentApplicationAttemptId = this.currentAttempt.getAppAttemptId();
           trackingUrl = this.currentAttempt.getTrackingUrl();
           origTrackingUrl = this.currentAttempt.getOriginalTrackingUrl();
-          clientToken = this.currentAttempt.getClientToken();
+          Token<ClientToAMTokenIdentifier> attemptClientToAMToken =
+              this.currentAttempt.getClientToAMToken();
+          if (attemptClientToAMToken != null) {
+            clientToAMToken =
+                BuilderUtils.newClientToAMToken(
+                    attemptClientToAMToken.getIdentifier(),
+                    attemptClientToAMToken.getKind().toString(),
+                    attemptClientToAMToken.getPassword(),
+                    attemptClientToAMToken.getService().toString());
+          }
           host = this.currentAttempt.getHost();
           rpcPort = this.currentAttempt.getRpcPort();
           appUsageReport = currentAttempt.getApplicationResourceUsageReport();
+          progress = currentAttempt.getProgress();
         }
-
         diags = this.diagnostics.toString();
+
+        if (currentAttempt != null && 
+            currentAttempt.getAppAttemptState() == RMAppAttemptState.LAUNCHED) {
+          try {
+            if (getApplicationSubmissionContext().getUnmanagedAM() &&
+              getUser().equals(UserGroupInformation.getCurrentUser().getUserName())) {
+              Token<AMRMTokenIdentifier> token = currentAttempt.getAMRMToken();
+              if (token != null) {
+                amrmToken = BuilderUtils.newAMRMToken(token.getIdentifier(),
+                    token.getKind().toString(), token.getPassword(),
+                    token.getService().toString());
+              }
+            }
+          } catch (IOException ex) {
+            LOG.warn("UserGroupInformation.getCurrentUser() error: " + 
+              ex.toString(), ex);
+          }          
+        }
       }
 
       if (currentApplicationAttemptId == null) {
@@ -459,10 +499,11 @@ public class RMAppImpl implements RMApp, Recoverable {
 
       return BuilderUtils.newApplicationReport(this.applicationId,
           currentApplicationAttemptId, this.user, this.queue,
-          this.name, host, rpcPort, clientToken,
+          this.name, host, rpcPort, clientToAMToken,
           createApplicationState(this.stateMachine.getCurrentState()), diags,
           trackingUrl, this.startTime, this.finishTime, finishState,
-          appUsageReport, origTrackingUrl);
+          appUsageReport, origTrackingUrl, progress, this.applicationType, 
+          amrmToken);
     } finally {
       this.readLock.unlock();
     }
@@ -567,14 +608,11 @@ public class RMAppImpl implements RMApp, Recoverable {
 
   @SuppressWarnings("unchecked")
   private void createNewAttempt(boolean startAttempt) {
-    ApplicationAttemptId appAttemptId = Records
-        .newRecord(ApplicationAttemptId.class);
-    appAttemptId.setApplicationId(applicationId);
-    appAttemptId.setAttemptId(attempts.size() + 1);
-
+    ApplicationAttemptId appAttemptId =
+        ApplicationAttemptId.newInstance(applicationId, attempts.size() + 1);
     RMAppAttempt attempt =
         new RMAppAttemptImpl(appAttemptId, rmContext, scheduler, masterService,
-          submissionContext, conf);
+          submissionContext, conf, user);
     attempts.put(appAttemptId, attempt);
     currentAttempt = attempt;
     if(startAttempt) {
@@ -745,5 +783,10 @@ public class RMAppImpl implements RMApp, Recoverable {
       }
     }
 
+  }
+
+  @Override
+  public String getApplicationType() {
+    return this.applicationType;
   }
 }

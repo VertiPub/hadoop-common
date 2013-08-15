@@ -26,13 +26,13 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
 
-import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
+import org.apache.hadoop.yarn.api.records.Token;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.AsyncDispatcher;
 import org.apache.hadoop.yarn.event.Dispatcher;
@@ -49,7 +49,7 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Cont
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerState;
 import org.apache.hadoop.yarn.server.nodemanager.metrics.NodeManagerMetrics;
 import org.apache.hadoop.yarn.server.security.ApplicationACLsManager;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.junit.After;
 import org.junit.Assert;
@@ -75,8 +75,8 @@ public class TestNMWebServer {
     FileUtil.fullyDelete(testLogDir);
   }
   
-  private String startNMWebAppServer(String webAddr) {
-    Context nmContext = new NodeManager.NMContext(null);
+  private int startNMWebAppServer(String webAddr) {
+    Context nmContext = new NodeManager.NMContext(null, null);
     ResourceView resourceView = new ResourceView() {
       @Override
       public long getVmemAllocatedForContainers() {
@@ -104,27 +104,37 @@ public class TestNMWebServer {
     conf.set(YarnConfiguration.NM_WEBAPP_ADDRESS, webAddr);
     WebServer server = new WebServer(nmContext, resourceView,
         new ApplicationACLsManager(conf), dirsHandler);
-    server.init(conf);
-    server.start();
-    String webAppAddr = conf.get(YarnConfiguration.NM_WEBAPP_ADDRESS);
-    return StringUtils.split(webAppAddr, ':')[1];
+    try {
+      server.init(conf);
+      server.start();
+      return server.getPort();
+    } finally {
+      server.stop();
+      healthChecker.stop();
+    }
   }
   
   @Test
   public void testNMWebAppWithOutPort() throws IOException {
-    String port = startNMWebAppServer("0.0.0.0");
-    Assert.assertTrue("Port is not updated", Integer.parseInt(port) > 0);
+    int port = startNMWebAppServer("0.0.0.0");
+    validatePortVal(port);
   }
-  
+
+  private void validatePortVal(int portVal) {
+    Assert.assertTrue("Port is not updated", portVal > 0);
+    Assert.assertTrue("Port is default "+ YarnConfiguration.DEFAULT_NM_PORT,
+                      portVal !=YarnConfiguration.DEFAULT_NM_PORT);
+  }
+
   @Test
   public void testNMWebAppWithEphemeralPort() throws IOException {
-    String port = startNMWebAppServer("0.0.0.0:0"); 
-    Assert.assertTrue("Port is not updated", Integer.parseInt(port) > 0);
+    int port = startNMWebAppServer("0.0.0.0:0"); 
+    validatePortVal(port);
   }
 
   @Test
   public void testNMWebApp() throws IOException {
-    Context nmContext = new NodeManager.NMContext(null);
+    Context nmContext = new NodeManager.NMContext(null, null);
     ResourceView resourceView = new ResourceView() {
       @Override
       public long getVmemAllocatedForContainers() {
@@ -179,13 +189,15 @@ public class TestNMWebServer {
       // TODO: Use builder utils
       ContainerLaunchContext launchContext =
           recordFactory.newRecordInstance(ContainerLaunchContext.class);
-      org.apache.hadoop.yarn.api.records.Container mockContainer =
-          mock(org.apache.hadoop.yarn.api.records.Container.class);
-      when(mockContainer.getId()).thenReturn(containerId);
-      launchContext.setUser(user);
+      long currentTime = System.currentTimeMillis();
+      Token containerToken =
+          BuilderUtils.newContainerToken(containerId, "127.0.0.1", 1234, user,
+            BuilderUtils.newResource(1024, 1), currentTime + 10000L, 123,
+            "password".getBytes(), currentTime);
       Container container =
-          new ContainerImpl(conf, dispatcher, launchContext, mockContainer,
-              null, metrics) {
+          new ContainerImpl(conf, dispatcher, launchContext,
+            null, metrics,
+            BuilderUtils.newContainerTokenIdentifier(containerToken)) {
 
             @Override
             public ContainerState getContainerState() {

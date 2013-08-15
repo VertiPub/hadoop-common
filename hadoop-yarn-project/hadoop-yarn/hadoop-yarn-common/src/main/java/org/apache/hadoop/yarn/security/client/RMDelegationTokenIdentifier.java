@@ -34,12 +34,11 @@ import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenRenewer;
 import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenIdentifier;
 import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenSecretManager;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
 import org.apache.hadoop.yarn.api.protocolrecords.CancelDelegationTokenRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.RenewDelegationTokenRequest;
-import org.apache.hadoop.yarn.api.records.DelegationToken;
+import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.ipc.YarnRPC;
-import org.apache.hadoop.yarn.util.BuilderUtils;
 import org.apache.hadoop.yarn.util.Records;
 
 /**
@@ -98,13 +97,15 @@ public class RMDelegationTokenIdentifier extends AbstractDelegationTokenIdentifi
     @Override
     public long renew(Token<?> token, Configuration conf) throws IOException,
         InterruptedException {
-      final ClientRMProtocol rmClient = getRmClient(token, conf);
+      final ApplicationClientProtocol rmClient = getRmClient(token, conf);
       if (rmClient != null) {
         try {
           RenewDelegationTokenRequest request =
               Records.newRecord(RenewDelegationTokenRequest.class);
           request.setDelegationToken(convertToProtoToken(token));
           return rmClient.renewDelegationToken(request).getNextExpirationTime();
+        } catch (YarnException e) {
+          throw new IOException(e);
         } finally {
           RPC.stopProxy(rmClient);
         }
@@ -118,13 +119,15 @@ public class RMDelegationTokenIdentifier extends AbstractDelegationTokenIdentifi
     @Override
     public void cancel(Token<?> token, Configuration conf) throws IOException,
         InterruptedException {
-      final ClientRMProtocol rmClient = getRmClient(token, conf);
+      final ApplicationClientProtocol rmClient = getRmClient(token, conf);
       if (rmClient != null) {
         try {
           CancelDelegationTokenRequest request =
               Records.newRecord(CancelDelegationTokenRequest.class);
           request.setDelegationToken(convertToProtoToken(token));
           rmClient.cancelDelegationToken(request);
+        } catch (YarnException e) {
+          throw new IOException(e);
         } finally {
           RPC.stopProxy(rmClient);
         }
@@ -134,7 +137,7 @@ public class RMDelegationTokenIdentifier extends AbstractDelegationTokenIdentifi
       }
     }
     
-    private static ClientRMProtocol getRmClient(Token<?> token,
+    private static ApplicationClientProtocol getRmClient(Token<?> token,
         Configuration conf) {
       InetSocketAddress addr = SecurityUtil.getTokenServiceAddr(token);
       if (localSecretManager != null) {
@@ -149,7 +152,7 @@ public class RMDelegationTokenIdentifier extends AbstractDelegationTokenIdentifi
         }
       }
       final YarnRPC rpc = YarnRPC.create(conf);
-      return (ClientRMProtocol)rpc.getProxy(ClientRMProtocol.class, addr, conf);        
+      return (ApplicationClientProtocol)rpc.getProxy(ApplicationClientProtocol.class, addr, conf);        
     }
 
     // get renewer so we can always renew our own tokens
@@ -159,10 +162,11 @@ public class RMDelegationTokenIdentifier extends AbstractDelegationTokenIdentifi
           .getRenewer().toString();
     }
     
-    private static DelegationToken convertToProtoToken(Token<?> token) {
-      return BuilderUtils.newDelegationToken(
-          token.getIdentifier(), token.getKind().toString(),
-          token.getPassword(), token.getService().toString());
+    private static org.apache.hadoop.yarn.api.records.Token
+        convertToProtoToken(Token<?> token) {
+      return org.apache.hadoop.yarn.api.records.Token.newInstance(
+        token.getIdentifier(), token.getKind().toString(), token.getPassword(),
+        token.getService().toString());
     }
   }
 }

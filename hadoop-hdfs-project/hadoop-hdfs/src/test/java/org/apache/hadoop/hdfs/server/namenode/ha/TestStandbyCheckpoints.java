@@ -239,13 +239,41 @@ public class TestStandbyCheckpoints {
     
     assertTrue(canceledOne);
   }
+
+  /**
+   * Test cancellation of ongoing checkpoints when failover happens
+   * mid-checkpoint during image upload from standby to active NN.
+   */
+  @Test(timeout=60000)
+  public void testCheckpointCancellationDuringUpload() throws Exception {
+    // don't compress, we want a big image
+    cluster.getConfiguration(0).setBoolean(
+        DFSConfigKeys.DFS_IMAGE_COMPRESS_KEY, false);
+    cluster.getConfiguration(1).setBoolean(
+        DFSConfigKeys.DFS_IMAGE_COMPRESS_KEY, false);
+    // Throttle SBN upload to make it hang during upload to ANN
+    cluster.getConfiguration(1).setLong(
+        DFSConfigKeys.DFS_IMAGE_TRANSFER_RATE_KEY, 100);
+    cluster.restartNameNode(0);
+    cluster.restartNameNode(1);
+    nn0 = cluster.getNameNode(0);
+    nn1 = cluster.getNameNode(1);
+
+    cluster.transitionToActive(0);
+
+    doEdits(0, 100);
+    HATestUtil.waitForStandbyToCatchUp(nn0, nn1);
+    HATestUtil.waitForCheckpoint(cluster, 1, ImmutableList.of(104));
+    cluster.transitionToStandby(0);
+    cluster.transitionToActive(1);
+  }
   
   /**
    * Make sure that clients will receive StandbyExceptions even when a
    * checkpoint is in progress on the SBN, and therefore the StandbyCheckpointer
    * thread will have FSNS lock. Regression test for HDFS-4591.
    */
-  @Test(timeout=120000)
+  @Test(timeout=300000)
   public void testStandbyExceptionThrownDuringCheckpoint() throws Exception {
     
     // Set it up so that we know when the SBN checkpoint starts and ends.
@@ -256,7 +284,7 @@ public class TestStandbyCheckpoints {
             Mockito.any(Canceler.class));
     
     // Perform some edits and wait for a checkpoint to start on the SBN.
-    doEdits(0, 2000);
+    doEdits(0, 1000);
     nn0.getRpcServer().rollEditLog();
     answerer.waitForCall();
     answerer.proceed();

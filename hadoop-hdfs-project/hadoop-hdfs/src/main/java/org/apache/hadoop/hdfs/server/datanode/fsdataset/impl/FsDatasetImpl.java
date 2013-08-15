@@ -76,7 +76,6 @@ import org.apache.hadoop.hdfs.server.datanode.fsdataset.VolumeChoosingPolicy;
 import org.apache.hadoop.hdfs.server.datanode.metrics.FSDatasetMBean;
 import org.apache.hadoop.hdfs.server.protocol.BlockRecoveryCommand.RecoveringBlock;
 import org.apache.hadoop.hdfs.server.protocol.ReplicaRecoveryInfo;
-import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.io.nativeio.NativeIO;
 import org.apache.hadoop.metrics2.util.MBeans;
 import org.apache.hadoop.util.DataChecksum;
@@ -615,7 +614,7 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
     if (replicaInfo.getState() == ReplicaState.RBW) {
       ReplicaBeingWritten rbw = (ReplicaBeingWritten)replicaInfo;
       // kill the previous writer
-      rbw.stopWriter();
+      rbw.stopWriter(datanode.getDnConf().getXceiverStopTimeout());
       rbw.setWriter(Thread.currentThread());
       // check length: bytesRcvd, bytesOnDisk, and bytesAcked should be the same
       if (replicaLen != rbw.getBytesOnDisk() 
@@ -735,7 +734,7 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
     LOG.info("Recovering " + rbw);
 
     // Stop the previous writer
-    rbw.stopWriter();
+    rbw.stopWriter(datanode.getDnConf().getXceiverStopTimeout());
     rbw.setWriter(Thread.currentThread());
 
     // check generation stamp
@@ -749,11 +748,23 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
     }
     
     // check replica length
-    if (rbw.getBytesAcked() < minBytesRcvd || rbw.getNumBytes() > maxBytesRcvd){
+    long bytesAcked = rbw.getBytesAcked();
+    long numBytes = rbw.getNumBytes();
+    if (bytesAcked < minBytesRcvd || numBytes > maxBytesRcvd){
       throw new ReplicaNotFoundException("Unmatched length replica " + 
-          replicaInfo + ": BytesAcked = " + rbw.getBytesAcked() + 
-          " BytesRcvd = " + rbw.getNumBytes() + " are not in the range of [" + 
+          replicaInfo + ": BytesAcked = " + bytesAcked + 
+          " BytesRcvd = " + numBytes + " are not in the range of [" + 
           minBytesRcvd + ", " + maxBytesRcvd + "].");
+    }
+
+    // Truncate the potentially corrupt portion.
+    // If the source was client and the last node in the pipeline was lost,
+    // any corrupt data written after the acked length can go unnoticed. 
+    if (numBytes > bytesAcked) {
+      final File replicafile = rbw.getBlockFile();
+      truncateBlock(replicafile, rbw.getMetaFile(), numBytes, bytesAcked);
+      rbw.setNumBytes(bytesAcked);
+      rbw.setLastChecksumAndDataLen(bytesAcked, null);
     }
 
     // bump the replica's generation stamp to newGS
@@ -1439,13 +1450,14 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
   @Override // FsDatasetSpi
   public synchronized ReplicaRecoveryInfo initReplicaRecovery(
       RecoveringBlock rBlock) throws IOException {
-    return initReplicaRecovery(rBlock.getBlock().getBlockPoolId(),
-        volumeMap, rBlock.getBlock().getLocalBlock(), rBlock.getNewGenerationStamp());
+    return initReplicaRecovery(rBlock.getBlock().getBlockPoolId(), volumeMap,
+        rBlock.getBlock().getLocalBlock(), rBlock.getNewGenerationStamp(),
+        datanode.getDnConf().getXceiverStopTimeout());
   }
 
   /** static version of {@link #initReplicaRecovery(Block, long)}. */
-  static ReplicaRecoveryInfo initReplicaRecovery(String bpid,
-      ReplicaMap map, Block block, long recoveryId) throws IOException {
+  static ReplicaRecoveryInfo initReplicaRecovery(String bpid, ReplicaMap map,
+      Block block, long recoveryId, long xceiverStopTimeout) throws IOException {
     final ReplicaInfo replica = map.get(bpid, block.getBlockId());
     LOG.info("initReplicaRecovery: " + block + ", recoveryId=" + recoveryId
         + ", replica=" + replica);
@@ -1458,7 +1470,7 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
     //stop writer if there is any
     if (replica instanceof ReplicaInPipeline) {
       final ReplicaInPipeline rip = (ReplicaInPipeline)replica;
-      rip.stopWriter();
+      rip.stopWriter(xceiverStopTimeout);
 
       //check replica bytes on disk.
       if (rip.getBytesOnDisk() < rip.getVisibleLength()) {
@@ -1700,27 +1712,7 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
         datafile.getAbsolutePath(), metafile.getAbsolutePath());
     return info;
   }
-  
-  @Override // FsDatasetSpi
-  public FileInputStream[] getShortCircuitFdsForRead(ExtendedBlock block) 
-      throws IOException {
-    File datafile = getBlockFile(block);
-    File metafile = FsDatasetUtil.getMetaFile(datafile,
-        block.getGenerationStamp());
-    FileInputStream fis[] = new FileInputStream[2];
-    boolean success = false;
-    try {
-      fis[0] = new FileInputStream(datafile);
-      fis[1] = new FileInputStream(metafile);
-      success = true;
-      return fis;
-    } finally {
-      if (!success) {
-        IOUtils.cleanup(null, fis);
-      }
-    }
-  }
-    
+
   @Override // FsDatasetSpi
   public HdfsBlocksMetadata getHdfsBlocksMetadata(List<ExtendedBlock> blocks)
       throws IOException {

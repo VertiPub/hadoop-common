@@ -22,8 +22,9 @@ import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
-import org.apache.hadoop.yarn.api.AMRMProtocol;
-import org.apache.hadoop.yarn.api.ContainerManager;
+import org.apache.hadoop.yarn.api.ApplicationMasterProtocol;
+import org.apache.hadoop.yarn.api.ContainerManagementProtocol;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p><code>Container</code> represents an allocated resource in the cluster.
@@ -43,38 +44,52 @@ import org.apache.hadoop.yarn.api.ContainerManager;
  *     <li>HTTP uri of the node.</li>
  *     <li>{@link Resource} allocated to the container.</li>
  *     <li>{@link Priority} at which the container was allocated.</li>
- *     <li>{@link ContainerState} of the container.</li>
  *     <li>
- *       {@link ContainerToken} of the container, used to securely verify 
+ *       Container {@link Token} of the container, used to securely verify
  *       authenticity of the allocation. 
  *     </li>
- *     <li>{@link ContainerStatus} of the container.</li>
  *   </ul>
  * </p>
  * 
  * <p>Typically, an <code>ApplicationMaster</code> receives the 
  * <code>Container</code> from the <code>ResourceManager</code> during
- * resource-negotiation and then talks to the <code>NodManager</code> to 
+ * resource-negotiation and then talks to the <code>NodeManager</code> to 
  * start/stop containers.</p>
  * 
- * @see AMRMProtocol#allocate(org.apache.hadoop.yarn.api.protocolrecords.AllocateRequest)
- * @see ContainerManager#startContainer(org.apache.hadoop.yarn.api.protocolrecords.StartContainerRequest)
- * @see ContainerManager#stopContainer(org.apache.hadoop.yarn.api.protocolrecords.StopContainerRequest)
+ * @see ApplicationMasterProtocol#allocate(org.apache.hadoop.yarn.api.protocolrecords.AllocateRequest)
+ * @see ContainerManagementProtocol#startContainers(org.apache.hadoop.yarn.api.protocolrecords.StartContainersRequest)
+ * @see ContainerManagementProtocol#stopContainers(org.apache.hadoop.yarn.api.protocolrecords.StopContainersRequest)
  */
 @Public
 @Stable
-public interface Container extends Comparable<Container> {
+public abstract class Container implements Comparable<Container> {
+
+  @Private
+  @Unstable
+  public static Container newInstance(ContainerId containerId, NodeId nodeId,
+      String nodeHttpAddress, Resource resource, Priority priority,
+      Token containerToken) {
+    Container container = Records.newRecord(Container.class);
+    container.setId(containerId);
+    container.setNodeId(nodeId);
+    container.setNodeHttpAddress(nodeHttpAddress);
+    container.setResource(resource);
+    container.setPriority(priority);
+    container.setContainerToken(containerToken);
+    return container;
+  }
+
   /**
    * Get the globally unique identifier for the container.
    * @return globally unique identifier for the container
    */
   @Public
   @Stable
-  ContainerId getId();
+  public abstract ContainerId getId();
   
   @Private
   @Unstable
-  void setId(ContainerId id);
+  public abstract void setId(ContainerId id);
 
   /**
    * Get the identifier of the node on which the container is allocated.
@@ -82,11 +97,11 @@ public interface Container extends Comparable<Container> {
    */
   @Public
   @Stable
-  NodeId getNodeId();
+  public abstract NodeId getNodeId();
   
   @Private
   @Unstable
-  void setNodeId(NodeId nodeId);
+  public abstract void setNodeId(NodeId nodeId);
   
   /**
    * Get the http uri of the node on which the container is allocated.
@@ -94,11 +109,11 @@ public interface Container extends Comparable<Container> {
    */
   @Public
   @Stable
-  String getNodeHttpAddress();
+  public abstract String getNodeHttpAddress();
   
   @Private
   @Unstable
-  void setNodeHttpAddress(String nodeHttpAddress);
+  public abstract void setNodeHttpAddress(String nodeHttpAddress);
   
   /**
    * Get the <code>Resource</code> allocated to the container.
@@ -106,11 +121,11 @@ public interface Container extends Comparable<Container> {
    */
   @Public
   @Stable
-  Resource getResource();
+  public abstract Resource getResource();
   
   @Private
   @Unstable
-  void setResource(Resource resource);
+  public abstract void setResource(Resource resource);
 
   /**
    * Get the <code>Priority</code> at which the <code>Container</code> was
@@ -118,21 +133,37 @@ public interface Container extends Comparable<Container> {
    * @return <code>Priority</code> at which the <code>Container</code> was
    *         allocated
    */
-  Priority getPriority();
+  @Public
+  @Stable
+  public abstract Priority getPriority();
   
   @Private
   @Unstable
-  void setPriority(Priority priority);
+  public abstract void setPriority(Priority priority);
   
   /**
    * Get the <code>ContainerToken</code> for the container.
+   * <p><code>ContainerToken</code> is the security token used by the framework
+   * to verify authenticity of any <code>Container</code>.</p>
+   *
+   * <p>The <code>ResourceManager</code>, on container allocation provides a
+   * secure token which is verified by the <code>NodeManager</code> on
+   * container launch.</p>
+   *
+   * <p>Applications do not need to care about <code>ContainerToken</code>, they
+   * are transparently handled by the framework - the allocated
+   * <code>Container</code> includes the <code>ContainerToken</code>.</p>
+   *
+   * @see ApplicationMasterProtocol#allocate(org.apache.hadoop.yarn.api.protocolrecords.AllocateRequest)
+   * @see ContainerManagementProtocol#startContainers(org.apache.hadoop.yarn.api.protocolrecords.StartContainersRequest)
+   *
    * @return <code>ContainerToken</code> for the container
    */
   @Public
   @Stable
-  ContainerToken getContainerToken();
+  public abstract Token getContainerToken();
   
   @Private
   @Unstable
-  void setContainerToken(ContainerToken containerToken);
+  public abstract void setContainerToken(Token containerToken);
 }

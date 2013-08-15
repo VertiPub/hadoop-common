@@ -18,11 +18,11 @@
 
 package org.apache.hadoop.mapreduce.v2.app.client;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Collection;
 
-import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -78,16 +78,11 @@ import org.apache.hadoop.mapreduce.v2.app.job.event.TaskEventType;
 import org.apache.hadoop.mapreduce.v2.app.security.authorize.MRAMPolicyProvider;
 import org.apache.hadoop.mapreduce.v2.app.webapp.AMWebApp;
 import org.apache.hadoop.net.NetUtils;
-import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authorize.PolicyProvider;
-import org.apache.hadoop.yarn.api.ApplicationConstants;
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
+import org.apache.hadoop.service.AbstractService;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.ipc.RPCUtil;
 import org.apache.hadoop.yarn.ipc.YarnRPC;
-import org.apache.hadoop.yarn.security.client.ClientToAMTokenSecretManager;
-import org.apache.hadoop.yarn.service.AbstractService;
 import org.apache.hadoop.yarn.webapp.WebApp;
 import org.apache.hadoop.yarn.webapp.WebApps;
 
@@ -113,24 +108,14 @@ public class MRClientService extends AbstractService
     this.protocolHandler = new MRClientProtocolHandler();
   }
 
-  public void start() {
+  protected void serviceStart() throws Exception {
     Configuration conf = getConfig();
     YarnRPC rpc = YarnRPC.create(conf);
     InetSocketAddress address = new InetSocketAddress(0);
 
-    ClientToAMTokenSecretManager secretManager = null;
-    if (UserGroupInformation.isSecurityEnabled()) {
-      String secretKeyStr =
-          System
-              .getenv(ApplicationConstants.APPLICATION_CLIENT_SECRET_ENV_NAME);
-      byte[] bytes = Base64.decodeBase64(secretKeyStr);
-      secretManager =
-          new ClientToAMTokenSecretManager(
-            this.appContext.getApplicationAttemptId(), bytes);
-    }
     server =
         rpc.getServer(MRClientProtocol.class, protocolHandler, address,
-            conf, secretManager,
+            conf, appContext.getClientToAMTokenSecretManager(),
             conf.getInt(MRJobConfig.MR_AM_JOB_CLIENT_THREAD_COUNT, 
                 MRJobConfig.DEFAULT_MR_AM_JOB_CLIENT_THREAD_COUNT),
                 MRJobConfig.MR_AM_JOB_CLIENT_PORT_RANGE);
@@ -151,7 +136,7 @@ public class MRClientService extends AbstractService
     } catch (Exception e) {
       LOG.error("Webapps failed to start. Ignoring for now:", e);
     }
-    super.start();
+    super.serviceStart();
   }
 
   void refreshServiceAcls(Configuration configuration, 
@@ -159,12 +144,15 @@ public class MRClientService extends AbstractService
     this.server.refreshServiceAcl(configuration, policyProvider);
   }
 
-  public void stop() {
-    server.stop();
+  @Override
+  protected void serviceStop() throws Exception {
+    if (server != null) {
+      server.stop();
+    }
     if (webApp != null) {
       webApp.stop();
     }
-    super.stop();
+    super.serviceStop();
   }
 
   @Override
@@ -188,34 +176,34 @@ public class MRClientService extends AbstractService
     }
     
     private Job verifyAndGetJob(JobId jobID, 
-        boolean modifyAccess) throws YarnRemoteException {
+        boolean modifyAccess) throws IOException {
       Job job = appContext.getJob(jobID);
       return job;
     }
  
     private Task verifyAndGetTask(TaskId taskID, 
-        boolean modifyAccess) throws YarnRemoteException {
+        boolean modifyAccess) throws IOException {
       Task task = verifyAndGetJob(taskID.getJobId(), 
           modifyAccess).getTask(taskID);
       if (task == null) {
-        throw RPCUtil.getRemoteException("Unknown Task " + taskID);
+        throw new IOException("Unknown Task " + taskID);
       }
       return task;
     }
 
     private TaskAttempt verifyAndGetAttempt(TaskAttemptId attemptID, 
-        boolean modifyAccess) throws YarnRemoteException {
+        boolean modifyAccess) throws IOException {
       TaskAttempt attempt = verifyAndGetTask(attemptID.getTaskId(), 
           modifyAccess).getAttempt(attemptID);
       if (attempt == null) {
-        throw RPCUtil.getRemoteException("Unknown TaskAttempt " + attemptID);
+        throw new IOException("Unknown TaskAttempt " + attemptID);
       }
       return attempt;
     }
 
     @Override
     public GetCountersResponse getCounters(GetCountersRequest request) 
-      throws YarnRemoteException {
+      throws IOException {
       JobId jobId = request.getJobId();
       Job job = verifyAndGetJob(jobId, false);
       GetCountersResponse response =
@@ -226,7 +214,7 @@ public class MRClientService extends AbstractService
     
     @Override
     public GetJobReportResponse getJobReport(GetJobReportRequest request) 
-      throws YarnRemoteException {
+      throws IOException {
       JobId jobId = request.getJobId();
       Job job = verifyAndGetJob(jobId, false);
       GetJobReportResponse response = 
@@ -242,7 +230,7 @@ public class MRClientService extends AbstractService
 
     @Override
     public GetTaskAttemptReportResponse getTaskAttemptReport(
-        GetTaskAttemptReportRequest request) throws YarnRemoteException {
+        GetTaskAttemptReportRequest request) throws IOException {
       TaskAttemptId taskAttemptId = request.getTaskAttemptId();
       GetTaskAttemptReportResponse response =
         recordFactory.newRecordInstance(GetTaskAttemptReportResponse.class);
@@ -253,7 +241,7 @@ public class MRClientService extends AbstractService
 
     @Override
     public GetTaskReportResponse getTaskReport(GetTaskReportRequest request) 
-      throws YarnRemoteException {
+      throws IOException {
       TaskId taskId = request.getTaskId();
       GetTaskReportResponse response = 
         recordFactory.newRecordInstance(GetTaskReportResponse.class);
@@ -264,7 +252,7 @@ public class MRClientService extends AbstractService
     @Override
     public GetTaskAttemptCompletionEventsResponse getTaskAttemptCompletionEvents(
         GetTaskAttemptCompletionEventsRequest request) 
-        throws YarnRemoteException {
+        throws IOException {
       JobId jobId = request.getJobId();
       int fromEventId = request.getFromEventId();
       int maxEvents = request.getMaxEvents();
@@ -280,7 +268,7 @@ public class MRClientService extends AbstractService
     @SuppressWarnings("unchecked")
     @Override
     public KillJobResponse killJob(KillJobRequest request) 
-      throws YarnRemoteException {
+      throws IOException {
       JobId jobId = request.getJobId();
       String message = "Kill Job received from client " + jobId;
       LOG.info(message);
@@ -297,7 +285,7 @@ public class MRClientService extends AbstractService
     @SuppressWarnings("unchecked")
     @Override
     public KillTaskResponse killTask(KillTaskRequest request) 
-      throws YarnRemoteException {
+      throws IOException {
       TaskId taskId = request.getTaskId();
       String message = "Kill task received from client " + taskId;
       LOG.info(message);
@@ -312,7 +300,7 @@ public class MRClientService extends AbstractService
     @SuppressWarnings("unchecked")
     @Override
     public KillTaskAttemptResponse killTaskAttempt(
-        KillTaskAttemptRequest request) throws YarnRemoteException {
+        KillTaskAttemptRequest request) throws IOException {
       TaskAttemptId taskAttemptId = request.getTaskAttemptId();
       String message = "Kill task attempt received from client " + taskAttemptId;
       LOG.info(message);
@@ -329,7 +317,7 @@ public class MRClientService extends AbstractService
 
     @Override
     public GetDiagnosticsResponse getDiagnostics(
-        GetDiagnosticsRequest request) throws YarnRemoteException {
+        GetDiagnosticsRequest request) throws IOException {
       TaskAttemptId taskAttemptId = request.getTaskAttemptId();
       
       GetDiagnosticsResponse response = 
@@ -342,7 +330,7 @@ public class MRClientService extends AbstractService
     @SuppressWarnings("unchecked")
     @Override
     public FailTaskAttemptResponse failTaskAttempt(
-        FailTaskAttemptRequest request) throws YarnRemoteException {
+        FailTaskAttemptRequest request) throws IOException {
       TaskAttemptId taskAttemptId = request.getTaskAttemptId();
       String message = "Fail task attempt received from client " + taskAttemptId;
       LOG.info(message);
@@ -361,7 +349,7 @@ public class MRClientService extends AbstractService
 
     @Override
     public GetTaskReportsResponse getTaskReports(
-        GetTaskReportsRequest request) throws YarnRemoteException {
+        GetTaskReportsRequest request) throws IOException {
       JobId jobId = request.getJobId();
       TaskType taskType = request.getTaskType();
       
@@ -386,22 +374,22 @@ public class MRClientService extends AbstractService
 
     @Override
     public GetDelegationTokenResponse getDelegationToken(
-        GetDelegationTokenRequest request) throws YarnRemoteException {
-      throw RPCUtil.getRemoteException("MR AM not authorized to issue delegation" +
+        GetDelegationTokenRequest request) throws IOException {
+      throw new IOException("MR AM not authorized to issue delegation" +
       		" token");
     }
 
     @Override
     public RenewDelegationTokenResponse renewDelegationToken(
-        RenewDelegationTokenRequest request) throws YarnRemoteException {
-      throw RPCUtil.getRemoteException("MR AM not authorized to renew delegation" +
+        RenewDelegationTokenRequest request) throws IOException {
+      throw new IOException("MR AM not authorized to renew delegation" +
           " token");
     }
 
     @Override
     public CancelDelegationTokenResponse cancelDelegationToken(
-        CancelDelegationTokenRequest request) throws YarnRemoteException {
-      throw RPCUtil.getRemoteException("MR AM not authorized to cancel delegation" +
+        CancelDelegationTokenRequest request) throws IOException {
+      throw new IOException("MR AM not authorized to cancel delegation" +
           " token");
     }
   }

@@ -38,6 +38,7 @@ import org.apache.hadoop.hdfs.tools.DFSAdmin;
 import org.apache.hadoop.hdfs.web.WebHdfsFileSystem;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.junit.Assert;
 import org.junit.Test;
 
 /** A class for testing quota-related commands */
@@ -171,15 +172,13 @@ public class TestQuota {
       fout = dfs.create(childFile1, replication);
       
       // 10.s: but writing fileLen bytes should result in an quota exception
-      hasException = false;
       try {
         fout.write(new byte[fileLen]);
         fout.close();
+        Assert.fail();
       } catch (QuotaExceededException e) {
-        hasException = true;
         IOUtils.closeStream(fout);
       }
-      assertTrue(hasException);
       
       //delete the file
       dfs.delete(childFile1, false);
@@ -782,49 +781,53 @@ public class TestQuota {
   public void testMaxSpaceQuotas() throws Exception {
     final Configuration conf = new HdfsConfiguration();
     final MiniDFSCluster cluster = new MiniDFSCluster.Builder(conf).numDataNodes(2).build();
-    final FileSystem fs = cluster.getFileSystem();
-    assertTrue("Not a HDFS: "+fs.getUri(),
-                fs instanceof DistributedFileSystem);
-    final DistributedFileSystem dfs = (DistributedFileSystem)fs;
-    
-    // create test directory
-    final Path testFolder = new Path("/testFolder");
-    assertTrue(dfs.mkdirs(testFolder));
-    
-    // setting namespace quota to Long.MAX_VALUE - 1 should work
-    dfs.setQuota(testFolder, Long.MAX_VALUE - 1, 10);
-    ContentSummary c = dfs.getContentSummary(testFolder);
-    assertTrue("Quota not set properly", c.getQuota() == Long.MAX_VALUE - 1);
-    
-    // setting diskspace quota to Long.MAX_VALUE - 1 should work
-    dfs.setQuota(testFolder, 10, Long.MAX_VALUE - 1);
-    c = dfs.getContentSummary(testFolder);
-    assertTrue("Quota not set properly", c.getSpaceQuota() == Long.MAX_VALUE - 1);
-    
-    // setting namespace quota to Long.MAX_VALUE should not work + no error
-    dfs.setQuota(testFolder, Long.MAX_VALUE, 10);
-    c = dfs.getContentSummary(testFolder);
-    assertTrue("Quota should not have changed", c.getQuota() == 10);
-    
-    // setting diskspace quota to Long.MAX_VALUE should not work + no error
-    dfs.setQuota(testFolder, 10, Long.MAX_VALUE);
-    c = dfs.getContentSummary(testFolder);
-    assertTrue("Quota should not have changed", c.getSpaceQuota() == 10);
-    
-    // setting namespace quota to Long.MAX_VALUE + 1 should not work + error
     try {
-      dfs.setQuota(testFolder, Long.MAX_VALUE + 1, 10);
-      fail("Exception not thrown");
-    } catch (IllegalArgumentException e) {
-      // Expected
-    }
+      final FileSystem fs = cluster.getFileSystem();
+      assertTrue("Not a HDFS: "+fs.getUri(),
+                  fs instanceof DistributedFileSystem);
+      final DistributedFileSystem dfs = (DistributedFileSystem)fs;
     
-    // setting diskspace quota to Long.MAX_VALUE + 1 should not work + error
-    try {
-      dfs.setQuota(testFolder, 10, Long.MAX_VALUE + 1);
-      fail("Exception not thrown");
-    } catch (IllegalArgumentException e) {
-      // Expected
+      // create test directory
+      final Path testFolder = new Path("/testFolder");
+      assertTrue(dfs.mkdirs(testFolder));
+    
+      // setting namespace quota to Long.MAX_VALUE - 1 should work
+      dfs.setQuota(testFolder, Long.MAX_VALUE - 1, 10);
+      ContentSummary c = dfs.getContentSummary(testFolder);
+      assertTrue("Quota not set properly", c.getQuota() == Long.MAX_VALUE - 1);
+    
+      // setting diskspace quota to Long.MAX_VALUE - 1 should work
+      dfs.setQuota(testFolder, 10, Long.MAX_VALUE - 1);
+      c = dfs.getContentSummary(testFolder);
+      assertTrue("Quota not set properly", c.getSpaceQuota() == Long.MAX_VALUE - 1);
+    
+      // setting namespace quota to Long.MAX_VALUE should not work + no error
+      dfs.setQuota(testFolder, Long.MAX_VALUE, 10);
+      c = dfs.getContentSummary(testFolder);
+      assertTrue("Quota should not have changed", c.getQuota() == 10);
+    
+      // setting diskspace quota to Long.MAX_VALUE should not work + no error
+      dfs.setQuota(testFolder, 10, Long.MAX_VALUE);
+      c = dfs.getContentSummary(testFolder);
+      assertTrue("Quota should not have changed", c.getSpaceQuota() == 10);
+    
+      // setting namespace quota to Long.MAX_VALUE + 1 should not work + error
+      try {
+        dfs.setQuota(testFolder, Long.MAX_VALUE + 1, 10);
+        fail("Exception not thrown");
+      } catch (IllegalArgumentException e) {
+        // Expected
+      }
+    
+      // setting diskspace quota to Long.MAX_VALUE + 1 should not work + error
+      try {
+        dfs.setQuota(testFolder, 10, Long.MAX_VALUE + 1);
+        fail("Exception not thrown");
+      } catch (IllegalArgumentException e) {
+        // Expected
+      }
+    } finally {
+      cluster.shutdown();
     }
   }
   

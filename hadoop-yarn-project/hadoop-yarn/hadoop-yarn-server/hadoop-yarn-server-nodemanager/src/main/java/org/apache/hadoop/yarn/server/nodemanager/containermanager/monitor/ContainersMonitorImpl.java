@@ -28,6 +28,7 @@ import java.util.Map.Entry;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.service.AbstractService;
 import org.apache.hadoop.util.StringUtils.TraditionalBinaryPrefix;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
@@ -36,7 +37,6 @@ import org.apache.hadoop.yarn.event.Dispatcher;
 import org.apache.hadoop.yarn.server.nodemanager.ContainerExecutor;
 import org.apache.hadoop.yarn.server.nodemanager.Context;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerKillEvent;
-import org.apache.hadoop.yarn.service.AbstractService;
 import org.apache.hadoop.yarn.util.ResourceCalculatorProcessTree;
 import org.apache.hadoop.yarn.util.ResourceCalculatorPlugin;
 
@@ -85,7 +85,7 @@ public class ContainersMonitorImpl extends AbstractService implements
   }
 
   @Override
-  public synchronized void init(Configuration conf) {
+  protected void serviceInit(Configuration conf) throws Exception {
     this.monitoringInterval =
         conf.getLong(YarnConfiguration.NM_CONTAINER_MON_INTERVAL_MS,
             YarnConfiguration.DEFAULT_NM_CONTAINER_MON_INTERVAL_MS);
@@ -151,7 +151,7 @@ public class ContainersMonitorImpl extends AbstractService implements
                 1) + "). Thrashing might happen.");
       }
     }
-    super.init(conf);
+    super.serviceInit(conf);
   }
 
   private boolean isEnabled() {
@@ -175,15 +175,15 @@ public class ContainersMonitorImpl extends AbstractService implements
   }
 
   @Override
-  public synchronized void start() {
+  protected void serviceStart() throws Exception {
     if (this.isEnabled()) {
       this.monitoringThread.start();
     }
-    super.start();
+    super.serviceStart();
   }
 
   @Override
-  public synchronized void stop() {
+  protected void serviceStop() throws Exception {
     if (this.isEnabled()) {
       this.monitoringThread.interrupt();
       try {
@@ -192,7 +192,7 @@ public class ContainersMonitorImpl extends AbstractService implements
         ;
       }
     }
-    super.stop();
+    super.serviceStop();
   }
 
   private static class ProcessTreeInfo {

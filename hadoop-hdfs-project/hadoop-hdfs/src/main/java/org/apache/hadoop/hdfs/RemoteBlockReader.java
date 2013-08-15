@@ -22,8 +22,6 @@ import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.nio.ByteBuffer;
 
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -33,7 +31,6 @@ import org.apache.hadoop.hdfs.net.Peer;
 import org.apache.hadoop.hdfs.protocol.DatanodeID;
 import org.apache.hadoop.hdfs.protocol.ExtendedBlock;
 import org.apache.hadoop.hdfs.protocol.datatransfer.DataTransferProtoUtil;
-import org.apache.hadoop.hdfs.protocol.datatransfer.IOStreamPair;
 import org.apache.hadoop.hdfs.protocol.datatransfer.PacketHeader;
 import org.apache.hadoop.hdfs.protocol.datatransfer.Sender;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.BlockOpResponseProto;
@@ -41,7 +38,7 @@ import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.ReadOpChecksumIn
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.Status;
 import org.apache.hadoop.hdfs.protocolPB.PBHelper;
 import org.apache.hadoop.hdfs.security.token.block.BlockTokenIdentifier;
-import org.apache.hadoop.hdfs.server.common.HdfsServerConstants;
+import org.apache.hadoop.hdfs.server.datanode.CachingStrategy;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.token.Token;
@@ -82,6 +79,11 @@ public class RemoteBlockReader extends FSInputChecker implements BlockReader {
    * at the beginning so that the read can begin on a chunk boundary.
    */
   private final long bytesNeededToFinish;
+  
+  /**
+   * True if we are reading from a local DataNode.
+   */
+  private final boolean isLocal;
 
   private boolean eos = false;
   private boolean sentStatusCode = false;
@@ -90,6 +92,8 @@ public class RemoteBlockReader extends FSInputChecker implements BlockReader {
   ByteBuffer checksumBytes = null;
   /** Amount of unread data in the current received packet */
   int dataLeft = 0;
+  
+  private final PeerCache peerCache;
   
   /* FSInputChecker interface */
   
@@ -324,13 +328,16 @@ public class RemoteBlockReader extends FSInputChecker implements BlockReader {
   private RemoteBlockReader(String file, String bpid, long blockId,
       DataInputStream in, DataChecksum checksum, boolean verifyChecksum,
       long startOffset, long firstChunkOffset, long bytesToRead, Peer peer,
-      DatanodeID datanodeID) {
+      DatanodeID datanodeID, PeerCache peerCache) {
     // Path is used only for printing block and file information in debug
     super(new Path("/blk_" + blockId + ":" + bpid + ":of:"+ file)/*too non path-like?*/,
           1, verifyChecksum,
           checksum.getChecksumSize() > 0? checksum : null, 
           checksum.getBytesPerChecksum(),
           checksum.getChecksumSize());
+
+    this.isLocal = DFSClient.isLocalAddress(NetUtils.
+        createSocketAddr(datanodeID.getXferAddr()));
     
     this.peer = peer;
     this.datanodeID = datanodeID;
@@ -350,6 +357,7 @@ public class RemoteBlockReader extends FSInputChecker implements BlockReader {
 
     bytesPerChecksum = this.checksum.getBytesPerChecksum();
     checksumSize = this.checksum.getChecksumSize();
+    this.peerCache = peerCache;
   }
 
   /**
@@ -373,13 +381,15 @@ public class RemoteBlockReader extends FSInputChecker implements BlockReader {
                                      long startOffset, long len,
                                      int bufferSize, boolean verifyChecksum,
                                      String clientName, Peer peer,
-                                     DatanodeID datanodeID)
-                                     throws IOException {
+                                     DatanodeID datanodeID,
+                                     PeerCache peerCache,
+                                     CachingStrategy cachingStrategy)
+                                       throws IOException {
     // in and out will be closed when sock is closed (by the caller)
     final DataOutputStream out =
         new DataOutputStream(new BufferedOutputStream(peer.getOutputStream()));
     new Sender(out).readBlock(block, blockToken, clientName, startOffset, len,
-        verifyChecksum);
+        verifyChecksum, cachingStrategy);
     
     //
     // Get bytes in block, set streams
@@ -409,12 +419,11 @@ public class RemoteBlockReader extends FSInputChecker implements BlockReader {
 
     return new RemoteBlockReader(file, block.getBlockPoolId(), block.getBlockId(),
         in, checksum, verifyChecksum, startOffset, firstChunkOffset, len,
-        peer, datanodeID);
+        peer, datanodeID, peerCache);
   }
 
   @Override
-  public synchronized void close(PeerCache peerCache,
-      FileInputStreamCache fisCache) throws IOException {
+  public synchronized void close() throws IOException {
     startOffset = -1;
     checksum = null;
     if (peerCache != null & sentStatusCode) {
@@ -454,18 +463,6 @@ public class RemoteBlockReader extends FSInputChecker implements BlockReader {
                peer.getRemoteAddressString() + ": " + e.getMessage());
     }
   }
-  
-  /**
-   * File name to print when accessing a block directly (from servlets)
-   * @param s Address of the block location
-   * @param poolId Block pool ID of the block
-   * @param blockId Block ID of the block
-   * @return string that has a file name for debug purposes
-   */
-  public static String getFileName(final InetSocketAddress s,
-      final String poolId, final long blockId) {
-    return s.toString() + ":" + poolId + ":" + blockId;
-  }
 
   @Override
   public int read(ByteBuffer buf) throws IOException {
@@ -477,5 +474,15 @@ public class RemoteBlockReader extends FSInputChecker implements BlockReader {
     // An optimistic estimate of how much data is available
     // to us without doing network I/O.
     return DFSClient.TCP_WINDOW_SIZE;
+  }
+
+  @Override
+  public boolean isLocal() {
+    return isLocal;
+  }
+  
+  @Override
+  public boolean isShortCircuit() {
+    return false;
   }
 }

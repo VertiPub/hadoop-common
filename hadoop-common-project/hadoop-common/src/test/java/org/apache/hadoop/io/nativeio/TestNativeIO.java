@@ -26,6 +26,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.junit.Assert;
@@ -42,6 +43,7 @@ import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.NativeCodeLoader;
 import org.apache.hadoop.util.Time;
 
@@ -64,17 +66,23 @@ public class TestNativeIO {
 
   @Test (timeout = 30000)
   public void testFstat() throws Exception {
-    if (Path.WINDOWS) {
-      return;
-    }
-
     FileOutputStream fos = new FileOutputStream(
       new File(TEST_DIR, "testfstat"));
     NativeIO.POSIX.Stat stat = NativeIO.POSIX.getFstat(fos.getFD());
     fos.close();
     LOG.info("Stat: " + String.valueOf(stat));
 
-    assertEquals(System.getProperty("user.name"), stat.getOwner());
+    String owner = stat.getOwner();
+    String expectedOwner = System.getProperty("user.name");
+    if (Path.WINDOWS) {
+      UserGroupInformation ugi =
+          UserGroupInformation.createRemoteUser(expectedOwner);
+      final String adminsGroupString = "Administrators";
+      if (Arrays.asList(ugi.getGroupNames()).contains(adminsGroupString)) {
+        expectedOwner = adminsGroupString;
+      }
+    }
+    assertEquals(expectedOwner, owner);
     assertNotNull(stat.getGroup());
     assertTrue(!stat.getGroup().isEmpty());
     assertEquals("Stat mode field should indicate a regular file",
@@ -136,10 +144,6 @@ public class TestNativeIO {
 
   @Test (timeout = 30000)
   public void testFstatClosedFd() throws Exception {
-    if (Path.WINDOWS) {
-      return;
-    }
-
     FileOutputStream fos = new FileOutputStream(
       new File(TEST_DIR, "testfstat2"));
     fos.close();
@@ -238,6 +242,44 @@ public class TestNativeIO {
       fail("Got unexpected exception: " + e.getMessage());
     }
 
+  }
+
+  /** Validate access checks on Windows */
+  @Test (timeout = 30000)
+  public void testAccess() throws Exception {
+    if (!Path.WINDOWS) {
+      return;
+    }
+
+    File testFile = new File(TEST_DIR, "testfileaccess");
+    assertTrue(testFile.createNewFile());
+
+    // Validate ACCESS_READ
+    FileUtil.setReadable(testFile, false);
+    assertFalse(NativeIO.Windows.access(testFile.getAbsolutePath(),
+        NativeIO.Windows.AccessRight.ACCESS_READ));
+
+    FileUtil.setReadable(testFile, true);
+    assertTrue(NativeIO.Windows.access(testFile.getAbsolutePath(),
+        NativeIO.Windows.AccessRight.ACCESS_READ));
+
+    // Validate ACCESS_WRITE
+    FileUtil.setWritable(testFile, false);
+    assertFalse(NativeIO.Windows.access(testFile.getAbsolutePath(),
+        NativeIO.Windows.AccessRight.ACCESS_WRITE));
+
+    FileUtil.setWritable(testFile, true);
+    assertTrue(NativeIO.Windows.access(testFile.getAbsolutePath(),
+        NativeIO.Windows.AccessRight.ACCESS_WRITE));
+
+    // Validate ACCESS_EXECUTE
+    FileUtil.setExecutable(testFile, false);
+    assertFalse(NativeIO.Windows.access(testFile.getAbsolutePath(),
+        NativeIO.Windows.AccessRight.ACCESS_EXECUTE));
+
+    FileUtil.setExecutable(testFile, true);
+    assertTrue(NativeIO.Windows.access(testFile.getAbsolutePath(),
+        NativeIO.Windows.AccessRight.ACCESS_EXECUTE));
   }
 
   @Test (timeout = 30000)

@@ -37,6 +37,8 @@ import org.apache.hadoop.util.Shell;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import com.google.common.annotations.VisibleForTesting;
+
 /**
  * JNI wrappers for various native IO-related calls not available in Java.
  * These functions should generally be used alongside a fallback to another
@@ -92,16 +94,23 @@ public class NativeIO {
 
     private static final Log LOG = LogFactory.getLog(NativeIO.class);
 
+    @VisibleForTesting
+    public static CacheTracker cacheTracker = null;
+    
     private static boolean nativeLoaded = false;
     private static boolean fadvisePossible = true;
     private static boolean syncFileRangePossible = true;
 
     static final String WORKAROUND_NON_THREADSAFE_CALLS_KEY =
       "hadoop.workaround.non.threadsafe.getpwuid";
-    static final boolean WORKAROUND_NON_THREADSAFE_CALLS_DEFAULT = false;
+    static final boolean WORKAROUND_NON_THREADSAFE_CALLS_DEFAULT = true;
 
     private static long cacheTimeout = -1;
 
+    public static interface CacheTracker {
+      public void fadvise(String identifier, long offset, long len, int flags);
+    }
+    
     static {
       if (NativeCodeLoader.isNativeCodeLoaded()) {
         try {
@@ -178,9 +187,12 @@ public class NativeIO {
      *
      * @throws NativeIOException if there is an error with the syscall
      */
-    public static void posixFadviseIfPossible(
+    public static void posixFadviseIfPossible(String identifier,
         FileDescriptor fd, long offset, long len, int flags)
         throws NativeIOException {
+      if (cacheTracker != null) {
+        cacheTracker.fadvise(identifier, offset, len, flags);
+      }
       if (nativeLoaded && fadvisePossible) {
         try {
           posix_fadvise(fd, offset, len, flags);
@@ -247,7 +259,21 @@ public class NativeIO {
         this.groupId = groupId;
         this.mode = mode;
       }
-
+      
+      Stat(String owner, String group, int mode) {
+        if (!Shell.WINDOWS) {
+          this.owner = owner;
+        } else {
+          this.owner = stripDomain(owner);
+        }
+        if (!Shell.WINDOWS) {
+          this.group = group;
+        } else {
+          this.group = stripDomain(group);
+        }
+        this.mode = mode;
+      }
+      
       @Override
       public String toString() {
         return "Stat(owner='" + owner + "', group='" + group + "'" +
@@ -273,9 +299,25 @@ public class NativeIO {
      * @throws IOException thrown if there was an IO error while obtaining the file stat.
      */
     public static Stat getFstat(FileDescriptor fd) throws IOException {
-      Stat stat = fstat(fd);
-      stat.owner = getName(IdCache.USER, stat.ownerId);
-      stat.group = getName(IdCache.GROUP, stat.groupId);
+      Stat stat = null;
+      if (!Shell.WINDOWS) {
+        stat = fstat(fd); 
+        stat.owner = getName(IdCache.USER, stat.ownerId);
+        stat.group = getName(IdCache.GROUP, stat.groupId);
+      } else {
+        try {
+          stat = fstat(fd);
+        } catch (NativeIOException nioe) {
+          if (nioe.getErrorCode() == 6) {
+            throw new NativeIOException("The handle is invalid.",
+                Errno.EBADF);
+          } else {
+            LOG.warn(String.format("NativeIO.getFstat error (%d): %s",
+                nioe.getErrorCode(), nioe.getMessage()));
+            throw new NativeIOException("Unknown error", Errno.UNKNOWN);
+          }
+        }
+      }
       return stat;
     }
 
@@ -356,6 +398,43 @@ public class NativeIO {
     /** Windows only methods used for getOwner() implementation */
     private static native String getOwner(FileDescriptor fd) throws IOException;
 
+    /** Supported list of Windows access right flags */
+    public static enum AccessRight {
+      ACCESS_READ (0x0001),      // FILE_READ_DATA
+      ACCESS_WRITE (0x0002),     // FILE_WRITE_DATA
+      ACCESS_EXECUTE (0x0020);   // FILE_EXECUTE
+
+      private final int accessRight;
+      AccessRight(int access) {
+        accessRight = access;
+      }
+
+      public int accessRight() {
+        return accessRight;
+      }
+    };
+
+    /** Windows only method used to check if the current process has requested
+     *  access rights on the given path. */
+    private static native boolean access0(String path, int requestedAccess);
+
+    /**
+     * Checks whether the current process has desired access rights on
+     * the given path.
+     * 
+     * Longer term this native function can be substituted with JDK7
+     * function Files#isReadable, isWritable, isExecutable.
+     *
+     * @param path input path
+     * @param desiredAccess ACCESS_READ, ACCESS_WRITE or ACCESS_EXECUTE
+     * @return true if access is allowed
+     * @throws IOException I/O exception on error
+     */
+    public static boolean access(String path, AccessRight desiredAccess)
+        throws IOException {
+      return access0(path, desiredAccess.accessRight());
+    }
+
     static {
       if (NativeCodeLoader.isNativeCodeLoaded()) {
         try {
@@ -411,14 +490,27 @@ public class NativeIO {
       new ConcurrentHashMap<Long, CachedUid>();
   private static long cacheTimeout;
   private static boolean initialized = false;
+  
+  /**
+   * The Windows logon name has two part, NetBIOS domain name and
+   * user account name, of the format DOMAIN\UserName. This method
+   * will remove the domain part of the full logon name.
+   *
+   * @param the full principal name containing the domain
+   * @return name with domain removed
+   */
+  private static String stripDomain(String name) {
+    int i = name.indexOf('\\');
+    if (i != -1)
+      name = name.substring(i + 1);
+    return name;
+  }
 
   public static String getOwner(FileDescriptor fd) throws IOException {
     ensureInitialized();
     if (Shell.WINDOWS) {
       String owner = Windows.getOwner(fd);
-      int i = owner.indexOf('\\');
-      if (i != -1)
-        owner = owner.substring(i + 1);
+      owner = stripDomain(owner);
       return owner;
     } else {
       long uid = POSIX.getUIDforFDOwnerforOwner(fd);

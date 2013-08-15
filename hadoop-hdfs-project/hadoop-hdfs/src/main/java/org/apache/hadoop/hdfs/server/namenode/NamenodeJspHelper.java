@@ -52,6 +52,12 @@ import org.apache.hadoop.hdfs.server.common.JspHelper;
 import org.apache.hadoop.hdfs.server.common.Storage;
 import org.apache.hadoop.hdfs.server.common.Storage.StorageDirectory;
 import org.apache.hadoop.hdfs.server.namenode.JournalSet.JournalAndStream;
+import org.apache.hadoop.hdfs.server.namenode.startupprogress.Phase;
+import org.apache.hadoop.hdfs.server.namenode.startupprogress.StartupProgress;
+import org.apache.hadoop.hdfs.server.namenode.startupprogress.StartupProgressView;
+import org.apache.hadoop.hdfs.server.namenode.startupprogress.Status;
+import org.apache.hadoop.hdfs.server.namenode.startupprogress.Step;
+import org.apache.hadoop.hdfs.server.namenode.startupprogress.StepType;
 import org.apache.hadoop.hdfs.server.protocol.NamenodeProtocols;
 import org.apache.hadoop.http.HttpConfig;
 import org.apache.hadoop.io.Text;
@@ -76,7 +82,7 @@ class NamenodeJspHelper {
   }
 
   static String getSafeModeText(FSNamesystem fsn) {
-    if (!fsn.isInSafeMode())
+    if (fsn == null || !fsn.isInSafeMode())
       return "";
     return "Safe mode is ON. <em>" + fsn.getSafeModeTip() + "</em><br>";
   }
@@ -94,6 +100,10 @@ class NamenodeJspHelper {
   }
 
   static String getInodeLimitText(FSNamesystem fsn) {
+    if (fsn == null) {
+      return "";
+    }
+
     long inodes = fsn.dir.totalInodes();
     long blocks = fsn.getBlocksTotal();
     long maxobjects = fsn.getMaxObjects();
@@ -133,15 +143,21 @@ class NamenodeJspHelper {
 
   /** Return a table containing version information. */
   static String getVersionTable(FSNamesystem fsn) {
-    return "<div class='dfstable'><table>"
-        + "\n  <tr><td class='col1'>Started:</td><td>" + fsn.getStartTime()
-        + "</td></tr>\n" + "\n  <tr><td class='col1'>Version:</td><td>"
-        + VersionInfo.getVersion() + ", " + VersionInfo.getRevision()
-        + "</td></tr>\n" + "\n  <tr><td class='col1'>Compiled:</td><td>" + VersionInfo.getDate()
-        + " by " + VersionInfo.getUser() + " from " + VersionInfo.getBranch()
-        + "</td></tr>\n  <tr><td class='col1'>Cluster ID:</td><td>" + fsn.getClusterId()
-        + "</td></tr>\n  <tr><td class='col1'>Block Pool ID:</td><td>" + fsn.getBlockPoolId()
-        + "</td></tr>\n</table></div>";
+    StringBuilder sb = new StringBuilder();
+    sb.append("<div class='dfstable'><table>");
+    if (fsn != null) {
+      sb.append("\n  <tr><td class='col1'>Started:</td><td>" + fsn.getStartTime());
+    }
+    sb.append("</td></tr>\n" + "\n  <tr><td class='col1'>Version:</td><td>");
+    sb.append(VersionInfo.getVersion() + ", " + VersionInfo.getRevision());
+    sb.append("</td></tr>\n" + "\n  <tr><td class='col1'>Compiled:</td><td>" + VersionInfo.getDate());
+    sb.append(" by " + VersionInfo.getUser() + " from " + VersionInfo.getBranch());
+    if (fsn != null) {
+      sb.append("</td></tr>\n  <tr><td class='col1'>Cluster ID:</td><td>" + fsn.getClusterId());
+      sb.append("</td></tr>\n  <tr><td class='col1'>Block Pool ID:</td><td>" + fsn.getBlockPoolId());
+    }
+    sb.append("</td></tr>\n</table></div>");
+    return sb.toString();
   }
 
   /**
@@ -149,6 +165,10 @@ class NamenodeJspHelper {
    * @return a warning if files are corrupt, otherwise return an empty string.
    */
   static String getCorruptFilesWarning(FSNamesystem fsn) {
+    if (fsn == null) {
+      return "";
+    }
+
     long missingBlocks = fsn.getMissingBlocksCount();
     if (missingBlocks > 0) {
       StringBuilder result = new StringBuilder();
@@ -196,6 +216,9 @@ class NamenodeJspHelper {
     void generateConfReport(JspWriter out, NameNode nn,
         HttpServletRequest request) throws IOException {
       FSNamesystem fsn = nn.getNamesystem();
+      if (fsn == null) {
+        return;
+      }
       FSImage fsImage = fsn.getFSImage();
       List<Storage.StorageDirectory> removedStorageDirs 
         = fsImage.getStorage().getRemovedStorageDirs();
@@ -233,6 +256,9 @@ class NamenodeJspHelper {
      */
     void generateJournalReport(JspWriter out, NameNode nn,
         HttpServletRequest request) throws IOException {
+      if (nn.getNamesystem() == null) {
+        return;
+      }
       FSEditLog log = nn.getFSImage().getEditLog();
       Preconditions.checkArgument(log != null, "no edit log set in %s", nn);
       
@@ -249,9 +275,30 @@ class NamenodeJspHelper {
               + "<thead><tr><td><b>Journal Manager</b></td><td><b>State</b></td></tr></thead>");
       for (JournalAndStream jas : log.getJournals()) {
         out.print("<tr>");
-        out.print("<td>" + jas.getManager());
-        if (jas.isRequired()) {
-          out.print(" [required]");
+        out.print("<td>");
+        
+        /**
+         * Insert a line break every 3 journal nodes to avoid a very wide line.
+         */  
+        JournalManager manager = jas.getManager();
+        if (null != manager) {
+          String[] managers = manager.toString().split(",");
+
+          for (int i = 0; i < managers.length; ++i) {
+            out.print(managers[i]);
+
+            if (i < managers.length - 1) {
+              out.print(",");
+            }
+
+            if ((i+1) % 3 == 0) {
+              out.print("<br/>");
+            }
+          }
+
+          if (jas.isRequired()) {
+            out.print(" [required]");
+          }
         }
         out.print("</td><td>");
         
@@ -276,6 +323,9 @@ class NamenodeJspHelper {
     void generateHealthReport(JspWriter out, NameNode nn,
         HttpServletRequest request) throws IOException {
       FSNamesystem fsn = nn.getNamesystem();
+      if (fsn == null) {
+        return;
+      }
       final DatanodeManager dm = fsn.getBlockManager().getDatanodeManager();
       final List<DatanodeDescriptor> live = new ArrayList<DatanodeDescriptor>();
       final List<DatanodeDescriptor> dead = new ArrayList<DatanodeDescriptor>();
@@ -405,6 +455,142 @@ class NamenodeJspHelper {
         out.print("There are no datanodes in the cluster.");
       }
     }
+
+    /**
+     * Generates the Startup Progress report.
+     * 
+     * @param out JspWriter to receive output
+     * @param prog StartupProgress tracking NameNode startup progress
+     * @throws IOException thrown if there is an I/O error
+     */
+    void generateStartupProgress(JspWriter out, StartupProgress prog)
+        throws IOException {
+      StartupProgressView view = prog.createView();
+      FormattedWriter fout = new FormattedWriter(out);
+      fout.println("<div id=\"startupprogress\">");
+      fout.println("<div><span>Elapsed Time:</span> %s</div>",
+        StringUtils.formatTime(view.getElapsedTime()));
+      fout.println("<div><span>Percent Complete:</span> %s</div>",
+        StringUtils.formatPercent(view.getPercentComplete(), 2));
+      fout.println("<table>");
+      fout.println("<tr>");
+      fout.println("<th>Phase</th>");
+      fout.println("<th>Completion</th>");
+      fout.println("<th>Elapsed Time</th>");
+      fout.println("</tr>");
+      for (Phase phase: view.getPhases()) {
+        final String timeClass;
+        Status status = view.getStatus(phase);
+        if (status == Status.PENDING) {
+          timeClass = "later";
+        } else if (status == Status.RUNNING) {
+          timeClass = "current";
+        } else {
+          timeClass = "prior";
+        }
+
+        fout.println("<tr class=\"phase %s\">", timeClass);
+        printPhase(fout, view, phase);
+        fout.println("</tr>");
+
+        for (Step step: view.getSteps(phase)) {
+          fout.println("<tr class=\"step %s\">", timeClass);
+          printStep(fout, view, phase, step);
+          fout.println("</tr>");
+        }
+      }
+      fout.println("</table>");
+      fout.println("</div>");
+    }
+
+    /**
+     * Prints one line of content for a phase in the Startup Progress report.
+     * 
+     * @param fout FormattedWriter to receive output
+     * @param view StartupProgressView containing information to print
+     * @param phase Phase to print
+     * @throws IOException thrown if there is an I/O error
+     */
+    private void printPhase(FormattedWriter fout, StartupProgressView view,
+        Phase phase) throws IOException {
+      StringBuilder phaseLine = new StringBuilder();
+      phaseLine.append(phase.getDescription());
+      String file = view.getFile(phase);
+      if (file != null) {
+        phaseLine.append(" ").append(file);
+      }
+      long size = view.getSize(phase);
+      if (size != Long.MIN_VALUE) {
+        phaseLine.append(" (").append(StringUtils.byteDesc(size)).append(")");
+      }
+      fout.println("<td class=\"startupdesc\">%s</td>", phaseLine.toString());
+      fout.println("<td>%s</td>", StringUtils.formatPercent(
+        view.getPercentComplete(phase), 2));
+      fout.println("<td>%s</td>", view.getStatus(phase) == Status.PENDING ? "" :
+        StringUtils.formatTime(view.getElapsedTime(phase)));
+    }
+
+    /**
+     * Prints one line of content for a step in the Startup Progress report.
+     * 
+     * @param fout FormattedWriter to receive output
+     * @param view StartupProgressView containing information to print
+     * @param phase Phase to print
+     * @param step Step to print
+     * @throws IOException thrown if there is an I/O error
+     */
+    private void printStep(FormattedWriter fout, StartupProgressView view,
+        Phase phase, Step step) throws IOException {
+      StringBuilder stepLine = new StringBuilder();
+      String file = step.getFile();
+      if (file != null) {
+        stepLine.append(file);
+      }
+      long size = step.getSize();
+      if (size != Long.MIN_VALUE) {
+        stepLine.append(" (").append(StringUtils.byteDesc(size)).append(")");
+      }
+      StepType type = step.getType();
+      if (type != null) {
+        stepLine.append(" ").append(type.getDescription());
+      }
+
+      fout.println("<td class=\"startupdesc\">%s (%d/%d)</td>",
+        stepLine.toString(), view.getCount(phase, step),
+        view.getTotal(phase, step));
+      fout.println("<td>%s</td>", StringUtils.formatPercent(
+        view.getPercentComplete(phase), 2));
+      fout.println("<td>%s</td>", view.getStatus(phase) == Status.PENDING ? "" :
+        StringUtils.formatTime(view.getElapsedTime(phase)));
+    }
+
+    /**
+     * JspWriter wrapper that helps simplify printing formatted lines.
+     */
+    private static class FormattedWriter {
+      private final JspWriter out;
+
+      /**
+       * Creates a new FormattedWriter that delegates to the given JspWriter.
+       * 
+       * @param out JspWriter to wrap
+       */
+      FormattedWriter(JspWriter out) {
+        this.out = out;
+      }
+
+      /**
+       * Prints one formatted line, followed by line terminator, using the
+       * English locale.
+       * 
+       * @param format String format
+       * @param args Object... any number of arguments to match format
+       * @throws IOException thrown if there is an I/O error
+       */
+      void println(String format, Object... args) throws IOException {
+        out.println(StringUtils.format(format, args));
+      }
+    }
   }
 
   static String getDelegationToken(final NamenodeProtocols nn,
@@ -523,10 +709,10 @@ class NamenodeJspHelper {
       int idx = (suffix != null && name.endsWith(suffix)) ? name
           .indexOf(suffix) : -1;
 
-      out.print(rowTxt() + "<td class=\"name\"><a title=\"" + d.getXferAddr()
+      out.print(rowTxt() + "<td class=\"name\"> <a title=\"" + url
           + "\" href=\"" + url + "\">"
           + ((idx > 0) ? name.substring(0, idx) : name) + "</a>"
-          + ((alive) ? "" : "\n"));
+          + ((alive) ? "" : "\n") + "<td class=\"address\">" + d.getXferAddr());
     }
 
     void generateDecommissioningNodeData(JspWriter out, DatanodeDescriptor d,
@@ -560,10 +746,10 @@ class NamenodeJspHelper {
       /*
        * Say the datanode is dn1.hadoop.apache.org with ip 192.168.0.5 we use:
        * 1) d.getHostName():d.getPort() to display. Domain and port are stripped
-       *    if they are common across the nodes. i.e. "dn1"
-       * 2) d.getHost():d.Port() for "title". i.e. "192.168.0.5:50010"
-       * 3) d.getHostName():d.getInfoPort() for url.
+       *    if they are common across the nodes. i.e. "dn1" 
+       * 2) d.getHostName():d.getInfoPort() for url and title.
        *    i.e. "http://dn1.hadoop.apache.org:50075/..."
+       * 3) d.getXferAddr() for "Transferring Address". i.e. "192.168.0.5:50010"
        * Note that "d.getHost():d.getPort()" is what DFS clients use to
        * interact with datanodes.
        */
@@ -694,7 +880,9 @@ class NamenodeJspHelper {
             }
 
             out.print("<tr class=\"headerRow\"> <th " + nodeHeaderStr("name")
-                + "> Node <th " + nodeHeaderStr("lastcontact")
+                + "> Node <th " + nodeHeaderStr("address")
+                + "> Transferring<br>Address <th "
+                + nodeHeaderStr("lastcontact")
                 + "> Last <br>Contact <th " + nodeHeaderStr("adminstate")
                 + "> Admin State <th " + nodeHeaderStr("capacity")
                 + "> Configured <br>Capacity (" + diskByteStr + ") <th "
@@ -710,8 +898,8 @@ class NamenodeJspHelper {
                 + nodeHeaderStr("bpused") + "> Block Pool<br>Used (" 
                 + diskByteStr + ") <th "
                 + nodeHeaderStr("pcbpused")
-                + "> Block Pool<br>Used (%)"
-                + "> Blocks <th " + nodeHeaderStr("volfails")
+                + "> Block Pool<br>Used (%)" + " <th "
+                + nodeHeaderStr("volfails")
                 +"> Failed Volumes\n");
 
             JspHelper.sortNodeList(live, sorterField, sorterOrder);
@@ -729,7 +917,9 @@ class NamenodeJspHelper {
           if (dead.size() > 0) {
             out.print("<table border=1 cellspacing=0> <tr id=\"row1\"> "
                 + "<th " + nodeHeaderStr("node")
-                + "> Node <th " + nodeHeaderStr("decommissioned")
+                + "> Node <th " + nodeHeaderStr("address")
+                + "> Transferring<br>Address <th "
+                + nodeHeaderStr("decommissioned")
                 + "> Decommissioned\n");
 
             JspHelper.sortNodeList(dead, sorterField, sorterOrder);
@@ -749,7 +939,9 @@ class NamenodeJspHelper {
           if (decommissioning.size() > 0) {
             out.print("<table border=1 cellspacing=0> <tr class=\"headRow\"> "
                 + "<th " + nodeHeaderStr("name") 
-                + "> Node <th " + nodeHeaderStr("lastcontact")
+                + "> Node <th " + nodeHeaderStr("address")
+                + "> Transferring<br>Address <th "
+                + nodeHeaderStr("lastcontact")
                 + "> Last <br>Contact <th "
                 + nodeHeaderStr("underreplicatedblocks")
                 + "> Under Replicated Blocks <th "
@@ -775,7 +967,16 @@ class NamenodeJspHelper {
       }
     }
   }
-  
+
+  private static String getLocalParentDir(INode inode) {
+    final INode parent = inode.isRoot() ? inode : inode.getParent();
+    String parentDir = "";
+    if (parent != null) {
+      parentDir = parent.getFullPathName();
+    }
+    return (parentDir != null) ? parentDir : "";
+  }
+
   // utility class used in block_info_xml.jsp
   static class XMLBlockInfo {
     final Block block;
@@ -790,7 +991,7 @@ class NamenodeJspHelper {
         this.inode = null;
       } else {
         this.block = new Block(blockId);
-        this.inode = (INodeFile) blockManager.getBlockCollection(block);
+        this.inode = ((INode)blockManager.getBlockCollection(block)).asFile();
       }
     }
 
@@ -817,7 +1018,7 @@ class NamenodeJspHelper {
           doc.endTag();
 
           doc.startTag("local_directory");
-          doc.pcdata(inode.getLocalParentDir());
+          doc.pcdata(getLocalParentDir(inode));
           doc.endTag();
 
           doc.startTag("user_name");
@@ -849,7 +1050,7 @@ class NamenodeJspHelper {
           doc.endTag();
 
           doc.startTag("replication");
-          doc.pcdata(""+inode.getBlockReplication());
+          doc.pcdata(""+inode.getFileReplication());
           doc.endTag();
 
           doc.startTag("disk_space_consumed");

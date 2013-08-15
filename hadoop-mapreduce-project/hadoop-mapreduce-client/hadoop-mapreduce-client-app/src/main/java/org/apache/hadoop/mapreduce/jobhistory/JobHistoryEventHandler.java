@@ -52,9 +52,9 @@ import org.apache.hadoop.mapreduce.v2.jobhistory.FileNameIndexUtils;
 import org.apache.hadoop.mapreduce.v2.jobhistory.JobHistoryUtils;
 import org.apache.hadoop.mapreduce.v2.jobhistory.JobIndexInfo;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.yarn.YarnException;
+import org.apache.hadoop.service.AbstractService;
 import org.apache.hadoop.yarn.event.EventHandler;
-import org.apache.hadoop.yarn.service.AbstractService;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 
 /**
  * The job history events get routed to this class. This class writes the Job
@@ -115,7 +115,7 @@ public class JobHistoryEventHandler extends AbstractService
    * Creates these directories if they do not already exist.
    */
   @Override
-  public void init(Configuration conf) {
+  protected void serviceInit(Configuration conf) throws Exception {
     String jobId =
       TypeConverter.fromYarn(context.getApplicationID()).toString();
     
@@ -131,7 +131,7 @@ public class JobHistoryEventHandler extends AbstractService
           JobHistoryUtils.getHistoryIntermediateDoneDirForUser(conf);
     } catch (IOException e) {
       LOG.error("Failed while getting the configured log directories", e);
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
 
     //Check for the existence of the history staging dir. Maybe create it. 
@@ -144,7 +144,7 @@ public class JobHistoryEventHandler extends AbstractService
     } catch (IOException e) {
       LOG.error("Failed while checking for/creating  history staging path: ["
           + stagingDirPath + "]", e);
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
 
     //Check for the existence of intermediate done dir.
@@ -178,13 +178,13 @@ public class JobHistoryEventHandler extends AbstractService
                 + ". Either set to true or pre-create this directory with" +
                 " appropriate permissions";
         LOG.error(message);
-        throw new YarnException(message);
+        throw new YarnRuntimeException(message);
       }
       }
     } catch (IOException e) {
       LOG.error("Failed checking for the existance of history intermediate " +
       		"done directory: [" + doneDirPath + "]");
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
 
     //Check/create user directory under intermediate done dir.
@@ -196,7 +196,7 @@ public class JobHistoryEventHandler extends AbstractService
     } catch (IOException e) {
       LOG.error("Error creating user intermediate history done directory: [ "
           + doneDirPrefixPath + "]", e);
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
 
     // Maximum number of unflushed completion-events that can stay in the queue
@@ -220,7 +220,7 @@ public class JobHistoryEventHandler extends AbstractService
             MRJobConfig.MR_AM_HISTORY_USE_BATCHED_FLUSH_QUEUE_SIZE_THRESHOLD,
             MRJobConfig.DEFAULT_MR_AM_HISTORY_USE_BATCHED_FLUSH_QUEUE_SIZE_THRESHOLD);
     
-    super.init(conf);
+    super.serviceInit(conf);
   }
 
   private void mkdir(FileSystem fs, Path path, FsPermission fsp)
@@ -243,7 +243,7 @@ public class JobHistoryEventHandler extends AbstractService
   }
 
   @Override
-  public void start() {
+  protected void serviceStart() throws Exception {
     eventHandlingThread = new Thread(new Runnable() {
       @Override
       public void run() {
@@ -275,38 +275,48 @@ public class JobHistoryEventHandler extends AbstractService
             boolean isInterrupted = Thread.interrupted();
             handleEvent(event);
             if (isInterrupted) {
-              Thread.currentThread().interrupt();
+                LOG.debug("Event handling interrupted");
+                Thread.currentThread().interrupt();
+              }
             }
           }
         }
-      }
-    });
+    }, "eventHandlingThread");
     eventHandlingThread.start();
-    super.start();
+    super.serviceStart();
   }
 
   @Override
-  public void stop() {
+  protected void serviceStop() throws Exception {
     LOG.info("Stopping JobHistoryEventHandler. "
         + "Size of the outstanding queue size is " + eventQueue.size());
     stopped = true;
     //do not interrupt while event handling is in progress
     synchronized(lock) {
-      if (eventHandlingThread != null)
+      if (eventHandlingThread != null) {
+        LOG.debug("Interrupting Event Handling thread");
         eventHandlingThread.interrupt();
+      } else {
+        LOG.debug("Null event handling thread");
+      }
     }
 
     try {
-      if (eventHandlingThread != null)
+      if (eventHandlingThread != null) {
+        LOG.debug("Waiting for Event Handling thread to complete");
         eventHandlingThread.join();
+      }
     } catch (InterruptedException ie) {
-      LOG.info("Interruped Exception while stopping", ie);
+      LOG.info("Interrupted Exception while stopping", ie);
     }
 
     // Cancel all timers - so that they aren't invoked during or after
     // the metaInfo object is wrapped up.
     for (MetaInfo mi : fileMap.values()) {
       try {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Shutting down timer for " + mi);
+        }
         mi.shutDownTimer();
       } catch (IOException e) {
         LOG.info("Exception while cancelling delayed flush timer. "
@@ -354,7 +364,7 @@ public class JobHistoryEventHandler extends AbstractService
       }
     }
     LOG.info("Stopped JobHistoryEventHandler. super.stop()");
-    super.stop();
+    super.serviceStop();
   }
 
   protected EventWriter createEventWriter(Path historyFilePath)
@@ -457,7 +467,7 @@ public class JobHistoryEventHandler extends AbstractService
 
       eventQueue.put(event);
     } catch (InterruptedException e) {
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
   }
 
@@ -479,7 +489,7 @@ public class JobHistoryEventHandler extends AbstractService
         } catch (IOException ioe) {
           LOG.error("Error JobHistoryEventHandler in handleEvent: " + event,
               ioe);
-          throw new YarnException(ioe);
+          throw new YarnRuntimeException(ioe);
         }
       }
 
@@ -501,7 +511,7 @@ public class JobHistoryEventHandler extends AbstractService
       } catch (IOException e) {
         LOG.error("Error writing History Event: " + event.getHistoryEvent(),
             e);
-        throw new YarnException(e);
+        throw new YarnRuntimeException(e);
       }
 
       if (event.getHistoryEvent().getEventType() == EventType.JOB_SUBMITTED) {
@@ -523,7 +533,7 @@ public class JobHistoryEventHandler extends AbstractService
           mi.getJobIndexInfo().setJobStatus(JobState.SUCCEEDED.toString());
           closeEventWriter(event.getJobID());
         } catch (IOException e) {
-          throw new YarnException(e);
+          throw new YarnRuntimeException(e);
         }
       }
 
@@ -539,7 +549,7 @@ public class JobHistoryEventHandler extends AbstractService
           mi.getJobIndexInfo().setJobStatus(jucEvent.getStatus());
           closeEventWriter(event.getJobID());
         } catch (IOException e) {
-          throw new YarnException(e);
+          throw new YarnRuntimeException(e);
         }
       }
     }
@@ -725,6 +735,7 @@ public class JobHistoryEventHandler extends AbstractService
 
     @Override
     public void run() {
+      LOG.debug("In flush timer task");
       synchronized (lock) {
         try {
           if (!metaInfo.isTimerShutDown() && shouldRun)
@@ -790,7 +801,14 @@ public class JobHistoryEventHandler extends AbstractService
       return isTimerShutDown;
     }
 
+    @Override
+    public String toString() {
+      return "Job MetaInfo for "+ jobSummary.getJobId()
+             + " history file " + historyFile;
+    }
+
     void closeWriter() throws IOException {
+      LOG.debug("Closing Writer");
       synchronized (lock) {
         if (writer != null) {
           writer.close();
@@ -800,6 +818,7 @@ public class JobHistoryEventHandler extends AbstractService
     }
 
     void writeEvent(HistoryEvent event) throws IOException {
+      LOG.debug("Writing event");
       synchronized (lock) {
         if (writer != null) {
           writer.write(event);
@@ -849,6 +868,9 @@ public class JobHistoryEventHandler extends AbstractService
     }
 
     void flush() throws IOException {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Flushing " + toString());
+      }
       synchronized (lock) {
         if (numUnflushedCompletionEvents != 0) { // skipped timer cancel.
           writer.flush();
@@ -859,6 +881,9 @@ public class JobHistoryEventHandler extends AbstractService
     }
 
     void shutDownTimer() throws IOException {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Shutting down timer "+ toString());
+      }
       synchronized (lock) {
         isTimerShutDown = true;
         flushTimer.cancel();

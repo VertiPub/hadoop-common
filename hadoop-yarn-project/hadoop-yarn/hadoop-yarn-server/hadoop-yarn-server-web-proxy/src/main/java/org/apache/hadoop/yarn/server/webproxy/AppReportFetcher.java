@@ -18,18 +18,19 @@
 
 package org.apache.hadoop.yarn.server.webproxy;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
 import org.apache.hadoop.yarn.api.protocolrecords.GetApplicationReportRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.GetApplicationReportResponse;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
+import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.ipc.YarnRPC;
@@ -40,7 +41,7 @@ import org.apache.hadoop.yarn.ipc.YarnRPC;
 public class AppReportFetcher {
   private static final Log LOG = LogFactory.getLog(AppReportFetcher.class);
   private final Configuration conf;
-  private final ClientRMProtocol applicationsManager;
+  private final ApplicationClientProtocol applicationsManager;
   private final RecordFactory recordFactory = RecordFactoryProvider.getRecordFactory(null);
   
   /**
@@ -56,7 +57,7 @@ public class AppReportFetcher {
             YarnConfiguration.DEFAULT_RM_PORT);
     LOG.info("Connecting to ResourceManager at " + rmAddress);
     applicationsManager =
-        (ClientRMProtocol) rpc.getProxy(ClientRMProtocol.class,
+        (ApplicationClientProtocol) rpc.getProxy(ApplicationClientProtocol.class,
             rmAddress, this.conf);
     LOG.info("Connected to ResourceManager at " + rmAddress);  
   }
@@ -68,7 +69,7 @@ public class AppReportFetcher {
    * @param conf the configuration to use
    * @param applicationsManager what to use to get the RM reports.
    */
-  public AppReportFetcher(Configuration conf, ClientRMProtocol applicationsManager) {
+  public AppReportFetcher(Configuration conf, ApplicationClientProtocol applicationsManager) {
     this.conf = conf;
     this.applicationsManager = applicationsManager;
   }
@@ -77,10 +78,11 @@ public class AppReportFetcher {
    * Get a report for the specified app.
    * @param appId the id of the application to get. 
    * @return the ApplicationReport for that app.
-   * @throws YarnRemoteException on any error.
+   * @throws YarnException on any error.
+   * @throws IOException
    */
   public ApplicationReport getApplicationReport(ApplicationId appId)
-  throws YarnRemoteException {
+  throws YarnException, IOException {
     GetApplicationReportRequest request = recordFactory
         .newRecordInstance(GetApplicationReportRequest.class);
     request.setApplicationId(appId);

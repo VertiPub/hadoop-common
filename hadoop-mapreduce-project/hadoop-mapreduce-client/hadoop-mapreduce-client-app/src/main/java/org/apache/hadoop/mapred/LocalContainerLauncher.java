@@ -18,10 +18,8 @@
 
 package org.apache.hadoop.mapred;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.util.HashSet;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -49,10 +47,11 @@ import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptEventType;
 import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncher;
 import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncherEvent;
 import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerRemoteLaunchEvent;
+import org.apache.hadoop.service.AbstractService;
 import org.apache.hadoop.util.StringUtils;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
-import org.apache.hadoop.yarn.service.AbstractService;
+import org.apache.hadoop.yarn.api.ApplicationConstants.Environment;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 
 /**
  * Runs the container task locally in a thread.
@@ -112,15 +111,17 @@ public class LocalContainerLauncher extends AbstractService implements
     // after running (e.g., "localizeForTask()" or "localizeForMapTask()").
   }
 
-  public void start() {
+  public void serviceStart() throws Exception {
     eventHandlingThread = new Thread(new SubtaskRunner(), "uber-SubtaskRunner");
     eventHandlingThread.start();
-    super.start();
+    super.serviceStart();
   }
 
-  public void stop() {
-    eventHandlingThread.interrupt();
-    super.stop();
+  public void serviceStop() throws Exception {
+    if (eventHandlingThread != null) {
+      eventHandlingThread.interrupt();
+    }
+    super.serviceStop();
   }
 
   @Override
@@ -128,7 +129,7 @@ public class LocalContainerLauncher extends AbstractService implements
     try {
       eventQueue.put(event);
     } catch (InterruptedException e) {
-      throw new YarnException(e);  // FIXME? YarnException is "for runtime exceptions only"
+      throw new YarnRuntimeException(e);  // FIXME? YarnRuntimeException is "for runtime exceptions only"
     }
   }
 
@@ -280,7 +281,7 @@ public class LocalContainerLauncher extends AbstractService implements
         // Use the AM's local dir env to generate the intermediate step 
         // output files
         String[] localSysDirs = StringUtils.getTrimmedStrings(
-            System.getenv(ApplicationConstants.LOCAL_DIR_ENV));
+            System.getenv(Environment.LOCAL_DIRS.name()));
         conf.setStrings(MRConfig.LOCAL_DIR, localSysDirs);
         LOG.info(MRConfig.LOCAL_DIR + " for uber task: "
             + conf.get(MRConfig.LOCAL_DIR));

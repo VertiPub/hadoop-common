@@ -22,8 +22,9 @@ import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
 import org.apache.hadoop.yarn.api.records.ApplicationReport;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p>The response sent by the <code>ResourceManager</code> to a client
@@ -33,20 +34,31 @@ import org.apache.hadoop.yarn.api.records.ApplicationReport;
  * as user, queue, name, host on which the <code>ApplicationMaster</code> is 
  * running, RPC port, tracking URL, diagnostics, start time etc.</p>
  * 
- * @see ClientRMProtocol#getApplicationReport(GetApplicationReportRequest)
+ * @see ApplicationClientProtocol#getApplicationReport(GetApplicationReportRequest)
  */
 @Public
 @Stable
-public interface GetApplicationReportResponse {
+public abstract class GetApplicationReportResponse {
+
+  @Private
+  @Unstable
+  public static GetApplicationReportResponse newInstance(
+      ApplicationReport ApplicationReport) {
+    GetApplicationReportResponse response =
+        Records.newRecord(GetApplicationReportResponse.class);
+    response.setApplicationReport(ApplicationReport);
+    return response;
+  }
+
   /**
    * Get the <code>ApplicationReport</code> for the application.
    * @return <code>ApplicationReport</code> for the application
    */
   @Public
   @Stable
-  public ApplicationReport getApplicationReport();
+  public abstract ApplicationReport getApplicationReport();
   
   @Private
   @Unstable
-  public void setApplicationReport(ApplicationReport ApplicationReport);
+  public abstract void setApplicationReport(ApplicationReport ApplicationReport);
 }

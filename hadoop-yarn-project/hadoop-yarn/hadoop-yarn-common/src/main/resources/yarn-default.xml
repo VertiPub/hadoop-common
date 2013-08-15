@@ -141,6 +141,20 @@
   </property>
 
   <property>
+    <description>Maximum time to wait to establish connection to
+    ResourceManager.</description>
+    <name>yarn.resourcemanager.connect.max-wait.ms</name>
+    <value>900000</value>
+  </property>
+
+  <property>
+    <description>How often to try connecting to the
+    ResourceManager.</description>
+    <name>yarn.resourcemanager.connect.retry-interval.ms</name>
+    <value>30000</value>
+  </property>
+
+  <property>
     <description>The maximum number of application attempts. It's a global
     setting for all application masters. Each application master can specify
     its individual maximum number of application attempts via the API, but the
@@ -249,7 +263,7 @@
     RM state will be stored. This must be supplied when using
     org.apache.hadoop.yarn.server.resourcemanager.recovery.FileSystemRMStateStore
     as the value for yarn.resourcemanager.store.class</description>
-    <name>yarn.resourcemanager.fs.rm-state-store.uri</name>
+    <name>yarn.resourcemanager.fs.state-store.uri</name>
     <value>${hadoop.tmp.dir}/yarn/system/rmstore</value>
     <!--value>hdfs://localhost:9000/rmstore</value-->
   </property>
@@ -289,6 +303,22 @@
     <description>The heart-beat interval in milliseconds for every NodeManager in the cluster.</description>
     <name>yarn.resourcemanager.nodemanagers.heartbeat-interval-ms</name>
     <value>1000</value>
+  </property>
+
+  <property>
+    <description>Enable a set of periodic monitors (specified in
+        yarn.resourcemanager.scheduler.monitor.policies) that affect the
+        scheduler.</description>
+    <name>yarn.resourcemanager.scheduler.monitor.enable</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <description>The list of SchedulingEditPolicy classes that interact with
+        the scheduler. A particular module may be incompatible with the
+        scheduler, other policies, or a configuration of either.</description>
+    <name>yarn.resourcemanager.scheduler.monitor.policies</name>
+    <value>org.apache.hadoop.yarn.server.resourcemanager.monitor.capacity.ProportionalCapacityPreemptionPolicy</value>
   </property>
 
   <!-- Node Manager Configs -->
@@ -510,16 +540,8 @@
   <property>
     <description>Number of CPU cores that can be allocated 
     for containers.</description>
-    <name>yarn.nodemanager.resource.cpu-cores</name>
+    <name>yarn.nodemanager.resource.cpu-vcores</name>
     <value>8</value>
-  </property>
-
-  <property>
-    <description>Ratio between virtual cores to physical cores when
-    allocating CPU resources to containers. 
-    </description>
-    <name>yarn.nodemanager.vcores-pcores-ratio</name>
-    <value>2</value>
   </property>
 
   <property>
@@ -661,6 +683,31 @@
     <value>30</value>
   </property>
 
+  <property>
+    <description>Max number of threads in NMClientAsync to process container
+    management events</description>
+    <name>yarn.client.nodemanager-client-async.thread-pool-max-size</name>
+    <value>500</value>
+  </property>
+  
+  <property>
+  	<description>
+  	  Maximum number of proxy connections for node manager. It should always be
+      more than 1. NMClient and MRAppMaster will use this to cache connection
+      with node manager. There will be at max one connection per node manager.
+      Ex. configuring it to a value of 5 will make sure that client will at
+      max have 5 connections cached with 5 different node managers. These
+      connections will be timed out if idle for more than system wide idle
+      timeout period. The token if used for authentication then it will be used
+      only at connection creation time. If new token is received then earlier
+      connection should be closed in order to use newer token. This and
+      (yarn.client.nodemanager-client-async.thread-pool-max-size) are related
+      and should be sync (no need for them to be equal).
+  	</description>
+  	<name>yarn.client.max-nodemanagers-proxies</name>
+  	<value>500</value>
+  </property>
+  
   <!--Map Reduce configuration-->
   <property>
     <name>yarn.nodemanager.aux-services.mapreduce.shuffle.class</name>
@@ -706,6 +753,14 @@
     of CLASSPATH entries</description>
      <name>yarn.application.classpath</name>
      <value>$HADOOP_CONF_DIR,$HADOOP_COMMON_HOME/share/hadoop/common/*,$HADOOP_COMMON_HOME/share/hadoop/common/lib/*,$HADOOP_HDFS_HOME/share/hadoop/hdfs/*,$HADOOP_HDFS_HOME/share/hadoop/hdfs/lib/*,$HADOOP_YARN_HOME/share/hadoop/yarn/*,$HADOOP_YARN_HOME/share/hadoop/yarn/lib/*</value>
+  </property>
+
+  <!-- Other configuration -->
+  <property>
+    <description>The interval of the yarn client's querying application state
+    after application submission. The unit is millisecond.</description>
+    <name>yarn.client.app-submission.poll-interval</name>
+    <value>1000</value>
   </property>
 
 </configuration>

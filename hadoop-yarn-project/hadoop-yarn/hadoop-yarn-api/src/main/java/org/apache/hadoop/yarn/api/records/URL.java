@@ -19,21 +19,33 @@
 package org.apache.hadoop.yarn.api.records;
 
 import org.apache.hadoop.classification.InterfaceAudience.Public;
-import org.apache.hadoop.classification.InterfaceStability.Evolving;
+import org.apache.hadoop.classification.InterfaceStability.Stable;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p><code>URL</code> represents a serializable {@link java.net.URL}.</p>
  */
 @Public
-@Evolving
-public interface URL {
-  
+@Stable
+public abstract class URL {
+
+  @Public
+  @Stable
+  public static URL newInstance(String scheme, String host, int port, String file) {
+    URL url = Records.newRecord(URL.class);
+    url.setScheme(scheme);
+    url.setHost(host);
+    url.setPort(port);
+    url.setFile(file);
+    return url;
+  }
+
   /**
    * Get the scheme of the URL.
    * @return scheme of the URL
    */
   @Public
-  @Evolving
+  @Stable
   public abstract String getScheme();
   
   /**
@@ -41,7 +53,7 @@ public interface URL {
    * @param scheme scheme of the URL
    */
   @Public
-  @Evolving
+  @Stable
   public abstract void setScheme(String scheme);
 
   /**
@@ -49,7 +61,7 @@ public interface URL {
    * @return host of the URL
    */
   @Public
-  @Evolving
+  @Stable
   public abstract String getHost();
   
   /**
@@ -57,7 +69,7 @@ public interface URL {
    * @param host host of the URL
    */
   @Public
-  @Evolving
+  @Stable
   public abstract void setHost(String host);
 
   /**
@@ -65,7 +77,7 @@ public interface URL {
    * @return port of the URL
    */
   @Public
-  @Evolving
+  @Stable
   public abstract int getPort();
   
   /**
@@ -73,7 +85,7 @@ public interface URL {
    * @param port port of the URL
    */
   @Public
-  @Evolving
+  @Stable
   public abstract void setPort(int port);
 
   /**
@@ -81,7 +93,7 @@ public interface URL {
    * @return file of the URL
    */
   @Public
-  @Evolving
+  @Stable
   public abstract String getFile();
   
   /**
@@ -89,6 +101,6 @@ public interface URL {
    * @param file file of the URL
    */
   @Public
-  @Evolving
+  @Stable
   public abstract void setFile(String file);
 }

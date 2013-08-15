@@ -21,17 +21,16 @@ package org.apache.hadoop.yarn.api;
 import junit.framework.Assert;
 
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.util.Records;
 import org.junit.Test;
 
 public class TestApplicationId {
 
   @Test
   public void testApplicationId() {
-    ApplicationId a1 = createAppId(10l, 1);
-    ApplicationId a2 = createAppId(10l, 2);
-    ApplicationId a3 = createAppId(10l, 1);
-    ApplicationId a4 = createAppId(8l, 3);
+    ApplicationId a1 = ApplicationId.newInstance(10l, 1);
+    ApplicationId a2 = ApplicationId.newInstance(10l, 2);
+    ApplicationId a3 = ApplicationId.newInstance(10l, 1);
+    ApplicationId a4 = ApplicationId.newInstance(8l, 3);
 
     Assert.assertFalse(a1.equals(a2));
     Assert.assertFalse(a1.equals(a4));
@@ -46,15 +45,9 @@ public class TestApplicationId {
     Assert.assertFalse(a2.hashCode() == a4.hashCode());
     
     long ts = System.currentTimeMillis();
-    ApplicationId a5 = createAppId(ts, 45436343);
+    ApplicationId a5 = ApplicationId.newInstance(ts, 45436343);
     Assert.assertEquals("application_10_0001", a1.toString());
     Assert.assertEquals("application_" + ts + "_45436343", a5.toString());
   }
 
-  private ApplicationId createAppId(long clusterTimeStamp, int id) {
-    ApplicationId appId = Records.newRecord(ApplicationId.class);
-    appId.setClusterTimestamp(clusterTimeStamp);
-    appId.setId(id);
-    return appId;
-  }
 }

@@ -25,8 +25,8 @@ import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.InputStreamReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.io.Writer;
 import java.security.PrivilegedExceptionAction;
@@ -42,6 +42,9 @@ import java.util.Map.Entry;
 import org.apache.commons.io.input.BoundedInputStream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.classification.InterfaceAudience.Private;
+import org.apache.hadoop.classification.InterfaceAudience.Public;
+import org.apache.hadoop.classification.InterfaceStability.Evolving;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CreateFlag;
 import org.apache.hadoop.fs.FSDataInputStream;
@@ -50,18 +53,21 @@ import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.Options;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.io.SecureIOUtils;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.io.file.tfile.TFile;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.records.ApplicationAccessType;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 
+@Public
+@Evolving
 public class AggregatedLogFormat {
 
-  static final Log LOG = LogFactory.getLog(AggregatedLogFormat.class);
+  private static final Log LOG = LogFactory.getLog(AggregatedLogFormat.class);
   private static final LogKey APPLICATION_ACL_KEY = new LogKey("APPLICATION_ACL");
   private static final LogKey APPLICATION_OWNER_KEY = new LogKey("APPLICATION_OWNER");
   private static final LogKey VERSION_KEY = new LogKey("VERSION");
@@ -83,7 +89,8 @@ public class AggregatedLogFormat {
     RESERVED_KEYS.put(APPLICATION_OWNER_KEY.toString(), APPLICATION_OWNER_KEY);
     RESERVED_KEYS.put(VERSION_KEY.toString(), VERSION_KEY);
   }
-  
+
+  @Public
   public static class LogKey implements Writable {
 
     private String keyString;
@@ -117,11 +124,13 @@ public class AggregatedLogFormat {
       return false;
     }
 
+    @Private
     @Override
     public void write(DataOutput out) throws IOException {
       out.writeUTF(this.keyString);
     }
 
+    @Private
     @Override
     public void readFields(DataInput in) throws IOException {
       this.keyString = in.readUTF();
@@ -133,16 +142,20 @@ public class AggregatedLogFormat {
     }
   }
 
+  @Private
   public static class LogValue {
 
     private final List<String> rootLogDirs;
     private final ContainerId containerId;
+    private final String user;
     // TODO Maybe add a version string here. Instead of changing the version of
     // the entire k-v format
 
-    public LogValue(List<String> rootLogDirs, ContainerId containerId) {
+    public LogValue(List<String> rootLogDirs, ContainerId containerId,
+        String user) {
       this.rootLogDirs = new ArrayList<String>(rootLogDirs);
       this.containerId = containerId;
+      this.user = user;
 
       // Ensure logs are processed in lexical order
       Collections.sort(this.rootLogDirs);
@@ -177,20 +190,36 @@ public class AggregatedLogFormat {
           // Write the log itself
           FileInputStream in = null;
           try {
-            in = new FileInputStream(logFile);
+            in = SecureIOUtils.openForRead(logFile, getUser(), null);
             byte[] buf = new byte[65535];
             int len = 0;
             while ((len = in.read(buf)) != -1) {
               out.write(buf, 0, len);
             }
+          } catch (IOException e) {
+            String message = "Error aggregating log file. Log file : "
+                + logFile.getAbsolutePath() + e.getMessage(); 
+            LOG.error(message, e);
+            out.write(message.getBytes());
           } finally {
-            in.close();
+            if (in != null) {
+              in.close();
+            }
           }
         }
       }
     }
+    
+    // Added for testing purpose.
+    public String getUser() {
+      return user;
+    }
   }
 
+  /**
+   * The writer that writes out the aggregated logs.
+   */
+  @Private
   public static class LogWriter {
 
     private final FSDataOutputStream fsDataOStream;
@@ -279,6 +308,8 @@ public class AggregatedLogFormat {
     }
   }
 
+  @Public
+  @Evolving
   public static class LogReader {
 
     private final FSDataInputStream fsDataIStream;
@@ -349,7 +380,7 @@ public class AggregatedLogFormat {
             try {
               aclString = valueStream.readUTF();
             } catch (EOFException e) {
-              throw new YarnException("Error reading ACLs", e);
+              throw new YarnRuntimeException("Error reading ACLs", e);
             }
             acls.put(ApplicationAccessType.valueOf(appAccessOp), aclString);
           }
@@ -395,6 +426,7 @@ public class AggregatedLogFormat {
      *         logs could not be found
      * @throws IOException
      */
+    @Private
     public ContainerLogsReader getContainerLogsReader(
         ContainerId containerId) throws IOException {
       ContainerLogsReader logReader = null;
@@ -543,6 +575,7 @@ public class AggregatedLogFormat {
     }
   }
 
+  @Private
   public static class ContainerLogsReader {
     private DataInputStream valueStream;
     private String currentLogType = null;

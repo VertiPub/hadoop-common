@@ -31,9 +31,11 @@ import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.BlockReader;
 import org.apache.hadoop.hdfs.BlockReaderFactory;
+import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DFSTestUtil;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
@@ -91,10 +93,10 @@ public class TestDataNodeVolumeFailure {
   @After
   public void tearDown() throws Exception {
     if(data_fail != null) {
-      data_fail.setWritable(true);
+      FileUtil.setWritable(data_fail, true);
     }
     if(failedDir != null) {
-      failedDir.setWritable(true);
+      FileUtil.setWritable(failedDir, true);
     }
     if(cluster != null) {
       cluster.shutdown();
@@ -283,10 +285,11 @@ public class TestDataNodeVolumeFailure {
         "test-blockpoolid",
         block.getBlockId());
     BlockReader blockReader =
-      BlockReaderFactory.newBlockReader(conf, file, block,
+      BlockReaderFactory.newBlockReader(new DFSClient.Conf(conf), file, block,
         lblock.getBlockToken(), 0, -1, true, "TestDataNodeVolumeFailure",
-        TcpPeerServer.peerFromSocket(s), datanode, null, false);
-    blockReader.close(null, null);
+        TcpPeerServer.peerFromSocket(s), datanode, null, null, null, false,
+        CachingStrategy.newDefaultStrategy());
+    blockReader.close();
   }
   
   /**

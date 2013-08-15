@@ -64,6 +64,7 @@ import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenIdentifier;
 import org.apache.hadoop.util.Shell;
 import org.apache.hadoop.util.Time;
+import static org.apache.hadoop.util.PlatformName.IBM_JAVA;
 
 import com.google.common.annotations.VisibleForTesting;
 
@@ -208,9 +209,13 @@ public class UserGroupInformation {
    * A method to initialize the fields that depend on a configuration.
    * Must be called before useKerberos or groups is used.
    */
-  private static synchronized void ensureInitialized() {
+  private static void ensureInitialized() {
     if (conf == null) {
-      initialize(new Configuration(), false);
+      synchronized(UserGroupInformation.class) {
+        if (conf == null) { // someone might have beat us
+          initialize(new Configuration(), false);
+        }
+      }
     }
   }
 
@@ -306,12 +311,11 @@ public class UserGroupInformation {
       System.getProperty("os.name").startsWith("Windows");
   private static final boolean is64Bit =
       System.getProperty("os.arch").contains("64");
-  private static final boolean ibmJava = System.getProperty("java.vendor").contains("IBM");
   private static final boolean aix = System.getProperty("os.name").equals("AIX");
 
   /* Return the OS login module class name */
   private static String getOSLoginModuleName() {
-    if (ibmJava) {
+    if (IBM_JAVA) {
       if (windows) {
         return is64Bit ? "com.ibm.security.auth.module.Win64LoginModule"
             : "com.ibm.security.auth.module.NTLoginModule";
@@ -333,7 +337,7 @@ public class UserGroupInformation {
     ClassLoader cl = ClassLoader.getSystemClassLoader();
     try {
       String principalClass = null;
-      if (ibmJava) {
+      if (IBM_JAVA) {
         if (is64Bit) {
           principalClass = "com.ibm.security.auth.UsernamePrincipal";
         } else {
@@ -430,22 +434,22 @@ public class UserGroupInformation {
     private static final Map<String,String> USER_KERBEROS_OPTIONS = 
       new HashMap<String,String>();
     static {
-      if (ibmJava) {
+      if (IBM_JAVA) {
         USER_KERBEROS_OPTIONS.put("useDefaultCcache", "true");
       } else {
         USER_KERBEROS_OPTIONS.put("doNotPrompt", "true");
         USER_KERBEROS_OPTIONS.put("useTicketCache", "true");
-        USER_KERBEROS_OPTIONS.put("renewTGT", "true");
       }
       String ticketCache = System.getenv("KRB5CCNAME");
       if (ticketCache != null) {
-        if (ibmJava) {
+        if (IBM_JAVA) {
           // The first value searched when "useDefaultCcache" is used.
           System.setProperty("KRB5CCNAME", ticketCache);
         } else {
           USER_KERBEROS_OPTIONS.put("ticketCache", ticketCache);
         }
       }
+      USER_KERBEROS_OPTIONS.put("renewTGT", "true");
       USER_KERBEROS_OPTIONS.putAll(BASIC_JAAS_OPTIONS);
     }
     private static final AppConfigurationEntry USER_KERBEROS_LOGIN =
@@ -455,14 +459,14 @@ public class UserGroupInformation {
     private static final Map<String,String> KEYTAB_KERBEROS_OPTIONS = 
       new HashMap<String,String>();
     static {
-      if (ibmJava) {
+      if (IBM_JAVA) {
         KEYTAB_KERBEROS_OPTIONS.put("credsType", "both");
       } else {
         KEYTAB_KERBEROS_OPTIONS.put("doNotPrompt", "true");
         KEYTAB_KERBEROS_OPTIONS.put("useKeyTab", "true");
         KEYTAB_KERBEROS_OPTIONS.put("storeKey", "true");
-        KEYTAB_KERBEROS_OPTIONS.put("refreshKrb5Config", "true");
       }
+      KEYTAB_KERBEROS_OPTIONS.put("refreshKrb5Config", "true");
       KEYTAB_KERBEROS_OPTIONS.putAll(BASIC_JAAS_OPTIONS);      
     }
     private static final AppConfigurationEntry KEYTAB_KERBEROS_LOGIN =
@@ -487,7 +491,7 @@ public class UserGroupInformation {
       } else if (USER_KERBEROS_CONFIG_NAME.equals(appName)) {
         return USER_KERBEROS_CONF;
       } else if (KEYTAB_KERBEROS_CONFIG_NAME.equals(appName)) {
-        if (ibmJava) {
+        if (IBM_JAVA) {
           KEYTAB_KERBEROS_OPTIONS.put("useKeytab",
               prependFileAuthority(keytabFile));
         } else {
@@ -623,11 +627,17 @@ public class UserGroupInformation {
     }
     try {
       Map<String,String> krbOptions = new HashMap<String,String>();
-      krbOptions.put("doNotPrompt", "true");
-      krbOptions.put("useTicketCache", "true");
-      krbOptions.put("useKeyTab", "false");
+      if (IBM_JAVA) {
+        krbOptions.put("useDefaultCcache", "true");
+        // The first value searched when "useDefaultCcache" is used.
+        System.setProperty("KRB5CCNAME", ticketCache);
+      } else {
+        krbOptions.put("doNotPrompt", "true");
+        krbOptions.put("useTicketCache", "true");
+        krbOptions.put("useKeyTab", "false");
+        krbOptions.put("ticketCache", ticketCache);
+      }
       krbOptions.put("renewTGT", "false");
-      krbOptions.put("ticketCache", ticketCache);
       krbOptions.putAll(HadoopConfiguration.BASIC_JAAS_OPTIONS);
       AppConfigurationEntry ace = new AppConfigurationEntry(
           KerberosUtil.getKrb5LoginModuleName(),
@@ -1076,7 +1086,7 @@ public class UserGroupInformation {
         HadoopConfiguration.SIMPLE_CONFIG_NAME),
     KERBEROS(AuthMethod.KERBEROS,
         HadoopConfiguration.USER_KERBEROS_CONFIG_NAME),
-    TOKEN(AuthMethod.DIGEST),
+    TOKEN(AuthMethod.TOKEN),
     CERTIFICATE(null),
     KERBEROS_SSL(null),
     PROXY(null);

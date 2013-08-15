@@ -16,6 +16,12 @@
  * limitations under the License.
  */
 
+/**
+ * These .proto interfaces are private and stable.
+ * Please see http://wiki.apache.org/hadoop/Compatibility
+ * for what changes are allowed for a *stable* .proto interface.
+ */
+
 option java_package = "org.apache.hadoop.hdfs.qjournal.protocol";
 option java_outer_classname = "QJournalProtocolProtos";
 option java_generic_services = true;
@@ -169,6 +175,9 @@ message NewEpochResponseProto {
 message GetEditLogManifestRequestProto {
   required JournalIdProto jid = 1;
   required uint64 sinceTxId = 2;  // Transaction ID
+  // Whether or not the client will be reading from the returned streams.
+  optional bool forReading = 3 [default = true];
+  optional bool inProgressOk = 4 [default = false];
 }
 
 message GetEditLogManifestResponseProto {

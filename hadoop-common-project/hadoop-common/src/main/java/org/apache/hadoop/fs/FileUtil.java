@@ -44,7 +44,6 @@ import org.apache.hadoop.io.nativeio.NativeIO;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.util.Shell;
 import org.apache.hadoop.util.Shell.ShellCommandExecutor;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -143,14 +142,35 @@ public class FileUtil {
     }
     return deleteImpl(dir, true);
   }
-  
+
+  /**
+   * Returns the target of the given symlink. Returns the empty string if
+   * the given path does not refer to a symlink or there is an error
+   * accessing the symlink.
+   * @param f File representing the symbolic link.
+   * @return The target of the symbolic link, empty string on error or if not
+   *         a symlink.
+   */
+  public static String readLink(File f) {
+    /* NB: Use readSymbolicLink in java.nio.file.Path once available. Could
+     * use getCanonicalPath in File to get the target of the symlink but that
+     * does not indicate if the given path refers to a symlink.
+     */
+    try {
+      return Shell.execCommand(
+          Shell.getReadlinkCommand(f.toString())).trim();
+    } catch (IOException x) {
+      return "";
+    }
+  }
+
   /*
    * Pure-Java implementation of "chmod +rwx f".
    */
   private static void grantPermissions(final File f) {
-      f.setExecutable(true);
-      f.setReadable(true);
-      f.setWritable(true);
+      FileUtil.setExecutable(f, true);
+      FileUtil.setReadable(f, true);
+      FileUtil.setWritable(f, true);
   }
 
   private static boolean deleteImpl(final File f, final boolean doLog) {
@@ -663,18 +683,23 @@ public class FileUtil {
   private static void unTarUsingJava(File inFile, File untarDir,
       boolean gzipped) throws IOException {
     InputStream inputStream = null;
-    if (gzipped) {
-      inputStream = new BufferedInputStream(new GZIPInputStream(
-          new FileInputStream(inFile)));
-    } else {
-      inputStream = new BufferedInputStream(new FileInputStream(inFile));
-    }
+    TarArchiveInputStream tis = null;
+    try {
+      if (gzipped) {
+        inputStream = new BufferedInputStream(new GZIPInputStream(
+            new FileInputStream(inFile)));
+      } else {
+        inputStream = new BufferedInputStream(new FileInputStream(inFile));
+      }
 
-    TarArchiveInputStream tis = new TarArchiveInputStream(inputStream);
+      tis = new TarArchiveInputStream(inputStream);
 
-    for (TarArchiveEntry entry = tis.getNextTarEntry(); entry != null;) {
-      unpackEntries(tis, entry, untarDir);
-      entry = tis.getNextTarEntry();
+      for (TarArchiveEntry entry = tis.getNextTarEntry(); entry != null;) {
+        unpackEntries(tis, entry, untarDir);
+        entry = tis.getNextTarEntry();
+      }
+    } finally {
+      IOUtils.cleanup(LOG, tis, inputStream);
     }
   }
   
@@ -733,15 +758,18 @@ public class FileUtil {
    * On Windows, when symlink creation fails due to security
    * setting, we will log a warning. The return code in this
    * case is 2.
+   *
    * @param target the target for symlink 
    * @param linkname the symlink
-   * @return value returned by the command
+   * @return 0 on success
    */
   public static int symLink(String target, String linkname) throws IOException{
     // Run the input paths through Java's File so that they are converted to the
     // native OS form
-    File targetFile = new File(target);
-    File linkFile = new File(linkname);
+    File targetFile = new File(
+        Path.getPathWithoutSchemeAndAuthority(new Path(target)).toString());
+    File linkFile = new File(
+        Path.getPathWithoutSchemeAndAuthority(new Path(linkname)).toString());
 
     // If not on Java7+, copy a file instead of creating a symlink since
     // Java6 has close to no support for symlinks on Windows. Specifically
@@ -753,9 +781,16 @@ public class FileUtil {
     // is symlinked under userlogs and userlogs are generated afterwards).
     if (Shell.WINDOWS && !Shell.isJava7OrAbove() && targetFile.isFile()) {
       try {
-        LOG.info("FileUtil#symlink: On Java6, copying file instead "
-            + linkname + " -> " + target);
-        org.apache.commons.io.FileUtils.copyFile(targetFile, linkFile);
+        LOG.warn("FileUtil#symlink: On Windows+Java6, copying file instead " +
+            "of creating a symlink. Copying " + target + " -> " + linkname);
+
+        if (!linkFile.getParentFile().exists()) {
+          LOG.warn("Parent directory " + linkFile.getParent() +
+              " does not exist.");
+          return 1;
+        } else {
+          org.apache.commons.io.FileUtils.copyFile(targetFile, linkFile);
+        }
       } catch (IOException ex) {
         LOG.warn("FileUtil#symlink failed to copy the file with error: "
             + ex.getMessage());
@@ -765,10 +800,23 @@ public class FileUtil {
       return 0;
     }
 
-    String[] cmd = Shell.getSymlinkCommand(targetFile.getPath(),
-        linkFile.getPath());
-    ShellCommandExecutor shExec = new ShellCommandExecutor(cmd);
+    String[] cmd = Shell.getSymlinkCommand(
+        targetFile.toString(),
+        linkFile.toString());
+
+    ShellCommandExecutor shExec;
     try {
+      if (Shell.WINDOWS &&
+          linkFile.getParentFile() != null &&
+          !new Path(target).isAbsolute()) {
+        // Relative links on Windows must be resolvable at the time of
+        // creation. To ensure this we run the shell command in the directory
+        // of the link.
+        //
+        shExec = new ShellCommandExecutor(cmd, linkFile.getParentFile());
+      } else {
+        shExec = new ShellCommandExecutor(cmd);
+      }
       shExec.execute();
     } catch (Shell.ExitCodeException ec) {
       int returnVal = ec.getExitCode();
@@ -791,7 +839,7 @@ public class FileUtil {
     }
     return shExec.getExitCode();
   }
-  
+
   /**
    * Change the permissions on a filename.
    * @param filename the name of the file to change
@@ -849,6 +897,129 @@ public class FileUtil {
         + (groupname == null ? "" : ":" + groupname);
     String [] cmd = Shell.getSetOwnerCommand(arg);
     execCommand(file, cmd);
+  }
+
+  /**
+   * Platform independent implementation for {@link File#setReadable(boolean)}
+   * File#setReadable does not work as expected on Windows.
+   * @param f input file
+   * @param readable
+   * @return true on success, false otherwise
+   */
+  public static boolean setReadable(File f, boolean readable) {
+    if (Shell.WINDOWS) {
+      try {
+        String permission = readable ? "u+r" : "u-r";
+        FileUtil.chmod(f.getCanonicalPath(), permission, false);
+        return true;
+      } catch (IOException ex) {
+        return false;
+      }
+    } else {
+      return f.setReadable(readable);
+    }
+  }
+
+  /**
+   * Platform independent implementation for {@link File#setWritable(boolean)}
+   * File#setWritable does not work as expected on Windows.
+   * @param f input file
+   * @param writable
+   * @return true on success, false otherwise
+   */
+  public static boolean setWritable(File f, boolean writable) {
+    if (Shell.WINDOWS) {
+      try {
+        String permission = writable ? "u+w" : "u-w";
+        FileUtil.chmod(f.getCanonicalPath(), permission, false);
+        return true;
+      } catch (IOException ex) {
+        return false;
+      }
+    } else {
+      return f.setWritable(writable);
+    }
+  }
+
+  /**
+   * Platform independent implementation for {@link File#setExecutable(boolean)}
+   * File#setExecutable does not work as expected on Windows.
+   * Note: revoking execute permission on folders does not have the same
+   * behavior on Windows as on Unix platforms. Creating, deleting or renaming
+   * a file within that folder will still succeed on Windows.
+   * @param f input file
+   * @param executable
+   * @return true on success, false otherwise
+   */
+  public static boolean setExecutable(File f, boolean executable) {
+    if (Shell.WINDOWS) {
+      try {
+        String permission = executable ? "u+x" : "u-x";
+        FileUtil.chmod(f.getCanonicalPath(), permission, false);
+        return true;
+      } catch (IOException ex) {
+        return false;
+      }
+    } else {
+      return f.setExecutable(executable);
+    }
+  }
+
+  /**
+   * Platform independent implementation for {@link File#canRead()}
+   * @param f input file
+   * @return On Unix, same as {@link File#canRead()}
+   *         On Windows, true if process has read access on the path
+   */
+  public static boolean canRead(File f) {
+    if (Shell.WINDOWS) {
+      try {
+        return NativeIO.Windows.access(f.getCanonicalPath(),
+            NativeIO.Windows.AccessRight.ACCESS_READ);
+      } catch (IOException e) {
+        return false;
+      }
+    } else {
+      return f.canRead();
+    }
+  }
+
+  /**
+   * Platform independent implementation for {@link File#canWrite()}
+   * @param f input file
+   * @return On Unix, same as {@link File#canWrite()}
+   *         On Windows, true if process has write access on the path
+   */
+  public static boolean canWrite(File f) {
+    if (Shell.WINDOWS) {
+      try {
+        return NativeIO.Windows.access(f.getCanonicalPath(),
+            NativeIO.Windows.AccessRight.ACCESS_WRITE);
+      } catch (IOException e) {
+        return false;
+      }
+    } else {
+      return f.canWrite();
+    }
+  }
+
+  /**
+   * Platform independent implementation for {@link File#canExecute()}
+   * @param f input file
+   * @return On Unix, same as {@link File#canExecute()}
+   *         On Windows, true if process has execute access on the path
+   */
+  public static boolean canExecute(File f) {
+    if (Shell.WINDOWS) {
+      try {
+        return NativeIO.Windows.access(f.getCanonicalPath(),
+            NativeIO.Windows.AccessRight.ACCESS_EXECUTE);
+      } catch (IOException e) {
+        return false;
+      }
+    } else {
+      return f.canExecute();
+    }
   }
 
   /**

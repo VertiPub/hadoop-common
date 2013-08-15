@@ -66,7 +66,6 @@ import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.NodeId;
-import org.apache.hadoop.yarn.util.BuilderUtils;
 import org.apache.hadoop.yarn.util.Records;
 
 import com.google.common.collect.Iterators;
@@ -299,12 +298,10 @@ public class MockJobs extends MockApps {
 
       @Override
       public ContainerId getAssignedContainerID() {
-        ContainerId id = Records.newRecord(ContainerId.class);
-        ApplicationAttemptId appAttemptId = Records
-            .newRecord(ApplicationAttemptId.class);
-        appAttemptId.setApplicationId(taid.getTaskId().getJobId().getAppId());
-        appAttemptId.setAttemptId(0);
-        id.setApplicationAttemptId(appAttemptId);
+        ApplicationAttemptId appAttemptId =
+            ApplicationAttemptId.newInstance(taid.getTaskId().getJobId()
+              .getAppId(), 0);
+        ContainerId id = ContainerId.newInstance(appAttemptId, 0);
         return id;
       }
 
@@ -622,9 +619,9 @@ public class MockJobs extends MockApps {
   }
 
   private static AMInfo createAMInfo(int attempt) {
-    ApplicationAttemptId appAttemptId = BuilderUtils.newApplicationAttemptId(
-        BuilderUtils.newApplicationId(100, 1), attempt);
-    ContainerId containerId = BuilderUtils.newContainerId(appAttemptId, 1);
+    ApplicationAttemptId appAttemptId = ApplicationAttemptId.newInstance(
+        ApplicationId.newInstance(100, 1), attempt);
+    ContainerId containerId = ContainerId.newInstance(appAttemptId, 1);
     return MRBuilderUtils.newAMInfo(appAttemptId, System.currentTimeMillis(),
         containerId, NM_HOST, NM_PORT, NM_HTTP_PORT);
   }

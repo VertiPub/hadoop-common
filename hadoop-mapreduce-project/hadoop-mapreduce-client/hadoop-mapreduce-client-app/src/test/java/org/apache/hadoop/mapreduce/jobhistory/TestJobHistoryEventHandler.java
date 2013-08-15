@@ -18,9 +18,13 @@
 
 package org.apache.hadoop.mapreduce.jobhistory;
 
-import static junit.framework.Assert.*;
-import static org.mockito.Matchers.*;
-import static org.mockito.Mockito.*;
+import static junit.framework.Assert.assertTrue;
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
@@ -40,11 +44,10 @@ import org.apache.hadoop.mapreduce.v2.api.records.JobId;
 import org.apache.hadoop.mapreduce.v2.app.AppContext;
 import org.apache.hadoop.mapreduce.v2.app.job.Job;
 import org.apache.hadoop.mapreduce.v2.util.MRBuilderUtils;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -251,7 +254,7 @@ public class TestJobHistoryEventHandler {
       return testWorkDir.getAbsolutePath();
     } catch (Exception e) {
       LOG.warn("Could not cleanup", e);
-      throw new YarnException("could not cleanup test dir", e);
+      throw new YarnRuntimeException("could not cleanup test dir", e);
     }
   }
 
@@ -270,10 +273,10 @@ public class TestJobHistoryEventHandler {
 
   private class TestParams {
     String workDir = setupTestWorkDir();
-    ApplicationId appId = BuilderUtils.newApplicationId(200, 1);
+    ApplicationId appId = ApplicationId.newInstance(200, 1);
     ApplicationAttemptId appAttemptId =
-        BuilderUtils.newApplicationAttemptId(appId, 1);
-    ContainerId containerId = BuilderUtils.newContainerId(appAttemptId, 1);
+        ApplicationAttemptId.newInstance(appId, 1);
+    ContainerId containerId = ContainerId.newInstance(appAttemptId, 1);
     TaskID taskID = TaskID.forName("task_200707121733_0003_m_000005");
     JobId jobId = MRBuilderUtils.newJobId(appId, 1);
     AppContext mockAppContext = mockAppContext(appId);
@@ -347,7 +350,7 @@ class JHEvenHandlerForTest extends JobHistoryEventHandler {
   }
 
   @Override
-  public void start() {
+  protected void serviceStart() {
   }
 
   @Override

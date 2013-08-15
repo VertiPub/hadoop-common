@@ -35,6 +35,7 @@ import java.util.regex.Pattern;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
@@ -171,18 +172,15 @@ public class CgroupsLCEResourcesHandler implements LCEResourcesHandler {
    * Next three functions operate on all the resources we are enforcing.
    */
 
-  /*
-   * TODO: After YARN-2 is committed, we should call containerResource.getCpus()
-   * (or equivalent) to multiply the weight by the number of requested cpus.
-   */
   private void setupLimits(ContainerId containerId,
                            Resource containerResource) throws IOException {
     String containerName = containerId.toString();
 
     if (isCpuWeightEnabled()) {
       createCgroup(CONTROLLER_CPU, containerName);
+      int cpuShares = CPU_DEFAULT_WEIGHT * containerResource.getVirtualCores();
       updateCgroup(CONTROLLER_CPU, containerName, "shares",
-          String.valueOf(CPU_DEFAULT_WEIGHT));
+          String.valueOf(cpuShares));
     }
   }
 
@@ -224,7 +222,7 @@ public class CgroupsLCEResourcesHandler implements LCEResourcesHandler {
     StringBuilder sb = new StringBuilder("cgroups=");
 
     if (isCpuWeightEnabled()) {
-      sb.append(pathForCgroup(CONTROLLER_CPU, containerName) + "/cgroup.procs");
+      sb.append(pathForCgroup(CONTROLLER_CPU, containerName) + "/tasks");
       sb.append(",");
     }
 
@@ -307,7 +305,7 @@ public class CgroupsLCEResourcesHandler implements LCEResourcesHandler {
     if (controllerPath != null) {
       File f = new File(controllerPath + "/" + this.cgroupPrefix);
 
-      if (f.canWrite()) {
+      if (FileUtil.canWrite(f)) {
         controllerPaths.put(CONTROLLER_CPU, controllerPath);
       } else {
         throw new IOException("Not able to enforce cpu weights; cannot write "

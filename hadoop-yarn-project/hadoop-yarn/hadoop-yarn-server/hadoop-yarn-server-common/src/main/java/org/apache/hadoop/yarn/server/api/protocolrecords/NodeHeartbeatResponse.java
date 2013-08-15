@@ -36,8 +36,11 @@ public interface NodeHeartbeatResponse {
   void setResponseId(int responseId);
   void setNodeAction(NodeAction action);
 
-  MasterKey getMasterKey();
-  void setMasterKey(MasterKey secretKey);
+  MasterKey getContainerTokenMasterKey();
+  void setContainerTokenMasterKey(MasterKey secretKey);
+  
+  MasterKey getNMTokenMasterKey();
+  void setNMTokenMasterKey(MasterKey secretKey);
 
   void addAllContainersToCleanup(List<ContainerId> containers);
   
@@ -45,4 +48,8 @@ public interface NodeHeartbeatResponse {
 
   long getNextHeartBeatInterval();
   void setNextHeartBeatInterval(long nextHeartBeatInterval);
+  
+  String getDiagnosticsMessage();
+
+  void setDiagnosticsMessage(String diagnosticsMessage);
 }

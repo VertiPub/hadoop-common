@@ -51,9 +51,9 @@ import org.apache.hadoop.mapreduce.v2.app.rm.RMHeartbeatHandler;
 import org.apache.hadoop.mapreduce.v2.app.security.authorize.MRAMPolicyProvider;
 import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.authorize.PolicyProvider;
+import org.apache.hadoop.service.CompositeService;
 import org.apache.hadoop.util.StringInterner;
-import org.apache.hadoop.yarn.YarnException;
-import org.apache.hadoop.yarn.service.CompositeService;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 
 /**
  * This class is responsible for talking to the task umblical.
@@ -63,7 +63,7 @@ import org.apache.hadoop.yarn.service.CompositeService;
  * This class HAS to be in this package to access package private 
  * methods/classes.
  */
-@SuppressWarnings({"unchecked" , "deprecation"})
+@SuppressWarnings({"unchecked"})
 public class TaskAttemptListenerImpl extends CompositeService 
     implements TaskUmbilicalProtocol, TaskAttemptListener {
 
@@ -95,17 +95,17 @@ public class TaskAttemptListenerImpl extends CompositeService
   }
 
   @Override
-  public void init(Configuration conf) {
+  protected void serviceInit(Configuration conf) throws Exception {
    registerHeartbeatHandler(conf);
    commitWindowMs = conf.getLong(MRJobConfig.MR_AM_COMMIT_WINDOW_MS,
        MRJobConfig.DEFAULT_MR_AM_COMMIT_WINDOW_MS);
-   super.init(conf);
+   super.serviceInit(conf);
   }
 
   @Override
-  public void start() {
+  protected void serviceStart() throws Exception {
     startRpcServer();
-    super.start();
+    super.serviceStart();
   }
 
   protected void registerHeartbeatHandler(Configuration conf) {
@@ -118,11 +118,14 @@ public class TaskAttemptListenerImpl extends CompositeService
   protected void startRpcServer() {
     Configuration conf = getConfig();
     try {
-      server =
-          RPC.getServer(TaskUmbilicalProtocol.class, this, "0.0.0.0", 0, 
-              conf.getInt(MRJobConfig.MR_AM_TASK_LISTENER_THREAD_COUNT, 
-                  MRJobConfig.DEFAULT_MR_AM_TASK_LISTENER_THREAD_COUNT),
-              false, conf, jobTokenSecretManager);
+      server = 
+          new RPC.Builder(conf).setProtocol(TaskUmbilicalProtocol.class)
+            .setInstance(this).setBindAddress("0.0.0.0")
+            .setPort(0).setNumHandlers(
+                conf.getInt(MRJobConfig.MR_AM_TASK_LISTENER_THREAD_COUNT, 
+                    MRJobConfig.DEFAULT_MR_AM_TASK_LISTENER_THREAD_COUNT))
+                    .setVerbose(false).setSecretManager(jobTokenSecretManager)
+                    .build();
       
       // Enable service authorization?
       if (conf.getBoolean(
@@ -134,7 +137,7 @@ public class TaskAttemptListenerImpl extends CompositeService
       server.start();
       this.address = NetUtils.getConnectAddress(server);
     } catch (IOException e) {
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
   }
 
@@ -144,13 +147,15 @@ public class TaskAttemptListenerImpl extends CompositeService
   }
 
   @Override
-  public void stop() {
+  protected void serviceStop() throws Exception {
     stopRpcServer();
-    super.stop();
+    super.serviceStop();
   }
 
   protected void stopRpcServer() {
-    server.stop();
+    if (server != null) {
+      server.stop();
+    }
   }
 
   @Override

@@ -169,6 +169,7 @@ import org.apache.hadoop.util.DiskChecker;
 import org.apache.hadoop.util.DiskChecker.DiskErrorException;
 import org.apache.hadoop.util.DiskChecker.DiskOutOfSpaceException;
 import org.apache.hadoop.util.GenericOptionsParser;
+import org.apache.hadoop.util.JvmPauseMonitor;
 import org.apache.hadoop.util.ServicePlugin;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.util.Time;
@@ -279,6 +280,8 @@ public class DataNode extends Configured
   
   // For InterDataNodeProtocol
   public RPC.Server ipcServer;
+
+  private JvmPauseMonitor pauseMonitor;
 
   private SecureResources secureResources = null;
   private AbstractList<File> dataDirs;
@@ -394,7 +397,7 @@ public class DataNode extends Configured
       InetSocketAddress secInfoSocAddr = NetUtils.createSocketAddr(conf.get(
           DFS_DATANODE_HTTPS_ADDRESS_KEY, infoHost + ":" + 0));
       Configuration sslConf = new HdfsConfiguration(false);
-      sslConf.addResource(conf.get("dfs.https.server.keystore.resource",
+      sslConf.addResource(conf.get(DFSConfigKeys.DFS_SERVER_HTTPS_KEYSTORE_RESOURCE_KEY,
           "ssl-server.xml"));
       this.infoServer.addSslListener(secInfoSocAddr, sslConf, needClientAuth);
       if(LOG.isDebugEnabled()) {
@@ -739,6 +742,8 @@ public class DataNode extends Configured
     registerMXBean();
     initDataXceiver(conf);
     startInfoServer(conf);
+    pauseMonitor = new JvmPauseMonitor(conf);
+    pauseMonitor.start();
   
     // BlockPoolTokenSecretManager is required to create ipc server.
     this.blockPoolTokenSecretManager = new BlockPoolTokenSecretManager();
@@ -936,7 +941,8 @@ public class DataNode extends Configured
     MBeans.register("DataNode", "DataNodeInfo", this);
   }
   
-  int getXferPort() {
+  @VisibleForTesting
+  public int getXferPort() {
     return streamingAddr.getPort();
   }
   
@@ -976,7 +982,8 @@ public class DataNode extends Configured
    * @return BP registration object
    * @throws IOException
    */
-  DatanodeRegistration getDNRegistrationForBP(String bpid) 
+  @VisibleForTesting
+  public DatanodeRegistration getDNRegistrationForBP(String bpid) 
   throws IOException {
     BPOfferService bpos = blockPoolManager.get(bpid);
     if(bpos==null || bpos.bpRegistration==null) {
@@ -1137,7 +1144,17 @@ public class DataNode extends Configured
         maxVersion);
     }
     metrics.incrBlocksGetLocalPathInfo();
-    return data.getShortCircuitFdsForRead(blk);
+    FileInputStream fis[] = new FileInputStream[2];
+    
+    try {
+      fis[0] = (FileInputStream)data.getBlockInputStream(blk, 0);
+      fis[1] = (FileInputStream)data.getMetaDataInputStream(blk).getWrappedStream();
+    } catch (ClassCastException e) {
+      LOG.debug("requestShortCircuitFdsForRead failed", e);
+      throw new ShortCircuitFdsUnsupportedException("This DataNode's " +
+          "FsDatasetSpi does not support short-circuit local reads");
+    }
+    return fis;
   }
 
   @Override
@@ -1209,6 +1226,9 @@ public class DataNode extends Configured
     }
     if (ipcServer != null) {
       ipcServer.stop();
+    }
+    if (pauseMonitor != null) {
+      pauseMonitor.stop();
     }
     
     if (dataXceiverServer != null) {
@@ -1500,6 +1520,7 @@ public class DataNode extends Configured
     final BlockConstructionStage stage;
     final private DatanodeRegistration bpReg;
     final String clientname;
+    final CachingStrategy cachingStrategy;
 
     /**
      * Connect to the first item in the target list.  Pass along the 
@@ -1520,6 +1541,8 @@ public class DataNode extends Configured
       BPOfferService bpos = blockPoolManager.get(b.getBlockPoolId());
       bpReg = bpos.bpRegistration;
       this.clientname = clientname;
+      this.cachingStrategy =
+          new CachingStrategy(true, getDnConf().readaheadLength);
     }
 
     /**
@@ -1562,7 +1585,7 @@ public class DataNode extends Configured
             HdfsConstants.SMALL_BUFFER_SIZE));
         in = new DataInputStream(unbufIn);
         blockSender = new BlockSender(b, 0, b.getNumBytes(), 
-            false, false, true, DataNode.this, null);
+            false, false, true, DataNode.this, null, cachingStrategy);
         DatanodeInfo srcNode = new DatanodeInfo(bpReg);
 
         //
@@ -1575,7 +1598,7 @@ public class DataNode extends Configured
         }
 
         new Sender(out).writeBlock(b, accessToken, clientname, targets, srcNode,
-            stage, 0, 0, 0, 0, blockSender.getChecksum());
+            stage, 0, 0, 0, 0, blockSender.getChecksum(), cachingStrategy);
 
         // send data & checksum
         blockSender.sendBlock(out, unbufOut, null);
@@ -2425,7 +2448,7 @@ public class DataNode extends Configured
     return dxcs.balanceThrottler.getBandwidth();
   }
   
-  DNConf getDnConf() {
+  public DNConf getDnConf() {
     return dnConf;
   }
 

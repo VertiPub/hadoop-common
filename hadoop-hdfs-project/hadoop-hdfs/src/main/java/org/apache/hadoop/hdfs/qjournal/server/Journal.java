@@ -25,18 +25,18 @@ import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.net.URL;
 import java.security.PrivilegedExceptionAction;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.apache.hadoop.hdfs.qjournal.protocol.JournalNotFormattedException;
-import org.apache.hadoop.hdfs.qjournal.protocol.QJournalProtocol;
 import org.apache.hadoop.hdfs.qjournal.protocol.JournalOutOfSyncException;
+import org.apache.hadoop.hdfs.qjournal.protocol.QJournalProtocol;
 import org.apache.hadoop.hdfs.qjournal.protocol.QJournalProtocolProtos.NewEpochResponseProto;
 import org.apache.hadoop.hdfs.qjournal.protocol.QJournalProtocolProtos.PersistedRecoveryPaxosData;
 import org.apache.hadoop.hdfs.qjournal.protocol.QJournalProtocolProtos.PrepareRecoveryResponseProto;
@@ -49,6 +49,7 @@ import org.apache.hadoop.hdfs.server.namenode.FileJournalManager.EditLogFile;
 import org.apache.hadoop.hdfs.server.namenode.JournalManager;
 import org.apache.hadoop.hdfs.server.namenode.TransferFsImage;
 import org.apache.hadoop.hdfs.server.protocol.NamespaceInfo;
+import org.apache.hadoop.hdfs.server.protocol.RemoteEditLog;
 import org.apache.hadoop.hdfs.server.protocol.RemoteEditLogManifest;
 import org.apache.hadoop.hdfs.util.AtomicFileOutputStream;
 import org.apache.hadoop.hdfs.util.BestEffortLongFile;
@@ -56,6 +57,7 @@ import org.apache.hadoop.hdfs.util.PersistentLongFile;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.ipc.Server;
 import org.apache.hadoop.security.SecurityUtil;
+import org.apache.hadoop.security.UserGroupInformation;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Charsets;
@@ -133,9 +135,9 @@ class Journal implements Closeable {
    */
   private static final int WARN_SYNC_MILLIS_THRESHOLD = 1000;
 
-  Journal(File logDir, String journalId,
+  Journal(Configuration conf, File logDir, String journalId,
       StorageErrorReporter errorReporter) throws IOException {
-    storage = new JNStorage(logDir, errorReporter);
+    storage = new JNStorage(conf, logDir, errorReporter);
     this.journalId = journalId;
 
     refreshCachedData();
@@ -627,15 +629,32 @@ class Journal implements Closeable {
   /**
    * @see QJournalProtocol#getEditLogManifest(String, long)
    */
-  public RemoteEditLogManifest getEditLogManifest(long sinceTxId)
-      throws IOException {
+  public RemoteEditLogManifest getEditLogManifest(long sinceTxId,
+      boolean forReading, boolean inProgressOk) throws IOException {
     // No need to checkRequest() here - anyone may ask for the list
     // of segments.
     checkFormatted();
     
-    RemoteEditLogManifest manifest = new RemoteEditLogManifest(
-        fjm.getRemoteEditLogs(sinceTxId));
-    return manifest;
+    // if this is for reading, ignore the in-progress editlog segment
+    inProgressOk = forReading ? false : inProgressOk;
+    List<RemoteEditLog> logs = fjm.getRemoteEditLogs(sinceTxId, forReading,
+        inProgressOk);
+    
+    if (inProgressOk) {
+      RemoteEditLog log = null;
+      for (Iterator<RemoteEditLog> iter = logs.iterator(); iter.hasNext();) {
+        log = iter.next();
+        if (log.isInProgress()) {
+          iter.remove();
+          break;
+        }
+      }
+      if (log != null && log.isInProgress()) {
+        logs.add(new RemoteEditLog(log.getStartTxId(), getHighestWrittenTxId()));
+      }
+    }
+    
+    return new RemoteEditLogManifest(logs);
   }
 
   /**
@@ -854,6 +873,11 @@ class Journal implements Closeable {
         new PrivilegedExceptionAction<Void>() {
           @Override
           public Void run() throws IOException {
+            // We may have lost our ticket since last checkpoint, log in again, just in case
+            if (UserGroupInformation.isSecurityEnabled()) {
+              UserGroupInformation.getCurrentUser().checkTGTAndReloginFromKeytab();
+            }
+
             boolean success = false;
             try {
               TransferFsImage.doGetUrl(url, localPaths, storage, true);

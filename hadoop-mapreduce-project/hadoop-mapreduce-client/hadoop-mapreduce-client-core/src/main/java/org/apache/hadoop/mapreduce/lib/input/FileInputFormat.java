@@ -29,9 +29,11 @@ import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.fs.BlockLocation;
+import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.mapreduce.InputFormat;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.Job;
@@ -64,10 +66,17 @@ public abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
     "mapreduce.input.pathFilter.class";
   public static final String NUM_INPUT_FILES =
     "mapreduce.input.fileinputformat.numinputfiles";
+  public static final String INPUT_DIR_RECURSIVE =
+    "mapreduce.input.fileinputformat.input.dir.recursive";
 
   private static final Log LOG = LogFactory.getLog(FileInputFormat.class);
 
   private static final double SPLIT_SLOP = 1.1;   // 10% slop
+  
+  @Deprecated
+  public static enum Counter { 
+    BYTES_READ
+  }
 
   private static final PathFilter hiddenFileFilter = new PathFilter(){
       public boolean accept(Path p){
@@ -96,6 +105,27 @@ public abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
       }
       return true;
     }
+  }
+  
+  /**
+   * @param job
+   *          the job to modify
+   * @param inputDirRecursive
+   */
+  public static void setInputDirRecursive(Job job,
+      boolean inputDirRecursive) {
+    job.getConfiguration().setBoolean(INPUT_DIR_RECURSIVE,
+        inputDirRecursive);
+  }
+ 
+  /**
+   * @param job
+   *          the job to look at.
+   * @return should the files to be read recursively?
+   */
+  public static boolean getInputDirRecursive(JobContext job) {
+    return job.getConfiguration().getBoolean(INPUT_DIR_RECURSIVE,
+        false);
   }
 
   /**
@@ -205,6 +235,9 @@ public abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
     TokenCache.obtainTokensForNamenodes(job.getCredentials(), dirs, 
                                         job.getConfiguration());
 
+    // Whether we need to recursive look into the directory structure
+    boolean recursive = getInputDirRecursive(job);
+    
     List<IOException> errors = new ArrayList<IOException>();
     
     // creates a MultiPathFilter with the hiddenFileFilter and the
@@ -228,10 +261,19 @@ public abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
       } else {
         for (FileStatus globStat: matches) {
           if (globStat.isDirectory()) {
-            for(FileStatus stat: fs.listStatus(globStat.getPath(),
-                inputFilter)) {
-              result.add(stat);
-            }          
+            RemoteIterator<LocatedFileStatus> iter =
+                fs.listLocatedStatus(globStat.getPath());
+            while (iter.hasNext()) {
+              LocatedFileStatus stat = iter.next();
+              if (inputFilter.accept(stat.getPath())) {
+                if (recursive && stat.isDirectory()) {
+                  addInputPathRecursively(result, fs, stat.getPath(),
+                      inputFilter);
+                } else {
+                  result.add(stat);
+                }
+              }
+            }
           } else {
             result.add(globStat);
           }
@@ -245,6 +287,35 @@ public abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
     LOG.info("Total input paths to process : " + result.size()); 
     return result;
   }
+  
+  /**
+   * Add files in the input path recursively into the results.
+   * @param result
+   *          The List to store all files.
+   * @param fs
+   *          The FileSystem.
+   * @param path
+   *          The input path.
+   * @param inputFilter
+   *          The input filter that can be used to filter files/dirs. 
+   * @throws IOException
+   */
+  protected void addInputPathRecursively(List<FileStatus> result,
+      FileSystem fs, Path path, PathFilter inputFilter) 
+      throws IOException {
+    RemoteIterator<LocatedFileStatus> iter = fs.listLocatedStatus(path);
+    while (iter.hasNext()) {
+      LocatedFileStatus stat = iter.next();
+      if (inputFilter.accept(stat.getPath())) {
+        if (stat.isDirectory()) {
+          addInputPathRecursively(result, fs, stat.getPath(), inputFilter);
+        } else {
+          result.add(stat);
+        }
+      }
+    }
+  }
+  
   
   /**
    * A factory that makes the split for this class. It can be overridden
@@ -271,8 +342,13 @@ public abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
       Path path = file.getPath();
       long length = file.getLen();
       if (length != 0) {
-        FileSystem fs = path.getFileSystem(job.getConfiguration());
-        BlockLocation[] blkLocations = fs.getFileBlockLocations(file, 0, length);
+        BlockLocation[] blkLocations;
+        if (file instanceof LocatedFileStatus) {
+          blkLocations = ((LocatedFileStatus) file).getBlockLocations();
+        } else {
+          FileSystem fs = path.getFileSystem(job.getConfiguration());
+          blkLocations = fs.getFileBlockLocations(file, 0, length);
+        }
         if (isSplitable(job, path)) {
           long blockSize = file.getBlockSize();
           long splitSize = computeSplitSize(blockSize, minSize, maxSize);

@@ -40,10 +40,15 @@ public class TestViewFsHdfs extends ViewFsBaseTest {
   private static HdfsConfiguration CONF = new HdfsConfiguration();
   private static FileContext fc;
   
+  @Override
+  protected FileContextTestHelper createFileContextHelper() {
+    return new FileContextTestHelper("/tmp/TestViewFsHdfs");
+  }
+
+
   @BeforeClass
   public static void clusterSetupAtBegining() throws IOException,
       LoginException, URISyntaxException {
-    FileContextTestHelper.TEST_ROOT_DIR = "/tmp/TestViewFsHdfs";
     SupportsBlocks = true;
     CONF.setBoolean(
         DFSConfigKeys.DFS_NAMENODE_DELEGATION_TOKEN_ALWAYS_USE_KEY, true);

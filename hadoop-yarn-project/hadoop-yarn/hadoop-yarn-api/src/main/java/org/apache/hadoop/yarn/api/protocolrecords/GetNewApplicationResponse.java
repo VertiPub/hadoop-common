@@ -22,19 +22,33 @@ import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.Resource;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p>The response sent by the <code>ResourceManager</code> to the client for 
  * a request to get a new {@link ApplicationId} for submitting applications.</p>
  * 
- * @see ClientRMProtocol#getNewApplication(GetNewApplicationRequest)
+ * @see ApplicationClientProtocol#getNewApplication(GetNewApplicationRequest)
  */
 @Public
 @Stable
-public interface GetNewApplicationResponse {
+public abstract class GetNewApplicationResponse {
+
+  @Private
+  @Unstable
+  public static GetNewApplicationResponse newInstance(
+      ApplicationId applicationId, Resource minCapability,
+      Resource maxCapability) {
+    GetNewApplicationResponse response =
+        Records.newRecord(GetNewApplicationResponse.class);
+    response.setApplicationId(applicationId);
+    response.setMaximumResourceCapability(maxCapability);
+    return response;
+  }
+
   /**
    * Get the <em>new</em> <code>ApplicationId</code> allocated by the 
    * <code>ResourceManager</code>.
@@ -48,20 +62,7 @@ public interface GetNewApplicationResponse {
   @Private
   @Unstable
   public abstract void setApplicationId(ApplicationId applicationId);
-  
-  /**
-   * Get the minimum capability for any {@link Resource} allocated by the 
-   * <code>ResourceManager</code> in the cluster.
-   * @return minimum capability of allocated resources in the cluster
-   */
-  @Public
-  @Stable
-  public Resource getMinimumResourceCapability();
-  
-  @Private
-  @Unstable
-  public void setMinimumResourceCapability(Resource capability);
-  
+
   /**
    * Get the maximum capability for any {@link Resource} allocated by the 
    * <code>ResourceManager</code> in the cluster.
@@ -69,9 +70,9 @@ public interface GetNewApplicationResponse {
    */
   @Public
   @Stable
-  public Resource getMaximumResourceCapability();
+  public abstract Resource getMaximumResourceCapability();
   
   @Private
   @Unstable
-  public void setMaximumResourceCapability(Resource capability); 
+  public abstract void setMaximumResourceCapability(Resource capability); 
 }

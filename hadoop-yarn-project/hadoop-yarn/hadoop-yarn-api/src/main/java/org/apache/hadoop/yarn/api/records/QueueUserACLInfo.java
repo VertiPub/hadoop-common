@@ -24,29 +24,41 @@ import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p><code>QueueUserACLInfo</code> provides information {@link QueueACL} for
  * the given user.</p>
  * 
  * @see QueueACL
- * @see ClientRMProtocol#getQueueUserAcls(org.apache.hadoop.yarn.api.protocolrecords.GetQueueUserAclsInfoRequest)
+ * @see ApplicationClientProtocol#getQueueUserAcls(org.apache.hadoop.yarn.api.protocolrecords.GetQueueUserAclsInfoRequest)
  */
 @Public
 @Stable
-public interface QueueUserACLInfo {
+public abstract class QueueUserACLInfo {
+
+  @Private
+  @Unstable
+  public static QueueUserACLInfo newInstance(String queueName,
+      List<QueueACL> acls) {
+    QueueUserACLInfo info = Records.newRecord(QueueUserACLInfo.class);
+    info.setQueueName(queueName);
+    info.setUserAcls(acls);
+    return info;
+  }
+
   /**
    * Get the <em>queue name</em> of the queue.
    * @return <em>queue name</em> of the queue
    */
   @Public
   @Stable
-  String getQueueName();
+  public abstract String getQueueName();
   
   @Private
   @Unstable
-  void setQueueName(String queueName);
+  public abstract void setQueueName(String queueName);
 
   /**
    * Get the list of <code>QueueACL</code> for the given user.
@@ -54,9 +66,9 @@ public interface QueueUserACLInfo {
    */
   @Public
   @Stable
-  List<QueueACL> getUserAcls();
+  public abstract List<QueueACL> getUserAcls();
 
   @Private
   @Unstable
-  void setUserAcls(List<QueueACL> acls);
+  public abstract void setUserAcls(List<QueueACL> acls);
 }

@@ -19,7 +19,7 @@
 package org.apache.hadoop.yarn.server.nodemanager;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.yarn.service.CompositeService;
+import org.apache.hadoop.service.CompositeService;
 
 /**
  * The class which provides functionality of checking the health of the node and
@@ -39,13 +39,13 @@ public class NodeHealthCheckerService extends CompositeService {
   }
 
   @Override
-  public void init(Configuration conf) {
+  protected void serviceInit(Configuration conf) throws Exception {
     if (NodeHealthScriptRunner.shouldRun(conf)) {
       nodeHealthScriptRunner = new NodeHealthScriptRunner();
       addService(nodeHealthScriptRunner);
     }
     addService(dirsHandler);
-    super.init(conf);
+    super.serviceInit(conf);
   }
 
   /**

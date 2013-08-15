@@ -20,8 +20,9 @@ package org.apache.hadoop.yarn.api.protocolrecords;
 
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p>The request sent by clients to get a new {@link ApplicationId} for
@@ -29,10 +30,16 @@ import org.apache.hadoop.yarn.api.records.ApplicationId;
  * 
  * <p>Currently, this is empty.</p>
  * 
- * @see ClientRMProtocol#getNewApplication(GetNewApplicationRequest)
+ * @see ApplicationClientProtocol#getNewApplication(GetNewApplicationRequest)
  */
 @Public
 @Stable
-public interface GetNewApplicationRequest {
-
+public abstract class GetNewApplicationRequest {
+  @Public
+  @Stable
+  public static GetNewApplicationRequest newInstance() {
+    GetNewApplicationRequest request =
+        Records.newRecord(GetNewApplicationRequest.class);
+    return request;
+  }
 }

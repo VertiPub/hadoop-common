@@ -47,11 +47,12 @@ import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.server.resourcemanager.RMContext;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.DefaultResourceCalculator;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.ResourceCalculator;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerApp;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerNode;
+import org.apache.hadoop.yarn.server.resourcemanager.security.RMContainerTokenSecretManager;
+import org.apache.hadoop.yarn.util.resource.DefaultResourceCalculator;
+import org.apache.hadoop.yarn.util.resource.ResourceCalculator;
+import org.apache.hadoop.yarn.util.resource.Resources;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -88,6 +89,11 @@ public class TestApplicationLimits {
         thenReturn(CapacityScheduler.queueComparator);
     when(csContext.getResourceCalculator()).
         thenReturn(resourceCalculator);
+    RMContainerTokenSecretManager containerTokenSecretManager =
+        new RMContainerTokenSecretManager(conf);
+    containerTokenSecretManager.rollMasterKey();
+    when(csContext.getContainerTokenSecretManager()).thenReturn(
+        containerTokenSecretManager);
 
     Map<String, CSQueue> queues = new HashMap<String, CSQueue>();
     CSQueue root = 
@@ -506,8 +512,8 @@ public class TestApplicationLimits {
     List<ResourceRequest> app_0_0_requests = new ArrayList<ResourceRequest>();
     app_0_0_requests.add(
         TestUtils.createResourceRequest(ResourceRequest.ANY, 1*GB, 2,
-            priority_1, recordFactory));
-    app_0_0.updateResourceRequests(app_0_0_requests);
+            true, priority_1, recordFactory));
+    app_0_0.updateResourceRequests(app_0_0_requests, null, null);
 
     // Schedule to compute 
     queue.assignContainers(clusterResource, node_0);
@@ -525,8 +531,8 @@ public class TestApplicationLimits {
     List<ResourceRequest> app_0_1_requests = new ArrayList<ResourceRequest>();
     app_0_1_requests.add(
         TestUtils.createResourceRequest(ResourceRequest.ANY, 1*GB, 2,
-            priority_1, recordFactory));
-    app_0_1.updateResourceRequests(app_0_1_requests);
+            true, priority_1, recordFactory));
+    app_0_1.updateResourceRequests(app_0_1_requests, null, null);
 
     // Schedule to compute 
     queue.assignContainers(clusterResource, node_0); // Schedule to compute
@@ -544,8 +550,8 @@ public class TestApplicationLimits {
     List<ResourceRequest> app_1_0_requests = new ArrayList<ResourceRequest>();
     app_1_0_requests.add(
         TestUtils.createResourceRequest(ResourceRequest.ANY, 1*GB, 2,
-            priority_1, recordFactory));
-    app_1_0.updateResourceRequests(app_1_0_requests);
+            true, priority_1, recordFactory));
+    app_1_0.updateResourceRequests(app_1_0_requests, null, null);
     
     // Schedule to compute 
     queue.assignContainers(clusterResource, node_0); // Schedule to compute

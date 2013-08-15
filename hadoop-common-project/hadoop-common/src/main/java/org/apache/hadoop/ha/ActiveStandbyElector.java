@@ -159,6 +159,7 @@ public class ActiveStandbyElector implements StatCallback, StringCallback {
   private int createRetryCount = 0;
   private int statRetryCount = 0;
   private ZooKeeper zkClient;
+  private WatcherWithClientRef watcher;
   private ConnectionState zkConnectionState = ConnectionState.TERMINATED;
 
   private final ActiveStandbyElectorCallback appClient;
@@ -245,6 +246,11 @@ public class ActiveStandbyElector implements StatCallback, StringCallback {
     
     if (data == null) {
       throw new HadoopIllegalArgumentException("data cannot be null");
+    }
+    
+    if (wantToBeInElection) {
+      LOG.info("Already in election. Not re-connecting.");
+      return;
     }
 
     appData = new byte[data.length];
@@ -615,7 +621,7 @@ public class ActiveStandbyElector implements StatCallback, StringCallback {
     // watcher after constructing ZooKeeper, we may miss that event. Instead,
     // we construct the watcher first, and have it block any events it receives
     // before we can set its ZooKeeper reference.
-    WatcherWithClientRef watcher = new WatcherWithClientRef();
+    watcher = new WatcherWithClientRef();
     ZooKeeper zk = new ZooKeeper(zkHostPort, zkSessionTimeout, watcher);
     watcher.setZooKeeperRef(zk);
 
@@ -643,6 +649,8 @@ public class ActiveStandbyElector implements StatCallback, StringCallback {
   }
 
   private void joinElectionInternal() {
+    Preconditions.checkState(appData != null,
+        "trying to join election without any app data");
     if (zkClient == null) {
       if (!reEstablishSession()) {
         fatalError("Failed to reEstablish connection with ZooKeeper");
@@ -669,8 +677,14 @@ public class ActiveStandbyElector implements StatCallback, StringCallback {
     try {
       terminateConnection();
       sleepFor(sleepTime);
-      
-      joinElectionInternal();
+      // Should not join election even before the SERVICE is reported
+      // as HEALTHY from ZKFC monitoring.
+      if (appData != null) {
+        joinElectionInternal();
+      } else {
+        LOG.info("Not joining election since service has not yet been " +
+            "reported as healthy.");
+      }
     } finally {
       sessionReestablishLockForTests.unlock();
     }
@@ -745,6 +759,7 @@ public class ActiveStandbyElector implements StatCallback, StringCallback {
             e);
       }
       zkClient = null;
+      watcher = null;
     }
     zkClient = getNewZooKeeper();
     LOG.debug("Created new connection for " + this);
@@ -757,12 +772,14 @@ public class ActiveStandbyElector implements StatCallback, StringCallback {
     LOG.debug("Terminating ZK connection for " + this);
     ZooKeeper tempZk = zkClient;
     zkClient = null;
+    watcher = null;
     try {
       tempZk.close();
     } catch(InterruptedException e) {
       LOG.warn(e);
     }
     zkConnectionState = ConnectionState.TERMINATED;
+    wantToBeInElection = false;
   }
 
   private void reset() {
@@ -798,6 +815,8 @@ public class ActiveStandbyElector implements StatCallback, StringCallback {
    */
   private void writeBreadCrumbNode(Stat oldBreadcrumbStat)
       throws KeeperException, InterruptedException {
+    Preconditions.checkState(appData != null, "no appdata");
+    
     LOG.info("Writing znode " + zkBreadCrumbPath +
         " to indicate that the local node is the most recent active...");
     if (oldBreadcrumbStat == null) {
@@ -904,7 +923,7 @@ public class ActiveStandbyElector implements StatCallback, StringCallback {
 
   private void monitorLockNodeAsync() {
     zkClient.exists(zkLockFilePath, 
-        new WatcherWithClientRef(zkClient), this,
+        watcher, this,
         zkClient);
   }
 
@@ -1005,13 +1024,6 @@ public class ActiveStandbyElector implements StatCallback, StringCallback {
      * Latch used to wait until the reference to ZooKeeper is set.
      */
     private CountDownLatch hasSetZooKeeper = new CountDownLatch(1);
-    
-    private WatcherWithClientRef() {
-    }
-
-    private WatcherWithClientRef(ZooKeeper zk) {
-      setZooKeeperRef(zk);
-    }
 
     /**
      * Waits for the next event from ZooKeeper to arrive.

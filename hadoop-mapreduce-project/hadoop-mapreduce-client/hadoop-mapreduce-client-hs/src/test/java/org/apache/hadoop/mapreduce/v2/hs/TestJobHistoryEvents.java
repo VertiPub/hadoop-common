@@ -40,10 +40,9 @@ import org.apache.hadoop.mapreduce.v2.app.MRApp;
 import org.apache.hadoop.mapreduce.v2.app.job.Job;
 import org.apache.hadoop.mapreduce.v2.app.job.Task;
 import org.apache.hadoop.mapreduce.v2.app.job.TaskAttempt;
+import org.apache.hadoop.service.Service;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.event.EventHandler;
-import org.apache.hadoop.yarn.service.Service;
-import org.apache.hadoop.yarn.util.BuilderUtils;
 import org.junit.Test;
 
 public class TestJobHistoryEvents {
@@ -71,12 +70,15 @@ public class TestJobHistoryEvents {
     ((JobHistory)context).start();
     Assert.assertTrue( context.getStartTime()>0);
     Assert.assertEquals(((JobHistory)context).getServiceState(),Service.STATE.STARTED);
-    
-    
+
+    // get job before stopping JobHistory
+    Job parsedJob = context.getJob(jobId);
+
+    // stop JobHistory
     ((JobHistory)context).stop();
     Assert.assertEquals(((JobHistory)context).getServiceState(),Service.STATE.STOPPED);
-      Job parsedJob = context.getJob(jobId);
-    
+
+
     Assert.assertEquals("CompletedMaps not correct", 2,
         parsedJob.getCompletedMaps());
     Assert.assertEquals(System.getProperty("user.name"), parsedJob.getUserName());
@@ -169,7 +171,7 @@ public class TestJobHistoryEvents {
         TaskAttemptState.SUCCEEDED, attempt.getState());
     Assert.assertNotNull(attempt.getAssignedContainerID());
   //Verify the wrong ctor is not being used. Remove after mrv1 is removed.
-    ContainerId fakeCid = BuilderUtils.newContainerId(-1, -1, -1, -1);
+    ContainerId fakeCid = MRApp.newContainerId(-1, -1, -1, -1);
     Assert.assertFalse(attempt.getAssignedContainerID().equals(fakeCid));
     //Verify complete contianerManagerAddress
     Assert.assertEquals(MRApp.NM_HOST + ":" + MRApp.NM_PORT,
@@ -207,7 +209,7 @@ public class TestJobHistoryEvents {
         AppContext context) {
       return new JobHistoryEventHandler(context, getStartCount()) {
         @Override
-        public void start() {
+        protected void serviceStart() {
           // Don't start any event draining thread.
           super.eventHandlingThread = new Thread();
           super.eventHandlingThread.start();
