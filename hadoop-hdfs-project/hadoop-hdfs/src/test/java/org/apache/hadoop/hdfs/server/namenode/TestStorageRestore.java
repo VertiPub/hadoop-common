@@ -47,6 +47,7 @@ import org.apache.hadoop.hdfs.HdfsConfiguration;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.server.common.Storage.StorageDirectory;
 import org.apache.hadoop.hdfs.server.namenode.JournalSet.JournalAndStream;
+import org.apache.hadoop.util.Shell;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -354,6 +355,82 @@ public class TestStorageRestore {
       // The created file should still exist after the restart.
       assertTrue("path should still exist after restart", fs.exists(testPath));
     } finally {
+      if (cluster != null) {
+        cluster.shutdown();
+      }
+      if (secondary != null) {
+        secondary.shutdown();
+      }
+    }
+  }
+
+  /**
+   * 1. create DFS cluster with 3 storage directories
+   *    - 2 EDITS_IMAGE(name1, name2), 1 EDITS(name3)
+   * 2. create a file
+   * 3. corrupt/disable name2 and name3 by removing rwx permission
+   * 4. run doCheckpoint
+   *    - will fail on removed dirs (which invalidates them)
+   * 5. write another file
+   * 6. check there is only one healthy storage dir
+   * 7. run doCheckpoint - recover should fail but checkpoint should succeed
+   * 8. check there is still only one healthy storage dir
+   * 9. restore the access permission for name2 and name 3, run checkpoint again
+   * 10.verify there are 3 healthy storage dirs.
+   */
+  @Test
+  public void testStorageRestoreFailure() throws Exception {
+    SecondaryNameNode secondary = null;
+
+    // On windows, revoking write+execute permission on name2 does not
+    // prevent us from creating files in name2\current. Hence we revoke
+    // permissions on name2\current for the test.
+    String nameDir2 = Shell.WINDOWS ?
+        (new File(path2, "current").getAbsolutePath()) : path2.toString();
+    String nameDir3 = Shell.WINDOWS ?
+        (new File(path3, "current").getAbsolutePath()) : path3.toString();
+
+    try {
+      cluster = new MiniDFSCluster.Builder(config).numDataNodes(0)
+          .manageNameDfsDirs(false).build();
+      cluster.waitActive();
+
+      secondary = new SecondaryNameNode(config);
+      printStorages(cluster.getNameNode().getFSImage());
+
+      FileSystem fs = cluster.getFileSystem();
+      Path path = new Path("/", "test");
+      assertTrue(fs.mkdirs(path));
+
+      // invalidate storage by removing rwx permission from name2 and name3
+      assertTrue(FileUtil.chmod(nameDir2, "000") == 0);
+      assertTrue(FileUtil.chmod(nameDir3, "000") == 0);
+      secondary.doCheckpoint(); // should remove name2 and name3
+
+      printStorages(cluster.getNameNode().getFSImage());
+
+      path = new Path("/", "test1");
+      assertTrue(fs.mkdirs(path));
+      assert (cluster.getNameNode().getFSImage().getStorage()
+          .getNumStorageDirs() == 1);
+
+      secondary.doCheckpoint(); // shouldn't be able to restore name 2 and 3
+      assert (cluster.getNameNode().getFSImage().getStorage()
+          .getNumStorageDirs() == 1);
+
+      assertTrue(FileUtil.chmod(nameDir2, "755") == 0);
+      assertTrue(FileUtil.chmod(nameDir3, "755") == 0);
+      secondary.doCheckpoint(); // should restore name 2 and 3
+      assert (cluster.getNameNode().getFSImage().getStorage()
+          .getNumStorageDirs() == 3);
+
+    } finally {
+      if (path2.exists()) {
+        FileUtil.chmod(nameDir2, "755");
+      }
+      if (path3.exists()) {
+        FileUtil.chmod(nameDir3, "755");
+      }
       if (cluster != null) {
         cluster.shutdown();
       }

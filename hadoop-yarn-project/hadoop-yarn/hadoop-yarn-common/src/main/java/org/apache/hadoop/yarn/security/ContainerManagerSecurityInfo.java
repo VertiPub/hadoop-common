@@ -20,14 +20,18 @@ package org.apache.hadoop.yarn.security;
 
 import java.lang.annotation.Annotation;
 
+import org.apache.hadoop.classification.InterfaceAudience.Public;
+import org.apache.hadoop.classification.InterfaceStability.Stable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.security.KerberosInfo;
 import org.apache.hadoop.security.SecurityInfo;
 import org.apache.hadoop.security.token.TokenIdentifier;
 import org.apache.hadoop.security.token.TokenInfo;
 import org.apache.hadoop.security.token.TokenSelector;
-import org.apache.hadoop.yarn.api.ContainerManagerPB;
+import org.apache.hadoop.yarn.api.ContainerManagementProtocolPB;
 
+@Public
+@Stable
 public class ContainerManagerSecurityInfo extends SecurityInfo {
 
   @Override
@@ -38,7 +42,7 @@ public class ContainerManagerSecurityInfo extends SecurityInfo {
   @Override
   public TokenInfo getTokenInfo(Class<?> protocol, Configuration conf) {
     if (!protocol
-        .equals(ContainerManagerPB.class)) {
+        .equals(ContainerManagementProtocolPB.class)) {
       return null;
     }
     return new TokenInfo() {
@@ -51,7 +55,7 @@ public class ContainerManagerSecurityInfo extends SecurityInfo {
       @Override
       public Class<? extends TokenSelector<? extends TokenIdentifier>>
           value() {
-        return ContainerTokenSelector.class;
+        return NMTokenSelector.class;
       }
     };
 

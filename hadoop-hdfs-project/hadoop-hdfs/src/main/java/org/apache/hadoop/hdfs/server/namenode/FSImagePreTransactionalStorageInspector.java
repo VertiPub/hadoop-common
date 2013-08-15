@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
@@ -32,6 +33,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
+import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.apache.hadoop.hdfs.server.common.Storage.StorageDirectory;
 import org.apache.hadoop.hdfs.server.namenode.NNStorage.NameNodeDirType;
@@ -127,7 +129,7 @@ class FSImagePreTransactionalStorageInspector extends FSImageStorageInspector {
   static long readCheckpointTime(StorageDirectory sd) throws IOException {
     File timeFile = NNStorage.getStorageFile(sd, NameNodeFile.TIME);
     long timeStamp = 0L;
-    if (timeFile.exists() && timeFile.canRead()) {
+    if (timeFile.exists() && FileUtil.canRead(timeFile)) {
       DataInputStream in = new DataInputStream(new FileInputStream(timeFile));
       try {
         timeStamp = in.readLong();
@@ -146,7 +148,7 @@ class FSImagePreTransactionalStorageInspector extends FSImageStorageInspector {
   }
     
   @Override
-  FSImageFile getLatestImage() throws IOException {
+  List<FSImageFile> getLatestImages() throws IOException {
     // We should have at least one image and one edits dirs
     if (latestNameSD == null)
       throw new IOException("Image file is not found in " + imageDirs);
@@ -176,9 +178,12 @@ class FSImagePreTransactionalStorageInspector extends FSImageStorageInspector {
 
     needToSaveAfterRecovery = doRecovery();
     
-    return new FSImageFile(latestNameSD, 
+    FSImageFile file = new FSImageFile(latestNameSD, 
         NNStorage.getStorageFile(latestNameSD, NameNodeFile.IMAGE),
         HdfsConstants.INVALID_TXID);
+    LinkedList<FSImageFile> ret = new LinkedList<FSImageFile>();
+    ret.add(file);
+    return ret;
   }
 
   @Override

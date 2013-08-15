@@ -17,60 +17,96 @@
  */
 package org.apache.hadoop.hdfs.server.namenode;
 
+import java.io.PrintWriter;
 import java.util.List;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.fs.permission.PermissionStatus;
 import org.apache.hadoop.hdfs.DFSUtil;
-import org.apache.hadoop.hdfs.protocol.Block;
+import org.apache.hadoop.hdfs.protocol.QuotaExceededException;
+import org.apache.hadoop.hdfs.server.namenode.snapshot.Snapshot;
 
 /**
- * An INode representing a symbolic link.
+ * An {@link INode} representing a symbolic link.
  */
 @InterfaceAudience.Private
-public class INodeSymlink extends INode {
-  private byte[] symlink; // The target URI
+public class INodeSymlink extends INodeWithAdditionalFields {
+  private final byte[] symlink; // The target URI
 
-  INodeSymlink(String value, long modTime, long atime,
-               PermissionStatus permissions) {
-    super(permissions, modTime, atime);
-    assert value != null;
-    setLinkValue(value);
-    setModificationTimeForce(modTime);
-    setAccessTime(atime);
+  INodeSymlink(long id, byte[] name, PermissionStatus permissions,
+      long mtime, long atime, String symlink) {
+    super(id, name, permissions, mtime, atime);
+    this.symlink = DFSUtil.string2Bytes(symlink);
+  }
+  
+  INodeSymlink(INodeSymlink that) {
+    super(that);
+    this.symlink = that.symlink;
   }
 
+  @Override
+  INode recordModification(Snapshot latest, final INodeMap inodeMap)
+      throws QuotaExceededException {
+    if (isInLatestSnapshot(latest)) {
+      INodeDirectory parent = getParent();
+      parent.saveChild2Snapshot(this, latest, new INodeSymlink(this), inodeMap);
+    }
+    return this;
+  }
+
+  /** @return true unconditionally. */
   @Override
   public boolean isSymlink() {
     return true;
   }
-  
-  void setLinkValue(String value) {
-    this.symlink = DFSUtil.string2Bytes(value);
+
+  /** @return this object. */
+  @Override
+  public INodeSymlink asSymlink() {
+    return this;
   }
 
-  public String getLinkValue() {
+  public String getSymlinkString() {
     return DFSUtil.bytes2String(symlink);
   }
 
   public byte[] getSymlink() {
     return symlink;
   }
-
+  
   @Override
-  DirCounts spaceConsumedInTree(DirCounts counts) {
-    counts.nsCount += 1;
-    return counts;
+  public Quota.Counts cleanSubtree(final Snapshot snapshot, Snapshot prior,
+      final BlocksMapUpdateInfo collectedBlocks,
+      final List<INode> removedINodes, final boolean countDiffChange) {
+    if (snapshot == null && prior == null) {
+      destroyAndCollectBlocks(collectedBlocks, removedINodes);
+    }
+    return Quota.Counts.newInstance(1, 0);
   }
   
   @Override
-  int collectSubtreeBlocksAndClear(List<Block> v) {
-    return 1;
+  public void destroyAndCollectBlocks(final BlocksMapUpdateInfo collectedBlocks,
+      final List<INode> removedINodes) {
+    removedINodes.add(this);
   }
 
   @Override
-  long[] computeContentSummary(long[] summary) {
-    summary[1]++; // Increment the file count
-    return summary;
+  public Quota.Counts computeQuotaUsage(Quota.Counts counts,
+      boolean updateCache, int lastSnapshotId) {
+    counts.add(Quota.NAMESPACE, 1);
+    return counts;
+  }
+
+  @Override
+  public Content.Counts computeContentSummary(final Content.Counts counts) {
+    counts.add(Content.SYMLINK, 1);
+    return counts;
+  }
+
+  @Override
+  public void dumpTreeRecursively(PrintWriter out, StringBuilder prefix,
+      final Snapshot snapshot) {
+    super.dumpTreeRecursively(out, prefix, snapshot);
+    out.println();
   }
 }

@@ -18,12 +18,10 @@
 
 package org.apache.hadoop.yarn.api.protocolrecords;
 
-import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
-import org.apache.hadoop.classification.InterfaceStability.Unstable;
-import org.apache.hadoop.yarn.api.AMRMProtocol;
-import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
+import org.apache.hadoop.yarn.api.ApplicationMasterProtocol;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p>The request sent by the <code>ApplicationMaster</code> to 
@@ -31,41 +29,38 @@ import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
  * 
  * <p>The registration includes details such as:
  *   <ul>
- *     <li>
- *         {@link ApplicationAttemptId} being managed by the 
- *         <code>ApplicationMaster</code>
- *     </li>
  *     <li>Hostname on which the AM is running.</li>
  *     <li>RPC Port</li>
  *     <li>Tracking URL</li>
  *   </ul>
  * </p>
  * 
- * @see AMRMProtocol#registerApplicationMaster(RegisterApplicationMasterRequest)
+ * @see ApplicationMasterProtocol#registerApplicationMaster(RegisterApplicationMasterRequest)
  */
 @Public
 @Stable
-public interface RegisterApplicationMasterRequest {
+public abstract class RegisterApplicationMasterRequest {
 
   /**
-   * Get the <code>ApplicationAttemptId</code> being managed by the 
-   * <code>ApplicationMaster</code>.
-   * @return <code>ApplicationAttemptId</code> being managed by the 
-   *         <code>ApplicationMaster</code>
+   * Create a new instance of <code>RegisterApplicationMasterRequest</code>.
+   * If <em>port, trackingUrl</em> is not used, use the following default value:
+   * <ul>
+   *  <li>port: -1</li>
+   *  <li>trackingUrl: null</li>
+   * </ul>
+   * @return the new instance of <code>RegisterApplicationMasterRequest</code>
    */
   @Public
   @Stable
-  ApplicationAttemptId getApplicationAttemptId();
-  
-  /**
-   * Set the <code>ApplicationAttemptId</code> being managed by the 
-   * <code>ApplicationMaster</code>.
-   * @param applicationAttemptId <code>ApplicationAttemptId</code> being managed  
-   *                             by the <code>ApplicationMaster</code>
-   */
-  @Public
-  @Stable
-  void setApplicationAttemptId(ApplicationAttemptId applicationAttemptId);
+  public static RegisterApplicationMasterRequest newInstance(String host,
+      int port, String trackingUrl) {
+    RegisterApplicationMasterRequest request =
+        Records.newRecord(RegisterApplicationMasterRequest.class);
+    request.setHost(host);
+    request.setRpcPort(port);
+    request.setTrackingUrl(trackingUrl);
+    return request;
+  }
 
   /**
    * Get the <em>host</em> on which the <code>ApplicationMaster</code> is 
@@ -74,7 +69,7 @@ public interface RegisterApplicationMasterRequest {
    */
   @Public
   @Stable
-  String getHost();
+  public abstract String getHost();
   
   /**
    * Set the <em>host</em> on which the <code>ApplicationMaster</code> is 
@@ -82,9 +77,9 @@ public interface RegisterApplicationMasterRequest {
    * @param host <em>host</em> on which the <code>ApplicationMaster</code> 
    *             is running
    */
-  @Private
-  @Unstable
-  void setHost(String host);
+  @Public
+  @Stable
+  public abstract void setHost(String host);
 
   /**
    * Get the <em>RPC port</em> on which the <code>ApplicationMaster</code> 
@@ -94,7 +89,7 @@ public interface RegisterApplicationMasterRequest {
    */
   @Public
   @Stable
-  int getRpcPort();
+  public abstract int getRpcPort();
   
   /**
    * Set the <em>RPC port<em> on which the <code>ApplicationMaster</code> is 
@@ -104,7 +99,7 @@ public interface RegisterApplicationMasterRequest {
    */
   @Public
   @Stable
-  void setRpcPort(int port);
+  public abstract void setRpcPort(int port);
 
   /**
    * Get the <em>tracking URL</em> for the <code>ApplicationMaster</code>.
@@ -112,7 +107,7 @@ public interface RegisterApplicationMasterRequest {
    */
   @Public
   @Stable
-  String getTrackingUrl();
+  public abstract String getTrackingUrl();
   
   /**
    * Set the <em>tracking URL</em> for the <code>ApplicationMaster</code>.
@@ -121,5 +116,5 @@ public interface RegisterApplicationMasterRequest {
    */
   @Public
   @Stable
-  void setTrackingUrl(String trackingUrl);
+  public abstract void setTrackingUrl(String trackingUrl);
 }

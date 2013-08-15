@@ -21,9 +21,11 @@ import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStreamWriter;
 import java.io.StringWriter;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -36,21 +38,32 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.regex.Pattern;
+import static java.util.concurrent.TimeUnit.*;
 
 import junit.framework.TestCase;
 import static org.junit.Assert.assertArrayEquals;
+
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration.IntegerRanges;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.net.NetUtils;
+import static org.apache.hadoop.util.PlatformName.IBM_JAVA;
 import org.codehaus.jackson.map.ObjectMapper; 
 
 public class TestConfiguration extends TestCase {
 
   private Configuration conf;
-  final static String CONFIG = new File("./test-config.xml").getAbsolutePath();
-  final static String CONFIG2 = new File("./test-config2.xml").getAbsolutePath();
+  final static String CONFIG = new File("./test-config-TestConfiguration.xml").getAbsolutePath();
+  final static String CONFIG2 = new File("./test-config2-TestConfiguration.xml").getAbsolutePath();
+  private static final String CONFIG_MULTI_BYTE = new File(
+    "./test-config-multi-byte-TestConfiguration.xml").getAbsolutePath();
+  private static final String CONFIG_MULTI_BYTE_SAVED = new File(
+    "./test-config-multi-byte-saved-TestConfiguration.xml").getAbsolutePath();
   final static Random RAN = new Random();
+  final static String XMLHEADER = 
+            IBM_JAVA?"<?xml version=\"1.0\" encoding=\"UTF-8\"?><configuration>":
+  "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><configuration>";
 
   @Override
   protected void setUp() throws Exception {
@@ -63,6 +76,8 @@ public class TestConfiguration extends TestCase {
     super.tearDown();
     new File(CONFIG).delete();
     new File(CONFIG2).delete();
+    new File(CONFIG_MULTI_BYTE).delete();
+    new File(CONFIG_MULTI_BYTE_SAVED).delete();
   }
   
   private void startConfig() throws IOException{
@@ -93,6 +108,41 @@ public class TestConfiguration extends TestCase {
     InputStream in2 = new ByteArrayInputStream(writer.toString().getBytes());
     conf.addResource(in2);
     assertEquals("A", conf.get("prop"));
+  }
+
+  /**
+   * Tests use of multi-byte characters in property names and values.  This test
+   * round-trips multi-byte string literals through saving and loading of config
+   * and asserts that the same values were read.
+   */
+  public void testMultiByteCharacters() throws IOException {
+    String priorDefaultEncoding = System.getProperty("file.encoding");
+    try {
+      System.setProperty("file.encoding", "US-ASCII");
+      String name = "multi_byte_\u611b_name";
+      String value = "multi_byte_\u0641_value";
+      out = new BufferedWriter(new OutputStreamWriter(
+        new FileOutputStream(CONFIG_MULTI_BYTE), "UTF-8"));
+      startConfig();
+      declareProperty(name, value, value);
+      endConfig();
+
+      Configuration conf = new Configuration(false);
+      conf.addResource(new Path(CONFIG_MULTI_BYTE));
+      assertEquals(value, conf.get(name));
+      FileOutputStream fos = new FileOutputStream(CONFIG_MULTI_BYTE_SAVED);
+      try {
+        conf.writeXml(fos);
+      } finally {
+        IOUtils.closeStream(fos);
+      }
+
+      conf = new Configuration(false);
+      conf.addResource(new Path(CONFIG_MULTI_BYTE_SAVED));
+      assertEquals(value, conf.get(name));
+    } finally {
+      System.setProperty("file.encoding", priorDefaultEncoding);
+    }
   }
 
   public void testVariableSubstitution() throws IOException {
@@ -327,8 +377,8 @@ public class TestConfiguration extends TestCase {
     ByteArrayOutputStream baos = new ByteArrayOutputStream(); 
     conf.writeXml(baos);
     String result = baos.toString();
-    assertTrue("Result has proper header", result.startsWith(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><configuration>"));
+    assertTrue("Result has proper header", result.startsWith(XMLHEADER));
+	  
     assertTrue("Result has proper footer", result.endsWith("</configuration>"));
   }
   
@@ -579,6 +629,29 @@ public class TestConfiguration extends TestCase {
     }
   }
   
+  public void testDoubleValues() throws IOException {
+    out=new BufferedWriter(new FileWriter(CONFIG));
+    startConfig();
+    appendProperty("test.double1", "3.1415");
+    appendProperty("test.double2", "003.1415");
+    appendProperty("test.double3", "-3.1415");
+    appendProperty("test.double4", " -3.1415 ");
+    appendProperty("test.double5", "xyz-3.1415xyz");
+    endConfig();
+    Path fileResource = new Path(CONFIG);
+    conf.addResource(fileResource);
+    assertEquals(3.1415, conf.getDouble("test.double1", 0.0));
+    assertEquals(3.1415, conf.getDouble("test.double2", 0.0));
+    assertEquals(-3.1415, conf.getDouble("test.double3", 0.0));
+    assertEquals(-3.1415, conf.getDouble("test.double4", 0.0));
+    try {
+      conf.getDouble("test.double5", 0.0);
+      fail("Property had invalid double value, but was read successfully.");
+    } catch (NumberFormatException e) {
+      // pass
+    }
+  }
+  
   public void testGetClass() throws IOException {
     out=new BufferedWriter(new FileWriter(CONFIG));
     startConfig();
@@ -664,6 +737,37 @@ public class TestConfiguration extends TestCase {
       fail = true;
     }
     assertTrue(fail);
+  }
+
+  public void testTimeDuration() {
+    Configuration conf = new Configuration(false);
+    conf.setTimeDuration("test.time.a", 7L, SECONDS);
+    assertEquals("7s", conf.get("test.time.a"));
+    assertEquals(0L, conf.getTimeDuration("test.time.a", 30, MINUTES));
+    assertEquals(7L, conf.getTimeDuration("test.time.a", 30, SECONDS));
+    assertEquals(7000L, conf.getTimeDuration("test.time.a", 30, MILLISECONDS));
+    assertEquals(7000000L,
+        conf.getTimeDuration("test.time.a", 30, MICROSECONDS));
+    assertEquals(7000000000L,
+        conf.getTimeDuration("test.time.a", 30, NANOSECONDS));
+    conf.setTimeDuration("test.time.b", 1, DAYS);
+    assertEquals("1d", conf.get("test.time.b"));
+    assertEquals(1, conf.getTimeDuration("test.time.b", 1, DAYS));
+    assertEquals(24, conf.getTimeDuration("test.time.b", 1, HOURS));
+    assertEquals(MINUTES.convert(1, DAYS),
+        conf.getTimeDuration("test.time.b", 1, MINUTES));
+
+    // check default
+    assertEquals(30L, conf.getTimeDuration("test.time.X", 30, SECONDS));
+    conf.set("test.time.X", "30");
+    assertEquals(30L, conf.getTimeDuration("test.time.X", 40, SECONDS));
+
+    for (Configuration.ParsedTimeDuration ptd :
+         Configuration.ParsedTimeDuration.values()) {
+      conf.setTimeDuration("test.time.unit", 1, ptd.unit());
+      assertEquals(1 + ptd.suffix(), conf.get("test.time.unit"));
+      assertEquals(1, conf.getTimeDuration("test.time.unit", 2, ptd.unit()));
+    }
   }
 
   public void testPattern() throws IOException {

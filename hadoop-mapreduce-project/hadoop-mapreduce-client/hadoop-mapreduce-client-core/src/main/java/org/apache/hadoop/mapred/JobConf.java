@@ -20,14 +20,12 @@ package org.apache.hadoop.mapred;
 
 
 import java.io.IOException;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.util.Enumeration;
 import java.util.regex.Pattern;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
+import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
@@ -49,6 +47,7 @@ import org.apache.hadoop.mapreduce.MRJobConfig;
 import org.apache.hadoop.mapreduce.filecache.DistributedCache;
 import org.apache.hadoop.mapreduce.util.ConfigUtil;
 import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.util.ClassUtil;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.Tool;
 import org.apache.log4j.Level;
@@ -120,8 +119,8 @@ public class JobConf extends Configuration {
   }
 
   /**
-   * @deprecated Use {@link #MAPRED_JOB_MAP_MEMORY_MB_PROPERTY} and
-   * {@link #MAPRED_JOB_REDUCE_MEMORY_MB_PROPERTY}
+   * @deprecated Use {@link #MAPREDUCE_JOB_MAP_MEMORY_MB_PROPERTY} and
+   * {@link #MAPREDUCE_JOB_REDUCE_MEMORY_MB_PROPERTY}
    */
   @Deprecated
   public static final String MAPRED_TASK_MAXVMEM_PROPERTY =
@@ -165,11 +164,27 @@ public class JobConf extends Configuration {
    */
   public static final String DEFAULT_QUEUE_NAME = "default";
 
-  static final String MAPRED_JOB_MAP_MEMORY_MB_PROPERTY = 
+  static final String MAPREDUCE_JOB_MAP_MEMORY_MB_PROPERTY =
       JobContext.MAP_MEMORY_MB;
 
-  static final String MAPRED_JOB_REDUCE_MEMORY_MB_PROPERTY =
+  static final String MAPREDUCE_JOB_REDUCE_MEMORY_MB_PROPERTY =
     JobContext.REDUCE_MEMORY_MB;
+
+  /**
+   * The variable is kept for M/R 1.x applications, while M/R 2.x applications
+   * should use {@link #MAPREDUCE_JOB_MAP_MEMORY_MB_PROPERTY}
+   */
+  @Deprecated
+  public static final String MAPRED_JOB_MAP_MEMORY_MB_PROPERTY =
+      "mapred.job.map.memory.mb";
+
+  /**
+   * The variable is kept for M/R 1.x applications, while M/R 2.x applications
+   * should use {@link #MAPREDUCE_JOB_REDUCE_MEMORY_MB_PROPERTY}
+   */
+  @Deprecated
+  public static final String MAPRED_JOB_REDUCE_MEMORY_MB_PROPERTY =
+      "mapred.job.reduce.memory.mb";
 
   /** Pattern for the default unpacking behavior for job jars */
   public static final Pattern UNPACK_JAR_PATTERN_DEFAULT =
@@ -265,12 +280,14 @@ public class JobConf extends Configuration {
    * Configuration key to set the environment of the child map/reduce tasks.
    * 
    * The format of the value is <code>k1=v1,k2=v2</code>. Further it can 
-   * reference existing environment variables via <code>$key</code>.
+   * reference existing environment variables via <code>$key</code> on
+   * Linux or <code>%key%</code> on Windows.
    * 
    * Example:
    * <ul>
    *   <li> A=foo - This will set the env variable A to foo. </li>
-   *   <li> B=$X:c This is inherit tasktracker's X env variable. </li>
+   *   <li> B=$X:c This is inherit tasktracker's X env variable on Linux. </li>
+   *   <li> B=%X%;c This is inherit tasktracker's X env variable on Windows. </li>
    * </ul>
    * 
    * @deprecated Use {@link #MAPRED_MAP_TASK_ENV} or 
@@ -280,31 +297,33 @@ public class JobConf extends Configuration {
   public static final String MAPRED_TASK_ENV = "mapred.child.env";
 
   /**
-   * Configuration key to set the maximum virutal memory available to the
-   * map tasks.
+   * Configuration key to set the environment of the child map tasks.
    * 
-   * The format of the value is <code>k1=v1,k2=v2</code>. Further it can 
-   * reference existing environment variables via <code>$key</code>.
+   * The format of the value is <code>k1=v1,k2=v2</code>. Further it can
+   * reference existing environment variables via <code>$key</code> on
+   * Linux or <code>%key%</code> on Windows.
    * 
    * Example:
    * <ul>
    *   <li> A=foo - This will set the env variable A to foo. </li>
-   *   <li> B=$X:c This is inherit tasktracker's X env variable. </li>
+   *   <li> B=$X:c This is inherit tasktracker's X env variable on Linux. </li>
+   *   <li> B=%X%;c This is inherit tasktracker's X env variable on Windows. </li>
    * </ul>
    */
   public static final String MAPRED_MAP_TASK_ENV = JobContext.MAP_ENV;
   
   /**
-   * Configuration key to set the maximum virutal memory available to the
-   * reduce tasks.
+   * Configuration key to set the environment of the child reduce tasks.
    * 
    * The format of the value is <code>k1=v1,k2=v2</code>. Further it can 
-   * reference existing environment variables via <code>$key</code>.
+   * reference existing environment variables via <code>$key</code> on
+   * Linux or <code>%key%</code> on Windows.
    * 
    * Example:
    * <ul>
    *   <li> A=foo - This will set the env variable A to foo. </li>
-   *   <li> B=$X:c This is inherit tasktracker's X env variable. </li>
+   *   <li> B=$X:c This is inherit tasktracker's X env variable on Linux. </li>
+   *   <li> B=%X%;c This is inherit tasktracker's X env variable on Windows. </li>
    * </ul>
    */
   public static final String MAPRED_REDUCE_TASK_ENV = JobContext.REDUCE_ENV;
@@ -333,8 +352,67 @@ public class JobConf extends Configuration {
    * Default logging level for map/reduce tasks.
    */
   public static final Level DEFAULT_LOG_LEVEL = Level.INFO;
-  
-  
+
+  /**
+   * The variable is kept for M/R 1.x applications, M/R 2.x applications should
+   * use {@link MRJobConfig#WORKFLOW_ID} instead
+   */
+  @Deprecated
+  public static final String WORKFLOW_ID = MRJobConfig.WORKFLOW_ID;
+
+  /**
+   * The variable is kept for M/R 1.x applications, M/R 2.x applications should
+   * use {@link MRJobConfig#WORKFLOW_NAME} instead
+   */
+  @Deprecated
+  public static final String WORKFLOW_NAME = MRJobConfig.WORKFLOW_NAME;
+
+  /**
+   * The variable is kept for M/R 1.x applications, M/R 2.x applications should
+   * use {@link MRJobConfig#WORKFLOW_NODE_NAME} instead
+   */
+  @Deprecated
+  public static final String WORKFLOW_NODE_NAME =
+      MRJobConfig.WORKFLOW_NODE_NAME;
+
+  /**
+   * The variable is kept for M/R 1.x applications, M/R 2.x applications should
+   * use {@link MRJobConfig#WORKFLOW_ADJACENCY_PREFIX_STRING} instead
+   */
+  @Deprecated
+  public static final String WORKFLOW_ADJACENCY_PREFIX_STRING =
+      MRJobConfig.WORKFLOW_ADJACENCY_PREFIX_STRING;
+
+  /**
+   * The variable is kept for M/R 1.x applications, M/R 2.x applications should
+   * use {@link MRJobConfig#WORKFLOW_ADJACENCY_PREFIX_PATTERN} instead
+   */
+  @Deprecated
+  public static final String WORKFLOW_ADJACENCY_PREFIX_PATTERN =
+      MRJobConfig.WORKFLOW_ADJACENCY_PREFIX_PATTERN;
+
+  /**
+   * The variable is kept for M/R 1.x applications, M/R 2.x applications should
+   * use {@link MRJobConfig#WORKFLOW_TAGS} instead
+   */
+  @Deprecated
+  public static final String WORKFLOW_TAGS = MRJobConfig.WORKFLOW_TAGS;
+
+  /**
+   * The variable is kept for M/R 1.x applications, M/R 2.x applications should
+   * not use it
+   */
+  @Deprecated
+  public static final String MAPREDUCE_RECOVER_JOB =
+      "mapreduce.job.restart.recover";
+
+  /**
+   * The variable is kept for M/R 1.x applications, M/R 2.x applications should
+   * not use it
+   */
+  @Deprecated
+  public static final boolean DEFAULT_MAPREDUCE_RECOVER_JOB = true;
+
   /**
    * Construct a map/reduce job configuration.
    */
@@ -419,7 +497,8 @@ public class JobConf extends Configuration {
     return credentials;
   }
   
-  void setCredentials(Credentials credentials) {
+  @Private
+  public void setCredentials(Credentials credentials) {
     this.credentials = credentials;
   }
   
@@ -451,7 +530,7 @@ public class JobConf extends Configuration {
    * @param cls the example class.
    */
   public void setJarByClass(Class cls) {
-    String jar = findContainingJar(cls);
+    String jar = ClassUtil.findContainingJar(cls);
     if (jar != null) {
       setJar(jar);
     }   
@@ -1694,6 +1773,12 @@ public class JobConf extends Configuration {
     long value = getDeprecatedMemoryValue();
     if (value == DISABLED_MEMORY_LIMIT) {
       value = normalizeMemoryConfigValue(
+                getLong(JobConf.MAPREDUCE_JOB_MAP_MEMORY_MB_PROPERTY,
+                          DISABLED_MEMORY_LIMIT));
+    }
+    // In case that M/R 1.x applications use the old property name
+    if (value == DISABLED_MEMORY_LIMIT) {
+      value = normalizeMemoryConfigValue(
                 getLong(JobConf.MAPRED_JOB_MAP_MEMORY_MB_PROPERTY,
                           DISABLED_MEMORY_LIMIT));
     }
@@ -1701,6 +1786,8 @@ public class JobConf extends Configuration {
   }
 
   public void setMemoryForMapTask(long mem) {
+    setLong(JobConf.MAPREDUCE_JOB_MAP_MEMORY_MB_PROPERTY, mem);
+    // In case that M/R 1.x applications use the old property name
     setLong(JobConf.MAPRED_JOB_MAP_MEMORY_MB_PROPERTY, mem);
   }
 
@@ -1719,6 +1806,12 @@ public class JobConf extends Configuration {
    */
   public long getMemoryForReduceTask() {
     long value = getDeprecatedMemoryValue();
+    if (value == DISABLED_MEMORY_LIMIT) {
+      value = normalizeMemoryConfigValue(
+                getLong(JobConf.MAPREDUCE_JOB_REDUCE_MEMORY_MB_PROPERTY,
+                        DISABLED_MEMORY_LIMIT));
+    }
+    // In case that M/R 1.x applications use the old property name
     if (value == DISABLED_MEMORY_LIMIT) {
       value = normalizeMemoryConfigValue(
                 getLong(JobConf.MAPRED_JOB_REDUCE_MEMORY_MB_PROPERTY,
@@ -1742,6 +1835,8 @@ public class JobConf extends Configuration {
   }
 
   public void setMemoryForReduceTask(long mem) {
+    setLong(JobConf.MAPREDUCE_JOB_REDUCE_MEMORY_MB_PROPERTY, mem);
+    // In case that M/R 1.x applications use the old property name
     setLong(JobConf.MAPRED_JOB_REDUCE_MEMORY_MB_PROPERTY, mem);
   }
 
@@ -1809,7 +1904,7 @@ public class JobConf extends Configuration {
     return 
     (int)(Math.ceil((float)getMemoryForReduceTask() / (float)slotSizePerReduce));
   }
-  
+
   /** 
    * Find a jar that contains a class of the same name, if any.
    * It will return a jar file, even if that is not the first thing
@@ -1820,34 +1915,8 @@ public class JobConf extends Configuration {
    * @throws IOException
    */
   public static String findContainingJar(Class my_class) {
-    ClassLoader loader = my_class.getClassLoader();
-    String class_file = my_class.getName().replaceAll("\\.", "/") + ".class";
-    try {
-      for(Enumeration itr = loader.getResources(class_file);
-          itr.hasMoreElements();) {
-        URL url = (URL) itr.nextElement();
-        if ("jar".equals(url.getProtocol())) {
-          String toReturn = url.getPath();
-          if (toReturn.startsWith("file:")) {
-            toReturn = toReturn.substring("file:".length());
-          }
-          // URLDecoder is a misnamed class, since it actually decodes
-          // x-www-form-urlencoded MIME type rather than actual
-          // URL encoding (which the file path has). Therefore it would
-          // decode +s to ' 's which is incorrect (spaces are actually
-          // either unencoded or encoded as "%20"). Replace +s first, so
-          // that they are kept sacred during the decoding process.
-          toReturn = toReturn.replaceAll("\\+", "%2B");
-          toReturn = URLDecoder.decode(toReturn, "UTF-8");
-          return toReturn.replaceAll("!.*$", "");
-        }
-      }
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-    return null;
+    return ClassUtil.findContainingJar(my_class);
   }
-
 
   /**
    * Get the memory required to run a task of this job, in bytes. See
@@ -1950,8 +2019,8 @@ public class JobConf extends Configuration {
   private void checkAndWarnDeprecation() {
     if(get(JobConf.MAPRED_TASK_MAXVMEM_PROPERTY) != null) {
       LOG.warn(JobConf.deprecatedString(JobConf.MAPRED_TASK_MAXVMEM_PROPERTY)
-                + " Instead use " + JobConf.MAPRED_JOB_MAP_MEMORY_MB_PROPERTY
-                + " and " + JobConf.MAPRED_JOB_REDUCE_MEMORY_MB_PROPERTY);
+                + " Instead use " + JobConf.MAPREDUCE_JOB_MAP_MEMORY_MB_PROPERTY
+                + " and " + JobConf.MAPREDUCE_JOB_REDUCE_MEMORY_MB_PROPERTY);
     }
     if(get(JobConf.MAPRED_TASK_ULIMIT) != null ) {
       LOG.warn(JobConf.deprecatedString(JobConf.MAPRED_TASK_ULIMIT));

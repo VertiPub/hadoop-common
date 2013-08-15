@@ -20,7 +20,8 @@ package org.apache.hadoop.yarn.api.protocolrecords;
 
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p>The request sent by clients to get cluster metrics from the 
@@ -28,10 +29,16 @@ import org.apache.hadoop.yarn.api.ClientRMProtocol;
  * 
  * <p>Currently, this is empty.</p>
  *
- * @see ClientRMProtocol#getClusterMetrics(GetClusterMetricsRequest)
+ * @see ApplicationClientProtocol#getClusterMetrics(GetClusterMetricsRequest)
  */
 @Public
 @Stable
-public interface GetClusterMetricsRequest {
-
+public abstract class GetClusterMetricsRequest {
+  @Public
+  @Stable
+  public static GetClusterMetricsRequest newInstance() {
+    GetClusterMetricsRequest request =
+        Records.newRecord(GetClusterMetricsRequest.class);
+    return request;
+  }
 }

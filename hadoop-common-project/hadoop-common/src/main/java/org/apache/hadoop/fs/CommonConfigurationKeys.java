@@ -64,6 +64,11 @@ public class CommonConfigurationKeys extends CommonConfigurationKeysPublic {
     "ipc.server.read.threadpool.size";
   /** Default value for IPC_SERVER_RPC_READ_THREADS_KEY */
   public static final int     IPC_SERVER_RPC_READ_THREADS_DEFAULT = 1;
+  
+  public static final String IPC_MAXIMUM_DATA_LENGTH =
+      "ipc.maximum.data.length";
+  
+  public static final int IPC_MAXIMUM_DATA_LENGTH_DEFAULT = 64 * 1024 * 1024;
 
   /** How many calls per handler are allowed in the queue. */
   public static final String  IPC_SERVER_HANDLER_QUEUE_SIZE_KEY =
@@ -91,13 +96,21 @@ public class CommonConfigurationKeys extends CommonConfigurationKeysPublic {
   public static final int IO_COMPRESSION_CODEC_SNAPPY_BUFFERSIZE_DEFAULT =
       256 * 1024;
 
-  /** Internal buffer size for Snappy compressor/decompressors */
+  /** Internal buffer size for Lz4 compressor/decompressors */
   public static final String IO_COMPRESSION_CODEC_LZ4_BUFFERSIZE_KEY =
       "io.compression.codec.lz4.buffersize";
 
   /** Default value for IO_COMPRESSION_CODEC_SNAPPY_BUFFERSIZE_KEY */
   public static final int IO_COMPRESSION_CODEC_LZ4_BUFFERSIZE_DEFAULT =
       256 * 1024;
+
+  /** Use lz4hc(slow but with high compression ratio) for lz4 compression */
+  public static final String IO_COMPRESSION_CODEC_LZ4_USELZ4HC_KEY =
+      "io.compression.codec.lz4.use.lz4hc";
+
+  /** Default value for IO_COMPRESSION_CODEC_USELZ4HC_KEY */
+  public static final boolean IO_COMPRESSION_CODEC_LZ4_USELZ4HC_DEFAULT =
+      false;
 
   /**
    * Service Authorization
@@ -202,5 +215,8 @@ public class CommonConfigurationKeys extends CommonConfigurationKeysPublic {
 
   public static final long HADOOP_SECURITY_UID_NAME_CACHE_TIMEOUT_DEFAULT =
     4*60*60; // 4 hours
+  
+  public static final String  IPC_CLIENT_FALLBACK_TO_SIMPLE_AUTH_ALLOWED_KEY = "ipc.client.fallback-to-simple-auth-allowed";
+  public static final boolean IPC_CLIENT_FALLBACK_TO_SIMPLE_AUTH_ALLOWED_DEFAULT = false;
 
 }

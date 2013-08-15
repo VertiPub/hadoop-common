@@ -24,8 +24,9 @@ import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
 import org.apache.hadoop.yarn.api.records.NodeReport;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p>The response sent by the <code>ResourceManager</code> to a client
@@ -36,20 +37,31 @@ import org.apache.hadoop.yarn.api.records.NodeReport;
  * status etc.
  * 
  * @see NodeReport
- * @see ClientRMProtocol#getClusterNodes(GetClusterNodesRequest)
+ * @see ApplicationClientProtocol#getClusterNodes(GetClusterNodesRequest)
  */
 @Public
 @Stable
-public interface GetClusterNodesResponse {
+public abstract class GetClusterNodesResponse {
+
+  @Private
+  @Unstable
+  public static GetClusterNodesResponse
+      newInstance(List<NodeReport> nodeReports) {
+    GetClusterNodesResponse response =
+        Records.newRecord(GetClusterNodesResponse.class);
+    response.setNodeReports(nodeReports);
+    return response;
+  }
+
   /**
    * Get <code>NodeReport</code> for all nodes in the cluster.
    * @return <code>NodeReport</code> for all nodes in the cluster
    */
   @Public
   @Stable
-  List<NodeReport> getNodeReports();
+  public abstract List<NodeReport> getNodeReports();
   
   @Private
   @Unstable
-  void setNodeReports(List<NodeReport> nodeReports);
+  public abstract void setNodeReports(List<NodeReport> nodeReports);
 }

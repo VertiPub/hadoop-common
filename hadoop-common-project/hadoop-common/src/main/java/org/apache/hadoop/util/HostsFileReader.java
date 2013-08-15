@@ -48,7 +48,8 @@ public class HostsFileReader {
     refresh();
   }
 
-  private void readFileToSet(String filename, Set<String> set) throws IOException {
+  public static void readFileToSet(String type,
+      String filename, Set<String> set) throws IOException {
     File file = new File(filename);
     FileInputStream fis = new FileInputStream(file);
     BufferedReader reader = null;
@@ -63,9 +64,10 @@ public class HostsFileReader {
               // Everything from now on is a comment
               break;
             }
-            if (!nodes[i].equals("")) {
-              LOG.info("Adding " + nodes[i] + " to the list of hosts from " + filename);
-              set.add(nodes[i]);  // might need to add canonical name
+            if (!nodes[i].isEmpty()) {
+              LOG.info("Adding " + nodes[i] + " to the list of " + type +
+                  " hosts from " + filename);
+              set.add(nodes[i]);
             }
           }
         }
@@ -80,15 +82,15 @@ public class HostsFileReader {
 
   public synchronized void refresh() throws IOException {
     LOG.info("Refreshing hosts (include/exclude) list");
-    if (!includesFile.equals("")) {
+    if (!includesFile.isEmpty()) {
       Set<String> newIncludes = new HashSet<String>();
-      readFileToSet(includesFile, newIncludes);
+      readFileToSet("included", includesFile, newIncludes);
       // switch the new hosts that are to be included
       includes = newIncludes;
     }
-    if (!excludesFile.equals("")) {
+    if (!excludesFile.isEmpty()) {
       Set<String> newExcludes = new HashSet<String>();
-      readFileToSet(excludesFile, newExcludes);
+      readFileToSet("excluded", excludesFile, newExcludes);
       // switch the excluded hosts
       excludes = newExcludes;
     }

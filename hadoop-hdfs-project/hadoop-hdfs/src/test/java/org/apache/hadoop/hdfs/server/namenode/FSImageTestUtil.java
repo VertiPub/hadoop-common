@@ -47,6 +47,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.permission.PermissionStatus;
+import org.apache.hadoop.hdfs.DFSUtil;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.server.common.Storage.StorageDirType;
 import org.apache.hadoop.hdfs.server.common.Storage.StorageDirectory;
@@ -61,6 +62,7 @@ import org.mockito.Mockito;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -208,7 +210,7 @@ public abstract class FSImageTestUtil {
    * only a specified number of "mkdirs" operations.
    */
   public static void createAbortedLogWithMkdirs(File editsLogDir, int numDirs,
-      long firstTxId) throws IOException {
+      long firstTxId, long newInodeId) throws IOException {
     FSEditLog editLog = FSImageTestUtil.createStandaloneEditLog(editsLogDir);
     editLog.setNextTxId(firstTxId);
     editLog.openForWrite();
@@ -217,7 +219,8 @@ public abstract class FSImageTestUtil {
         FsPermission.createImmutable((short)0755));
     for (int i = 1; i <= numDirs; i++) {
       String dirName = "dir" + i;
-      INodeDirectory dir = new INodeDirectory(dirName, perms);
+      INodeDirectory dir = new INodeDirectory(newInodeId + i - 1,
+          DFSUtil.string2Bytes(dirName), perms, 0L);
       editLog.logMkDir("/" + dirName, dir);
     }
     editLog.logSync();
@@ -272,15 +275,15 @@ public abstract class FSImageTestUtil {
     for (File dir : dirs) {
       FSImageTransactionalStorageInspector inspector =
         inspectStorageDirectory(dir, NameNodeDirType.IMAGE);
-      FSImageFile latestImage = inspector.getLatestImage();
-      assertNotNull("No image in " + dir, latestImage);      
-      long thisTxId = latestImage.getCheckpointTxId();
+      List<FSImageFile> latestImages = inspector.getLatestImages();
+      assert(!latestImages.isEmpty());
+      long thisTxId = latestImages.get(0).getCheckpointTxId();
       if (imageTxId != -1 && thisTxId != imageTxId) {
         fail("Storage directory " + dir + " does not have the same " +
             "last image index " + imageTxId + " as another");
       }
       imageTxId = thisTxId;
-      imageFiles.add(inspector.getLatestImage().getFile());
+      imageFiles.add(inspector.getLatestImages().get(0).getFile());
     }
     
     assertFileContentsSame(imageFiles.toArray(new File[0]));
@@ -424,7 +427,7 @@ public abstract class FSImageTestUtil {
       new FSImageTransactionalStorageInspector();
     inspector.inspectDirectory(sd);
     
-    return inspector.getLatestImage().getFile();
+    return inspector.getLatestImages().get(0).getFile();
   }
 
   /**
@@ -439,8 +442,8 @@ public abstract class FSImageTestUtil {
       new FSImageTransactionalStorageInspector();
     inspector.inspectDirectory(sd);
 
-    FSImageFile latestImage = inspector.getLatestImage();
-    return (latestImage == null) ? null : latestImage.getFile();
+    List<FSImageFile> latestImages = inspector.getLatestImages();
+    return (latestImages.isEmpty()) ? null : latestImages.get(0).getFile();
   }
 
   /**
@@ -506,7 +509,11 @@ public abstract class FSImageTestUtil {
       props.load(fis);
       IOUtils.closeStream(fis);
   
-      props.setProperty(key, value);
+      if (value == null || value.isEmpty()) {
+        props.remove(key);
+      } else {
+        props.setProperty(key, value);
+      }
       
       out = new FileOutputStream(versionFile);
       props.store(out, null);
@@ -541,5 +548,17 @@ public abstract class FSImageTestUtil {
   /** get the fsImage*/
   public static FSImage getFSImage(NameNode node) {
     return node.getFSImage();
+  }
+  
+  public static void assertNNFilesMatch(MiniDFSCluster cluster) throws Exception {
+    List<File> curDirs = Lists.newArrayList();
+    curDirs.addAll(FSImageTestUtil.getNameNodeCurrentDirs(cluster, 0));
+    curDirs.addAll(FSImageTestUtil.getNameNodeCurrentDirs(cluster, 1));
+    
+    // Ignore seen_txid file, since the newly bootstrapped standby
+    // will have a higher seen_txid than the one it bootstrapped from.
+    Set<String> ignoredFiles = ImmutableSet.of("seen_txid");
+    FSImageTestUtil.assertParallelFilesAreIdentical(curDirs,
+        ignoredFiles);
   }
 }

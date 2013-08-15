@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.yarn.server.nodemanager.webapp;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,13 +31,15 @@ import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
+import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.event.Dispatcher;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
+import org.apache.hadoop.yarn.security.ContainerTokenIdentifier;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerState;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
 
 public class MockContainer implements Container {
 
@@ -47,10 +50,11 @@ public class MockContainer implements Container {
   private final Map<Path, List<String>> resource =
       new HashMap<Path, List<String>>();
   private RecordFactory recordFactory;
+  private final ContainerTokenIdentifier containerTokenIdentifier;
 
   public MockContainer(ApplicationAttemptId appAttemptId,
       Dispatcher dispatcher, Configuration conf, String user,
-      ApplicationId appId, int uniqId) {
+      ApplicationId appId, int uniqId) throws IOException{
 
     this.user = user;
     this.recordFactory = RecordFactoryProvider.getRecordFactory(conf);
@@ -58,19 +62,17 @@ public class MockContainer implements Container {
         uniqId);
     this.launchContext = recordFactory
         .newRecordInstance(ContainerLaunchContext.class);
-    launchContext.setContainerId(id);
-    launchContext.setUser(user);
+    long currentTime = System.currentTimeMillis();
+    this.containerTokenIdentifier =
+        BuilderUtils.newContainerTokenIdentifier(BuilderUtils
+          .newContainerToken(id, "127.0.0.1", 1234, user,
+            BuilderUtils.newResource(1024, 1), currentTime + 10000, 123,
+            "password".getBytes(), currentTime));
     this.state = ContainerState.NEW;
-
   }
 
   public void setState(ContainerState state) {
     this.state = state;
-  }
-
-  @Override
-  public ContainerId getContainerID() {
-    return id;
   }
 
   @Override
@@ -104,7 +106,6 @@ public class MockContainer implements Container {
         .newRecordInstance(ContainerStatus.class);
     containerStatus
         .setState(org.apache.hadoop.yarn.api.records.ContainerState.RUNNING);
-    containerStatus.setContainerId(this.launchContext.getContainerId());
     containerStatus.setDiagnostics("testing");
     containerStatus.setExitStatus(0);
     return containerStatus;
@@ -119,4 +120,18 @@ public class MockContainer implements Container {
   public void handle(ContainerEvent event) {
   }
 
+  @Override
+  public ContainerId getContainerId() {
+    return this.id;
+  }
+
+  @Override
+  public Resource getResource() {
+    return this.containerTokenIdentifier.getResource();
+  }
+
+  @Override
+  public ContainerTokenIdentifier getContainerTokenIdentifier() {
+    return this.containerTokenIdentifier;
+  }
 }

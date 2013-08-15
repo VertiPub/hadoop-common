@@ -21,25 +21,31 @@
  *   All rights reserved. Use of this source code is governed by a
  *   BSD-style license that can be found in the LICENSE file.
  */
+
+#include "org_apache_hadoop.h"
+
 #include <assert.h>
-#include <arpa/inet.h>
 #include <errno.h>
 #include <stdint.h>
+
+#ifdef UNIX
+#include <arpa/inet.h>
 #include <unistd.h>
+#endif // UNIX
 
 #include "crc32_zlib_polynomial_tables.h"
 #include "crc32c_tables.h"
 #include "bulk_crc32.h"
 #include "gcc_optimizations.h"
 
-#ifndef __FreeBSD__
+#if (!defined(__FreeBSD__) && !defined(WINDOWS))
 #define USE_PIPELINED
 #endif
 
 #define CRC_INITIAL_VAL 0xffffffff
 
 typedef uint32_t (*crc_update_func_t)(uint32_t, const uint8_t *, size_t);
-static inline uint32_t crc_val(uint32_t crc);
+static uint32_t crc_val(uint32_t crc);
 static uint32_t crc32_zlib_sb8(uint32_t crc, const uint8_t *buf, size_t length);
 static uint32_t crc32c_sb8(uint32_t crc, const uint8_t *buf, size_t length);
 
@@ -187,7 +193,7 @@ return_crc_error:
 /**
  * Extract the final result of a CRC
  */
-static inline uint32_t crc_val(uint32_t crc) {
+uint32_t crc_val(uint32_t crc) {
   return ~crc;
 }
 
@@ -200,11 +206,13 @@ static uint32_t crc32c_sb8(uint32_t crc, const uint8_t *buf, size_t length) {
   uint32_t end_bytes = length - running_length; 
   int li;
   for (li=0; li < running_length/8; li++) {
+	uint32_t term1;
+	uint32_t term2;
     crc ^= *(uint32_t *)buf;
     buf += 4;
-    uint32_t term1 = CRC32C_T8_7[crc & 0x000000FF] ^
+    term1 = CRC32C_T8_7[crc & 0x000000FF] ^
         CRC32C_T8_6[(crc >> 8) & 0x000000FF];
-    uint32_t term2 = crc >> 16;
+    term2 = crc >> 16;
     crc = term1 ^
         CRC32C_T8_5[term2 & 0x000000FF] ^ 
         CRC32C_T8_4[(term2 >> 8) & 0x000000FF];
@@ -234,11 +242,13 @@ static uint32_t crc32_zlib_sb8(
   uint32_t end_bytes = length - running_length; 
   int li;
   for (li=0; li < running_length/8; li++) {
+	uint32_t term1;
+	uint32_t term2;
     crc ^= *(uint32_t *)buf;
     buf += 4;
-    uint32_t term1 = CRC32_T8_7[crc & 0x000000FF] ^
+    term1 = CRC32_T8_7[crc & 0x000000FF] ^
         CRC32_T8_6[(crc >> 8) & 0x000000FF];
-    uint32_t term2 = crc >> 16;
+    term2 = crc >> 16;
     crc = term1 ^
         CRC32_T8_5[term2 & 0x000000FF] ^ 
         CRC32_T8_4[(term2 >> 8) & 0x000000FF];
@@ -417,7 +427,7 @@ static void pipelined_crc32c(uint32_t *crc1, uint32_t *crc2, uint32_t *crc3, con
         "crc32q (%7,%6,1), %1;\n\t"
         "crc32q (%7,%6,2), %2;\n\t"
          : "=r"(c1), "=r"(c2), "=r"(c3)
-         : "r"(c1), "r"(c2), "r"(c3), "r"(block_size), "r"(data)
+         : "0"(c1), "1"(c2), "2"(c3), "r"(block_size), "r"(data)
         );
         data++;
         counter--;
@@ -433,7 +443,7 @@ static void pipelined_crc32c(uint32_t *crc1, uint32_t *crc2, uint32_t *crc3, con
         "crc32b (%7,%6,1), %1;\n\t"
         "crc32b (%7,%6,2), %2;\n\t"
          : "=r"(c1), "=r"(c2), "=r"(c3)
-         : "r"(c1), "r"(c2), "r"(c3), "r"(block_size), "r"(bdata)
+         : "0"(c1), "1"(c2), "2"(c3), "r"(block_size), "r"(bdata)
         );
         bdata++;
         remainder--;
@@ -446,7 +456,7 @@ static void pipelined_crc32c(uint32_t *crc1, uint32_t *crc2, uint32_t *crc3, con
         "crc32q (%5), %0;\n\t"
         "crc32q (%5,%4,1), %1;\n\t"
          : "=r"(c1), "=r"(c2) 
-         : "r"(c1), "r"(c2), "r"(block_size), "r"(data)
+         : "0"(c1), "1"(c2), "r"(block_size), "r"(data)
         );
         data++;
         counter--;
@@ -458,7 +468,7 @@ static void pipelined_crc32c(uint32_t *crc1, uint32_t *crc2, uint32_t *crc3, con
         "crc32b (%5), %0;\n\t"
         "crc32b (%5,%4,1), %1;\n\t"
          : "=r"(c1), "=r"(c2) 
-         : "r"(c1), "r"(c2), "r"(block_size), "r"(bdata)
+         : "0"(c1), "1"(c2), "r"(block_size), "r"(bdata)
         );
         bdata++;
         remainder--;
@@ -470,7 +480,7 @@ static void pipelined_crc32c(uint32_t *crc1, uint32_t *crc2, uint32_t *crc3, con
         __asm__ __volatile__(
         "crc32q (%2), %0;\n\t"
          : "=r"(c1) 
-         : "r"(c1), "r"(data)
+         : "0"(c1), "r"(data)
         );
         data++;
         counter--;
@@ -480,7 +490,7 @@ static void pipelined_crc32c(uint32_t *crc1, uint32_t *crc2, uint32_t *crc3, con
         __asm__ __volatile__(
         "crc32b (%2), %0;\n\t"
          : "=r"(c1) 
-         : "r"(c1), "r"(bdata)
+         : "0"(c1), "r"(bdata)
         );
         bdata++;
         remainder--;

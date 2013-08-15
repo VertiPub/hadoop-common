@@ -29,10 +29,14 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
-import org.apache.hadoop.yarn.YarnException;
+import org.apache.hadoop.service.AbstractService;
+import org.apache.hadoop.service.CompositeService;
+import org.apache.hadoop.util.Shell;
+import org.apache.hadoop.util.Shell.ShellCommandExecutor;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.Dispatcher;
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
+import org.apache.hadoop.yarn.exceptions.YarnException;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.ipc.RPCUtil;
@@ -48,8 +52,6 @@ import org.apache.hadoop.yarn.server.nodemanager.NodeStatusUpdater;
 import org.apache.hadoop.yarn.server.nodemanager.NodeStatusUpdaterImpl;
 import org.apache.hadoop.yarn.server.resourcemanager.ResourceManager;
 import org.apache.hadoop.yarn.server.resourcemanager.ResourceTrackerService;
-import org.apache.hadoop.yarn.service.AbstractService;
-import org.apache.hadoop.yarn.service.CompositeService;
 
 public class MiniYARNCluster extends CompositeService {
 
@@ -83,15 +85,51 @@ public class MiniYARNCluster extends CompositeService {
     super(testName.replace("$", ""));
     this.numLocalDirs = numLocalDirs;
     this.numLogDirs = numLogDirs;
-    this.testWorkDir = new File("target",
-        testName.replace("$", ""));
+    String testSubDir = testName.replace("$", "");
+    File targetWorkDir = new File("target", testSubDir);
     try {
       FileContext.getLocalFSFileContext().delete(
-          new Path(testWorkDir.getAbsolutePath()), true);
+          new Path(targetWorkDir.getAbsolutePath()), true);
     } catch (Exception e) {
       LOG.warn("COULD NOT CLEANUP", e);
-      throw new YarnException("could not cleanup test dir", e);
+      throw new YarnRuntimeException("could not cleanup test dir: "+ e, e);
     } 
+
+    if (Shell.WINDOWS) {
+      // The test working directory can exceed the maximum path length supported
+      // by some Windows APIs and cmd.exe (260 characters).  To work around this,
+      // create a symlink in temporary storage with a much shorter path,
+      // targeting the full path to the test working directory.  Then, use the
+      // symlink as the test working directory.
+      String targetPath = targetWorkDir.getAbsolutePath();
+      File link = new File(System.getProperty("java.io.tmpdir"),
+        String.valueOf(System.currentTimeMillis()));
+      String linkPath = link.getAbsolutePath();
+
+      try {
+        FileContext.getLocalFSFileContext().delete(new Path(linkPath), true);
+      } catch (IOException e) {
+        throw new YarnRuntimeException("could not cleanup symlink: " + linkPath, e);
+      }
+
+      // Guarantee target exists before creating symlink.
+      targetWorkDir.mkdirs();
+
+      ShellCommandExecutor shexec = new ShellCommandExecutor(
+        Shell.getSymlinkCommand(targetPath, linkPath));
+      try {
+        shexec.execute();
+      } catch (IOException e) {
+        throw new YarnRuntimeException(String.format(
+          "failed to create symlink from %s to %s, shell output: %s", linkPath,
+          targetPath, shexec.getOutput()), e);
+      }
+
+      this.testWorkDir = link;
+    } else {
+      this.testWorkDir = targetWorkDir;
+    }
+
     resourceManagerWrapper = new ResourceManagerWrapper();
     addService(resourceManagerWrapper);
     nodeManagers = new CustomNodeManager[noOfNodeManagers];
@@ -102,9 +140,10 @@ public class MiniYARNCluster extends CompositeService {
   }
   
   @Override
-  public void init(Configuration conf) {
-    super.init(conf instanceof YarnConfiguration ? conf
-        : new YarnConfiguration(conf));
+  public void serviceInit(Configuration conf) throws Exception {
+    super.serviceInit(conf instanceof YarnConfiguration ? conf
+                                                        : new YarnConfiguration(
+                                                          conf));
   }
 
   public File getTestWorkDir() {
@@ -134,23 +173,24 @@ public class MiniYARNCluster extends CompositeService {
     }
 
     @Override
-    public synchronized void start() {
+    public synchronized void serviceStart() throws Exception {
       try {
         getConfig().setBoolean(YarnConfiguration.IS_MINI_YARN_CLUSTER, true);
         if (!getConfig().getBoolean(
             YarnConfiguration.YARN_MINICLUSTER_FIXED_PORTS,
             YarnConfiguration.DEFAULT_YARN_MINICLUSTER_FIXED_PORTS)) {
           // pick free random ports.
+          String hostname = MiniYARNCluster.getHostname();
           getConfig().set(YarnConfiguration.RM_ADDRESS,
-              MiniYARNCluster.getHostname() + ":0");
+              hostname + ":0");
           getConfig().set(YarnConfiguration.RM_ADMIN_ADDRESS,
-              MiniYARNCluster.getHostname() + ":0");
+              hostname + ":0");
           getConfig().set(YarnConfiguration.RM_SCHEDULER_ADDRESS,
-              MiniYARNCluster.getHostname() + ":0");
+              hostname + ":0");
           getConfig().set(YarnConfiguration.RM_RESOURCE_TRACKER_ADDRESS,
-              MiniYARNCluster.getHostname() + ":0");
+              hostname + ":0");
           getConfig().set(YarnConfiguration.RM_WEBAPP_ADDRESS,
-              MiniYARNCluster.getHostname() + ":0");
+              hostname + ":0");
         }
         resourceManager = new ResourceManager() {
           @Override
@@ -176,9 +216,9 @@ public class MiniYARNCluster extends CompositeService {
               "ResourceManager failed to start. Final state is "
                   + resourceManager.getServiceState());
         }
-        super.start();
+        super.serviceStart();
       } catch (Throwable t) {
-        throw new YarnException(t);
+        throw new YarnRuntimeException(t);
       }
       LOG.info("MiniYARN ResourceManager address: " +
                getConfig().get(YarnConfiguration.RM_ADDRESS));
@@ -187,11 +227,24 @@ public class MiniYARNCluster extends CompositeService {
     }
 
     @Override
-    public synchronized void stop() {
+    public synchronized void serviceStop() throws Exception {
       if (resourceManager != null) {
         resourceManager.stop();
       }
-      super.stop();
+      super.serviceStop();
+
+      if (Shell.WINDOWS) {
+        // On Windows, clean up the short temporary symlink that was created to
+        // work around path length limitation.
+        String testWorkDirPath = testWorkDir.getAbsolutePath();
+        try {
+          FileContext.getLocalFSFileContext().delete(new Path(testWorkDirPath),
+            true);
+        } catch (IOException e) {
+          LOG.warn("could not cleanup symlink: " +
+            testWorkDir.getAbsolutePath());
+        }
+      }
     }
   }
 
@@ -203,10 +256,10 @@ public class MiniYARNCluster extends CompositeService {
       index = i;
     }
 
-    public synchronized void init(Configuration conf) {                          
-      Configuration config = new YarnConfiguration(conf);                            
-      super.init(config);                                                        
-    }                                                                            
+    public synchronized void serviceInit(Configuration conf) throws Exception {
+      Configuration config = new YarnConfiguration(conf);
+      super.serviceInit(config);
+    }
 
     /**
      * Create local/log directories
@@ -220,7 +273,7 @@ public class MiniYARNCluster extends CompositeService {
       for (int i = 0; i < numDirs; i++) {
         dirs[i]= new File(testWorkDir, MiniYARNCluster.this.getName()
             + "-" + dirType + "Dir-nm-" + index + "_" + i);
-        dirs[i].mkdir();
+        dirs[i].mkdirs();
         LOG.info("Created " + dirType + "Dir in " + dirs[i].getAbsolutePath());
         String delimiter = (i > 0) ? "," : "";
         dirsString = dirsString.concat(delimiter + dirs[i].getAbsolutePath());
@@ -228,7 +281,7 @@ public class MiniYARNCluster extends CompositeService {
       return dirsString;
     }
 
-    public synchronized void start() {
+    public synchronized void serviceStart() throws Exception {
       try {
         // create nm-local-dirs and configure them for the nodemanager
         String localDirsString = prepareDirs("local", numLocalDirs);
@@ -251,6 +304,16 @@ public class MiniYARNCluster extends CompositeService {
                         MiniYARNCluster.getHostname() + ":0");
         getConfig().set(YarnConfiguration.NM_WEBAPP_ADDRESS,
                         MiniYARNCluster.getHostname() + ":0");
+
+        // Disable resource checks by default
+        if (!getConfig().getBoolean(
+            YarnConfiguration.YARN_MINICLUSTER_CONTROL_RESOURCE_MONITORING,
+            YarnConfiguration.
+                DEFAULT_YARN_MINICLUSTER_CONTROL_RESOURCE_MONITORING)) {
+          getConfig().setBoolean(YarnConfiguration.NM_PMEM_CHECK_ENABLED, false);
+          getConfig().setBoolean(YarnConfiguration.NM_VMEM_CHECK_ENABLED, false);
+        }
+
         LOG.info("Starting NM: " + index);
         nodeManagers[index].init(getConfig());
         new Thread() {
@@ -268,18 +331,18 @@ public class MiniYARNCluster extends CompositeService {
           // RM could have failed.
           throw new IOException("NodeManager " + index + " failed to start");
         }
-        super.start();
+        super.serviceStart();
       } catch (Throwable t) {
-        throw new YarnException(t);
+        throw new YarnRuntimeException(t);
       }
     }
 
     @Override
-    public synchronized void stop() {
+    public synchronized void serviceStop() throws Exception {
       if (nodeManagers[index] != null) {
         nodeManagers[index].stop();
       }
-      super.stop();
+      super.serviceStop();
     }
   }
   
@@ -306,16 +369,16 @@ public class MiniYARNCluster extends CompositeService {
 
             @Override
             public NodeHeartbeatResponse nodeHeartbeat(
-                NodeHeartbeatRequest request) throws YarnRemoteException {
+                NodeHeartbeatRequest request) throws YarnException,
+                IOException {
               NodeHeartbeatResponse response = recordFactory.newRecordInstance(
                   NodeHeartbeatResponse.class);
               try {
-                response.setHeartbeatResponse(rt.nodeHeartbeat(request)
-                    .getHeartbeatResponse());
-              } catch (IOException ioe) {
+                response = rt.nodeHeartbeat(request);
+              } catch (YarnException e) {
                 LOG.info("Exception in heartbeat from node " + 
-                    request.getNodeStatus().getNodeId(), ioe);
-                throw RPCUtil.getRemoteException(ioe);
+                    request.getNodeStatus().getNodeId(), e);
+                throw e;
               }
               return response;
             }
@@ -323,22 +386,25 @@ public class MiniYARNCluster extends CompositeService {
             @Override
             public RegisterNodeManagerResponse registerNodeManager(
                 RegisterNodeManagerRequest request)
-                throws YarnRemoteException {
+                throws YarnException, IOException {
               RegisterNodeManagerResponse response = recordFactory.
                   newRecordInstance(RegisterNodeManagerResponse.class);
               try {
-                response.setRegistrationResponse(rt
-                    .registerNodeManager(request)
-                    .getRegistrationResponse());
-              } catch (IOException ioe) {
+                response = rt.registerNodeManager(request);
+              } catch (YarnException e) {
                 LOG.info("Exception in node registration from "
-                    + request.getNodeId().toString(), ioe);
-                throw RPCUtil.getRemoteException(ioe);
+                    + request.getNodeId().toString(), e);
+                throw e;
               }
               return response;
             }
           };
         };
+
+        @Override
+        protected void stopRMProxy() {
+          return;
+        }
       };
     };
   }

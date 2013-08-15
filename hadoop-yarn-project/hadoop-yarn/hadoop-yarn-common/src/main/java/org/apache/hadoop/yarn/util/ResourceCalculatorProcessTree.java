@@ -18,17 +18,19 @@
 
 package org.apache.hadoop.yarn.util;
 
+import java.lang.reflect.Constructor;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
-import org.apache.hadoop.util.ReflectionUtils;
-import java.lang.reflect.Constructor;
 
 /**
  * Interface class to obtain process resource usage
  *
  */
+@Private
 public abstract class ResourceCalculatorProcessTree extends Configured {
   static final Log LOG = LogFactory
       .getLog(ResourceCalculatorProcessTree.class);
@@ -145,14 +147,11 @@ public abstract class ResourceCalculatorProcessTree extends Configured {
     }
 
     // No class given, try a os specific class
-    try {
-      String osName = System.getProperty("os.name");
-      if (osName.startsWith("Linux")) {
-        return new ProcfsBasedProcessTree(pid);
-      }
-    } catch (SecurityException se) {
-      // Failed to get Operating System name.
-      return null;
+    if (ProcfsBasedProcessTree.isAvailable()) {
+      return new ProcfsBasedProcessTree(pid);
+    }
+    if (WindowsBasedProcessTree.isAvailable()) {
+      return new WindowsBasedProcessTree(pid);
     }
 
     // Not supported on this system.

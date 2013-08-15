@@ -77,7 +77,7 @@
 
  <property>
     <name>security.admin.operations.protocol.acl</name>
-    <value>${HADOOP_HDFS_USER}</value>
+    <value>*</value>
     <description>ACL for AdminOperationsProtocol. Used for admin commands.
     The ACL is a comma-separated list of user and group names. The user and
     group list is separated by a blank. For e.g. "alice,bob users,wheel".
@@ -86,7 +86,7 @@
 
   <property>
     <name>security.refresh.usertogroups.mappings.protocol.acl</name>
-    <value>${HADOOP_HDFS_USER}</value>
+    <value>*</value>
     <description>ACL for RefreshUserMappingsProtocol. Used to refresh
     users mappings. The ACL is a comma-separated list of user and
     group names. The user and group list is separated by a blank. For
@@ -96,7 +96,7 @@
 
   <property>
     <name>security.refresh.policy.protocol.acl</name>
-    <value>${HADOOP_HDFS_USER}</value>
+    <value>*</value>
     <description>ACL for RefreshAuthorizationPolicyProtocol, used by the
     dfsadmin and mradmin commands to refresh the security policy in-effect.
     The ACL is a comma-separated list of user and group names. The user and
@@ -120,7 +120,7 @@
 
   <property>
     <name>security.qjournal.service.protocol.acl</name>
-    <value>${HADOOP_HDFS_USER}</value>
+    <value>*</value>
     <description>ACL for QJournalProtocol, used by the NN to communicate with
     JNs when using the QuorumJournalManager for edit logs.</description>
   </property>
@@ -139,8 +139,8 @@
 
   <property>
     <name>security.resourcetracker.protocol.acl</name>
-    <value>${HADOOP_YARN_USER}</value>
-    <description>ACL for ResourceTracker protocol, used by the
+    <value>*</value>
+    <description>ACL for ResourceTrackerProtocol, used by the
     ResourceManager and NodeManager to communicate with each other.
     The ACL is a comma-separated list of user and group names. The user and
     group list is separated by a blank. For e.g. "alice,bob users,wheel".
@@ -148,18 +148,18 @@
   </property>
 
   <property>
-    <name>security.admin.protocol.acl</name>
-    <value>${HADOOP_YARN_USER}</value>
-    <description>ACL for RMAdminProtocol, for admin commands. 
+    <name>security.resourcemanager-administration.protocol.acl</name>
+    <value>*</value>
+    <description>ACL for ResourceManagerAdministrationProtocol, for admin commands. 
     The ACL is a comma-separated list of user and group names. The user and
     group list is separated by a blank. For e.g. "alice,bob users,wheel".
     A special value of "*" means all users are allowed.</description>
   </property>
 
   <property>
-    <name>security.client.resourcemanager.protocol.acl</name>
+    <name>security.applicationclient.protocol.acl</name>
     <value>*</value>
-    <description>ACL for ClientRMProtocol, used by the ResourceManager 
+    <description>ACL for ApplicationClientProtocol, used by the ResourceManager 
     and applications submission clients to communicate with each other.
     The ACL is a comma-separated list of user and group names. The user and
     group list is separated by a blank. For e.g. "alice,bob users,wheel".
@@ -167,9 +167,9 @@
   </property>
 
   <property>
-    <name>security.applicationmaster.resourcemanager.protocol.acl</name>
+    <name>security.applicationmaster.protocol.acl</name>
     <value>*</value>
-    <description>ACL for AMRMProtocol, used by the ResourceManager 
+    <description>ACL for ApplicationMasterProtocol, used by the ResourceManager 
     and ApplicationMasters to communicate with each other.
     The ACL is a comma-separated list of user and group names. The user and
     group list is separated by a blank. For e.g. "alice,bob users,wheel".
@@ -177,9 +177,9 @@
   </property>
 
   <property>
-    <name>security.containermanager.protocol.acl</name>
+    <name>security.containermanagement.protocol.acl</name>
     <value>*</value>
-    <description>ACL for ContainerManager protocol, used by the NodeManager 
+    <description>ACL for ContainerManagementProtocol protocol, used by the NodeManager 
     and ApplicationMasters to communicate with each other.
     The ACL is a comma-separated list of user and group names. The user and
     group list is separated by a blank. For e.g. "alice,bob users,wheel".

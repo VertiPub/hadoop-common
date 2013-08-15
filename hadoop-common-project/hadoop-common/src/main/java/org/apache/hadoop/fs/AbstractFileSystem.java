@@ -85,14 +85,20 @@ public abstract class AbstractFileSystem {
   }
   
   /**
-   * Prohibits names which contain a ".", "..", ":" or "/" 
+   * Returns true if the specified string is considered valid in the path part
+   * of a URI by this file system.  The default implementation enforces the rules
+   * of HDFS, but subclasses may override this method to implement specific
+   * validation rules for specific file systems.
+   * 
+   * @param src String source filename to check, path part of the URI
+   * @return boolean true if the specified string is considered valid
    */
-  private static boolean isValidName(String src) {
-    // Check for ".." "." ":" "/"
+  public boolean isValidName(String src) {
+    // Prohibit ".." "." and anything containing ":"
     StringTokenizer tokens = new StringTokenizer(src, Path.SEPARATOR);
     while(tokens.hasMoreTokens()) {
       String element = tokens.nextToken();
-      if (element.equals("target/generated-sources") ||
+      if (element.equals("..") ||
           element.equals(".")  ||
           (element.indexOf(":") >= 0)) {
         return false;
@@ -723,6 +729,7 @@ public abstract class AbstractFileSystem {
   
   /**
    * Returns true if the file system supports symlinks, false otherwise.
+   * @return true if filesystem supports symlinks
    */
   public boolean supportsSymlinks() {
     return false;
@@ -738,8 +745,9 @@ public abstract class AbstractFileSystem {
   }
 
   /**
-   * The specification of this method matches that of  
-   * {@link FileContext#getLinkTarget(Path)};
+   * Partially resolves the path. This is used during symlink resolution in
+   * {@link FSLinkResolver}, and differs from the similarly named method
+   * {@link FileContext#getLinkTarget(Path)}.
    */
   public Path getLinkTarget(final Path f) throws IOException {
     /* We should never get here. Any file system that threw an

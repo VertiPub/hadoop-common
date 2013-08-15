@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -39,6 +40,7 @@ import org.apache.hadoop.mapreduce.v2.api.records.AMInfo;
 import org.apache.hadoop.mapreduce.v2.api.records.JobId;
 import org.apache.hadoop.mapreduce.v2.api.records.JobReport;
 import org.apache.hadoop.mapreduce.v2.api.records.JobState;
+import org.apache.hadoop.mapreduce.v2.api.records.Phase;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskAttemptCompletionEvent;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskAttemptId;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskAttemptReport;
@@ -61,18 +63,19 @@ import org.apache.hadoop.mapreduce.v2.app.speculate.SpeculatorEvent;
 import org.apache.hadoop.mapreduce.v2.app.speculate.TaskRuntimeEstimator;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authorize.AccessControlList;
-import org.apache.hadoop.yarn.Clock;
-import org.apache.hadoop.yarn.ClusterInfo;
-import org.apache.hadoop.yarn.SystemClock;
+import org.apache.hadoop.service.CompositeService;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.NodeId;
+import org.apache.hadoop.yarn.api.records.Token;
 import org.apache.hadoop.yarn.event.AsyncDispatcher;
 import org.apache.hadoop.yarn.event.EventHandler;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.service.CompositeService;
+import org.apache.hadoop.yarn.security.client.ClientToAMTokenSecretManager;
+import org.apache.hadoop.yarn.util.Clock;
+import org.apache.hadoop.yarn.util.SystemClock;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -639,6 +642,11 @@ public class TestRuntimeEstimators {
     }
 
     @Override
+    public Phase getPhase() {
+      throw new UnsupportedOperationException("Not supported yet.");
+    }
+
+    @Override
     public TaskAttemptState getState() {
       if (overridingState != null) {
         return overridingState;
@@ -783,14 +791,9 @@ public class TestRuntimeEstimators {
     private final Map<JobId, Job> allJobs;
 
     MyAppContext(int numberMaps, int numberReduces) {
-      myApplicationID = recordFactory.newRecordInstance(ApplicationId.class);
-      myApplicationID.setClusterTimestamp(clock.getTime());
-      myApplicationID.setId(1);
+      myApplicationID = ApplicationId.newInstance(clock.getTime(), 1);
 
-      myAppAttemptID = recordFactory
-          .newRecordInstance(ApplicationAttemptId.class);
-      myAppAttemptID.setApplicationId(myApplicationID);
-      myAppAttemptID.setAttemptId(0);
+      myAppAttemptID = ApplicationAttemptId.newInstance(myApplicationID, 0);
       myJobID = recordFactory.newRecordInstance(JobId.class);
       myJobID.setAppId(myApplicationID);
 
@@ -848,6 +851,16 @@ public class TestRuntimeEstimators {
     @Override
     public ClusterInfo getClusterInfo() {
       return new ClusterInfo();
+    }
+
+    @Override
+    public Set<String> getBlacklistedNodes() {
+      return null;
+    }
+    
+    @Override
+    public ClientToAMTokenSecretManager getClientToAMTokenSecretManager() {
+      return null;
     }
   }
 }

@@ -23,6 +23,7 @@ import static org.jboss.netty.handler.codec.http.HttpHeaders.Names.CONTENT_TYPE;
 import static org.jboss.netty.handler.codec.http.HttpMethod.GET;
 import static org.jboss.netty.handler.codec.http.HttpResponseStatus.BAD_REQUEST;
 import static org.jboss.netty.handler.codec.http.HttpResponseStatus.FORBIDDEN;
+import static org.jboss.netty.handler.codec.http.HttpResponseStatus.HTTP_VERSION_NOT_SUPPORTED;
 import static org.jboss.netty.handler.codec.http.HttpResponseStatus.INTERNAL_SERVER_ERROR;
 import static org.jboss.netty.handler.codec.http.HttpResponseStatus.METHOD_NOT_ALLOWED;
 import static org.jboss.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
@@ -58,9 +59,9 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.DataInputByteBuffer;
 import org.apache.hadoop.io.DataOutputBuffer;
 import org.apache.hadoop.io.ReadaheadPool;
+import org.apache.hadoop.io.SecureIOUtils;
 import org.apache.hadoop.mapreduce.MRConfig;
 import org.apache.hadoop.mapreduce.security.SecureShuffleUtils;
-import org.apache.hadoop.security.ssl.SSLFactory;
 import org.apache.hadoop.mapreduce.security.token.JobTokenIdentifier;
 import org.apache.hadoop.mapreduce.security.token.JobTokenSecretManager;
 import org.apache.hadoop.mapreduce.task.reduce.ShuffleHeader;
@@ -71,14 +72,15 @@ import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
 import org.apache.hadoop.metrics2.lib.MutableCounterInt;
 import org.apache.hadoop.metrics2.lib.MutableCounterLong;
 import org.apache.hadoop.metrics2.lib.MutableGaugeInt;
+import org.apache.hadoop.security.ssl.SSLFactory;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.AuxServices;
+import org.apache.hadoop.yarn.server.api.ApplicationInitializationContext;
+import org.apache.hadoop.yarn.server.api.ApplicationTerminationContext;
+import org.apache.hadoop.yarn.server.api.AuxiliaryService;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.ContainerLocalizer;
-import org.apache.hadoop.yarn.service.AbstractService;
 import org.apache.hadoop.yarn.util.ConverterUtils;
-import org.apache.hadoop.yarn.util.Records;
 import org.jboss.netty.bootstrap.ServerBootstrap;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
@@ -88,6 +90,7 @@ import org.jboss.netty.channel.ChannelFutureListener;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.ChannelPipeline;
 import org.jboss.netty.channel.ChannelPipelineFactory;
+import org.jboss.netty.channel.ChannelStateEvent;
 import org.jboss.netty.channel.Channels;
 import org.jboss.netty.channel.ExceptionEvent;
 import org.jboss.netty.channel.MessageEvent;
@@ -111,8 +114,7 @@ import org.jboss.netty.util.CharsetUtil;
 import com.google.common.base.Charsets;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
-public class ShuffleHandler extends AbstractService 
-    implements AuxServices.AuxiliaryService {
+public class ShuffleHandler extends AuxiliaryService {
 
   private static final Log LOG = LogFactory.getLog(ShuffleHandler.class);
   
@@ -121,7 +123,7 @@ public class ShuffleHandler extends AbstractService
 
   public static final String SHUFFLE_READAHEAD_BYTES = "mapreduce.shuffle.readahead.bytes";
   public static final int DEFAULT_SHUFFLE_READAHEAD_BYTES = 4 * 1024 * 1024;
-
+  
   // pattern to identify errors related to the client closing the socket early
   // idea borrowed from Netty SslHandler
   private static final Pattern IGNORABLE_ERROR_MESSAGE = Pattern.compile(
@@ -133,15 +135,15 @@ public class ShuffleHandler extends AbstractService
   private final ChannelGroup accepted = new DefaultChannelGroup();
   protected HttpPipelineFactory pipelineFact;
   private int sslFileBufferSize;
-
+  
   /**
    * Should the shuffle use posix_fadvise calls to manage the OS cache during
    * sendfile
    */
   private boolean manageOsCache;
   private int readaheadLength;
+  private int maxShuffleConnections;
   private ReadaheadPool readaheadPool = ReadaheadPool.getInstance();
-   
 
   public static final String MAPREDUCE_SHUFFLE_SERVICEID =
       "mapreduce.shuffle";
@@ -152,12 +154,15 @@ public class ShuffleHandler extends AbstractService
     new JobTokenSecretManager();
 
   public static final String SHUFFLE_PORT_CONFIG_KEY = "mapreduce.shuffle.port";
-  public static final int DEFAULT_SHUFFLE_PORT = 8080;
+  public static final int DEFAULT_SHUFFLE_PORT = 13562;
 
   public static final String SUFFLE_SSL_FILE_BUFFER_SIZE_KEY =
     "mapreduce.shuffle.ssl.file.buffer.size";
 
   public static final int DEFAULT_SUFFLE_SSL_FILE_BUFFER_SIZE = 60 * 1024;
+
+  public static final String MAX_SHUFFLE_CONNECTIONS = "mapreduce.shuffle.max.connections";
+  public static final int DEFAULT_MAX_SHUFFLE_CONNECTIONS = 0; // 0 implies no limit
 
   @Metrics(about="Shuffle output metrics", context="mapred")
   static class ShuffleMetrics implements ChannelFutureListener {
@@ -240,7 +245,11 @@ public class ShuffleHandler extends AbstractService
   }
 
   @Override
-  public void initApp(String user, ApplicationId appId, ByteBuffer secret) {
+  public void initializeApplication(ApplicationInitializationContext context) {
+
+    String user = context.getUser();
+    ApplicationId appId = context.getApplicationId();
+    ByteBuffer secret = context.getApplicationDataForService();
     // TODO these bytes should be versioned
     try {
       Token<JobTokenIdentifier> jt = deserializeServiceData(secret);
@@ -256,20 +265,24 @@ public class ShuffleHandler extends AbstractService
   }
 
   @Override
-  public void stopApp(ApplicationId appId) {
+  public void stopApplication(ApplicationTerminationContext context) {
+    ApplicationId appId = context.getApplicationId();
     JobID jobId = new JobID(Long.toString(appId.getClusterTimestamp()), appId.getId());
     secretManager.removeTokenForJob(jobId.toString());
     userRsrc.remove(jobId.toString());
   }
 
   @Override
-  public synchronized void init(Configuration conf) {
+  protected void serviceInit(Configuration conf) throws Exception {
     manageOsCache = conf.getBoolean(SHUFFLE_MANAGE_OS_CACHE,
         DEFAULT_SHUFFLE_MANAGE_OS_CACHE);
 
     readaheadLength = conf.getInt(SHUFFLE_READAHEAD_BYTES,
         DEFAULT_SHUFFLE_READAHEAD_BYTES);
     
+    maxShuffleConnections = conf.getInt(MAX_SHUFFLE_CONNECTIONS, 
+                                        DEFAULT_MAX_SHUFFLE_CONNECTIONS);
+
     ThreadFactory bossFactory = new ThreadFactoryBuilder()
       .setNameFormat("ShuffleHandler Netty Boss #%d")
       .build();
@@ -280,12 +293,12 @@ public class ShuffleHandler extends AbstractService
     selector = new NioServerSocketChannelFactory(
         Executors.newCachedThreadPool(bossFactory),
         Executors.newCachedThreadPool(workerFactory));
-    super.init(new Configuration(conf));
+    super.serviceInit(new Configuration(conf));
   }
 
   // TODO change AbstractService to throw InterruptedException
   @Override
-  public synchronized void start() {
+  protected void serviceStart() throws Exception {
     Configuration conf = getConfig();
     ServerBootstrap bootstrap = new ServerBootstrap(selector);
     try {
@@ -301,23 +314,27 @@ public class ShuffleHandler extends AbstractService
     conf.set(SHUFFLE_PORT_CONFIG_KEY, Integer.toString(port));
     pipelineFact.SHUFFLE.setPort(port);
     LOG.info(getName() + " listening on port " + port);
-    super.start();
+    super.serviceStart();
 
     sslFileBufferSize = conf.getInt(SUFFLE_SSL_FILE_BUFFER_SIZE_KEY,
                                     DEFAULT_SUFFLE_SSL_FILE_BUFFER_SIZE);
   }
 
   @Override
-  public synchronized void stop() {
+  protected void serviceStop() throws Exception {
     accepted.close().awaitUninterruptibly(10, TimeUnit.SECONDS);
-    ServerBootstrap bootstrap = new ServerBootstrap(selector);
-    bootstrap.releaseExternalResources();
-    pipelineFact.destroy();
-    super.stop();
+    if (selector != null) {
+      ServerBootstrap bootstrap = new ServerBootstrap(selector);
+      bootstrap.releaseExternalResources();
+    }
+    if (pipelineFact != null) {
+      pipelineFact.destroy();
+    }
+    super.serviceStop();
   }
 
   @Override
-  public synchronized ByteBuffer getMeta() {
+  public synchronized ByteBuffer getMetaData() {
     try {
       return serializeMetaData(port); 
     } catch (IOException e) {
@@ -400,12 +417,34 @@ public class ShuffleHandler extends AbstractService
     }
 
     @Override
+    public void channelOpen(ChannelHandlerContext ctx, ChannelStateEvent evt) 
+        throws Exception {
+      if ((maxShuffleConnections > 0) && (accepted.size() >= maxShuffleConnections)) {
+        LOG.info(String.format("Current number of shuffle connections (%d) is " + 
+            "greater than or equal to the max allowed shuffle connections (%d)", 
+            accepted.size(), maxShuffleConnections));
+        evt.getChannel().close();
+        return;
+      }
+      accepted.add(evt.getChannel());
+      super.channelOpen(ctx, evt);
+     
+    }
+
+    @Override
     public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt)
         throws Exception {
       HttpRequest request = (HttpRequest) evt.getMessage();
       if (request.getMethod() != GET) {
           sendError(ctx, METHOD_NOT_ALLOWED);
           return;
+      }
+      // Check whether the shuffle version is compatible
+      if (!ShuffleHeader.DEFAULT_HTTP_HEADER_NAME.equals(
+          request.getHeader(ShuffleHeader.HTTP_HEADER_NAME))
+          || !ShuffleHeader.DEFAULT_HTTP_HEADER_VERSION.equals(
+              request.getHeader(ShuffleHeader.HTTP_HEADER_VERSION))) {
+        sendError(ctx, "Incompatible shuffle request version", BAD_REQUEST);
       }
       final Map<String,List<String>> q =
         new QueryStringDecoder(request.getUri()).getParameters();
@@ -468,8 +507,14 @@ public class ShuffleHandler extends AbstractService
             return;
           }
         } catch (IOException e) {
-          LOG.error("Shuffle error ", e);
-          sendError(ctx, e.getMessage(), INTERNAL_SERVER_ERROR);
+          LOG.error("Shuffle error :", e);
+          StringBuffer sb = new StringBuffer(e.getMessage());
+          Throwable t = e;
+          while (t.getCause() != null) {
+            sb.append(t.getCause().getMessage());
+            t = t.getCause();
+          }
+          sendError(ctx,sb.toString() , INTERNAL_SERVER_ERROR);
           return;
         }
       }
@@ -506,6 +551,11 @@ public class ShuffleHandler extends AbstractService
         SecureShuffleUtils.generateHash(urlHashStr.getBytes(Charsets.UTF_8), 
             tokenSecret);
       response.setHeader(SecureShuffleUtils.HTTP_HEADER_REPLY_URL_HASH, reply);
+      // Put shuffle version into http header
+      response.setHeader(ShuffleHeader.HTTP_HEADER_NAME,
+          ShuffleHeader.DEFAULT_HTTP_HEADER_NAME);
+      response.setHeader(ShuffleHeader.HTTP_HEADER_VERSION,
+          ShuffleHeader.DEFAULT_HTTP_HEADER_VERSION);
       if (LOG.isDebugEnabled()) {
         int len = reply.length();
         LOG.debug("Fetcher request verfied. enc_str=" + enc_str + ";reply=" +
@@ -520,22 +570,25 @@ public class ShuffleHandler extends AbstractService
       // $x/$user/appcache/$appId/output/$mapId
       // TODO: Once Shuffle is out of NM, this can use MR APIs to convert between App and Job
       JobID jobID = JobID.forName(jobId);
-      ApplicationId appID = Records.newRecord(ApplicationId.class);
-      appID.setClusterTimestamp(Long.parseLong(jobID.getJtIdentifier()));
-      appID.setId(jobID.getId());
+      ApplicationId appID = ApplicationId.newInstance(
+          Long.parseLong(jobID.getJtIdentifier()), jobID.getId());
       final String base =
           ContainerLocalizer.USERCACHE + "/" + user + "/"
               + ContainerLocalizer.APPCACHE + "/"
               + ConverterUtils.toString(appID) + "/output" + "/" + mapId;
-      LOG.debug("DEBUG0 " + base);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("DEBUG0 " + base);
+      }
       // Index file
       Path indexFileName = lDirAlloc.getLocalPathToRead(
           base + "/file.out.index", conf);
       // Map-output file
       Path mapOutputFileName = lDirAlloc.getLocalPathToRead(
           base + "/file.out", conf);
-      LOG.debug("DEBUG1 " + base + " : " + mapOutputFileName + " : " +
-          indexFileName);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("DEBUG1 " + base + " : " + mapOutputFileName + " : "
+            + indexFileName);
+      }
       final IndexRecord info = 
         indexCache.getIndexInformation(mapId, reduce, indexFileName, user);
       final ShuffleHeader header =
@@ -546,7 +599,7 @@ public class ShuffleHandler extends AbstractService
       final File spillfile = new File(mapOutputFileName.toString());
       RandomAccessFile spill;
       try {
-        spill = new RandomAccessFile(spillfile, "r");
+        spill = SecureIOUtils.openForRandomRead(spillfile, "r", user, null);
       } catch (FileNotFoundException e) {
         LOG.info(spillfile + " not found");
         return null;
@@ -587,6 +640,11 @@ public class ShuffleHandler extends AbstractService
         HttpResponseStatus status) {
       HttpResponse response = new DefaultHttpResponse(HTTP_1_1, status);
       response.setHeader(CONTENT_TYPE, "text/plain; charset=UTF-8");
+      // Put shuffle version into http header
+      response.setHeader(ShuffleHeader.HTTP_HEADER_NAME,
+          ShuffleHeader.DEFAULT_HTTP_HEADER_NAME);
+      response.setHeader(ShuffleHeader.HTTP_HEADER_VERSION,
+          ShuffleHeader.DEFAULT_HTTP_HEADER_VERSION);
       response.setContent(
         ChannelBuffers.copiedBuffer(message, CharsetUtil.UTF_8));
 
@@ -620,6 +678,5 @@ public class ShuffleHandler extends AbstractService
         sendError(ctx, INTERNAL_SERVER_ERROR);
       }
     }
-
   }
 }

@@ -23,12 +23,12 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.security.PrivilegedExceptionAction;
-import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.regex.Pattern;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.classification.InterfaceAudience.LimitedPrivate;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.FileStatus;
@@ -36,23 +36,22 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Options.Rename;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.RunJar;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
-import org.apache.hadoop.yarn.util.ConverterUtils;
 
 /**
  * Download a single URL to the local disk.
  *
  */
+@LimitedPrivate({"YARN", "MapReduce"})
 public class FSDownload implements Callable<Path> {
 
   private static final Log LOG = LogFactory.getLog(FSDownload.class);
-  
-  private Random rand;
+
   private FileContext files;
   private final UserGroupInformation userUgi;
   private Configuration conf;
@@ -71,13 +70,12 @@ public class FSDownload implements Callable<Path> {
 
 
   public FSDownload(FileContext files, UserGroupInformation ugi, Configuration conf,
-      Path destDirPath, LocalResource resource, Random rand) {
+      Path destDirPath, LocalResource resource) {
     this.conf = conf;
     this.destDirPath = destDirPath;
     this.files = files;
     this.userUgi = ugi;
     this.resource = resource;
-    this.rand = rand;
   }
 
   LocalResource getResource() {
@@ -251,6 +249,12 @@ public class FSDownload implements Callable<Path> {
       }
       break;
     }
+    if(localrsrc.isFile()){
+      try {
+        files.delete(new Path(localrsrc.toString()), false);
+      } catch (IOException ignore) {
+      }
+    }
     return 0;
     // TODO Should calculate here before returning
     //return FileUtil.getDU(destDir);
@@ -264,43 +268,36 @@ public class FSDownload implements Callable<Path> {
     } catch (URISyntaxException e) {
       throw new IOException("Invalid resource", e);
     }
-
-    Path tmp;
-    do {
-      tmp = new Path(destDirPath, String.valueOf(rand.nextLong()));
-    } while (files.util().exists(tmp));
-    destDirPath = tmp;
-
     createDir(destDirPath, cachePerms);
     final Path dst_work = new Path(destDirPath + "_tmp");
     createDir(dst_work, cachePerms);
-
     Path dFinal = files.makeQualified(new Path(dst_work, sCopy.getName()));
     try {
-      Path dTmp = null == userUgi
-        ? files.makeQualified(copy(sCopy, dst_work))
-        : userUgi.doAs(new PrivilegedExceptionAction<Path>() {
+      Path dTmp = null == userUgi ? files.makeQualified(copy(sCopy, dst_work))
+          : userUgi.doAs(new PrivilegedExceptionAction<Path>() {
             public Path run() throws Exception {
               return files.makeQualified(copy(sCopy, dst_work));
             };
           });
       Pattern pattern = null;
       String p = resource.getPattern();
-      if(p != null) {
+      if (p != null) {
         pattern = Pattern.compile(p);
       }
       unpack(new File(dTmp.toUri()), new File(dFinal.toUri()), pattern);
       changePermissions(dFinal.getFileSystem(conf), dFinal);
       files.rename(dst_work, destDirPath, Rename.OVERWRITE);
     } catch (Exception e) {
-      try { files.delete(destDirPath, true); } catch (IOException ignore) { }
+      try {
+        files.delete(destDirPath, true);
+      } catch (IOException ignore) {
+      }
       throw e;
     } finally {
       try {
         files.delete(dst_work, true);
-      } catch (FileNotFoundException ignore) { }
-      // clear ref to internal var
-      rand = null;
+      } catch (FileNotFoundException ignore) {
+      }
       conf = null;
       resource = null;
     }

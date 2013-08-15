@@ -28,12 +28,15 @@ import org.apache.hadoop.metrics2.MetricsInfo;
  */
 @InterfaceAudience.Private
 public enum JvmMetricsInfo implements MetricsInfo {
-  JvmMetrics("JVM related metrics etc."), // record infoß
+  JvmMetrics("JVM related metrics etc."), // record info
   // metrics
   MemNonHeapUsedM("Non-heap memory used in MB"),
   MemNonHeapCommittedM("Non-heap memory committed in MB"),
+  MemNonHeapMaxM("Non-heap memory max in MB"),
   MemHeapUsedM("Heap memory used in MB"),
   MemHeapCommittedM("Heap memory committed in MB"),
+  MemHeapMaxM("Heap memory max in MB"),
+  MemMaxM("Max memory size in MB"),
   GcCount("Total GC count"),
   GcTimeMillis("Total GC time in milliseconds"),
   ThreadsNew("Number of new threads"),

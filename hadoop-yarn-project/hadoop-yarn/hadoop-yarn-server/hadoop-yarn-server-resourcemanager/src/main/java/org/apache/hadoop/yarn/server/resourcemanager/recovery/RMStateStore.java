@@ -18,25 +18,37 @@
 
 package org.apache.hadoop.yarn.server.resourcemanager.recovery;
 
+import java.nio.ByteBuffer;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.io.DataOutputBuffer;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.security.token.delegation.DelegationKey;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
 import org.apache.hadoop.yarn.api.records.Container;
-import org.apache.hadoop.yarn.api.records.impl.pb.ApplicationAttemptStateDataPBImpl;
-import org.apache.hadoop.yarn.api.records.impl.pb.ApplicationStateDataPBImpl;
 import org.apache.hadoop.yarn.api.records.impl.pb.ApplicationSubmissionContextPBImpl;
 import org.apache.hadoop.yarn.event.AsyncDispatcher;
 import org.apache.hadoop.yarn.event.Dispatcher;
 import org.apache.hadoop.yarn.event.EventHandler;
+import org.apache.hadoop.yarn.security.AMRMTokenIdentifier;
+import org.apache.hadoop.yarn.security.client.ClientToAMTokenIdentifier;
+import org.apache.hadoop.yarn.security.client.RMDelegationTokenIdentifier;
+import org.apache.hadoop.yarn.server.resourcemanager.recovery.records.impl.pb.ApplicationAttemptStateDataPBImpl;
+import org.apache.hadoop.yarn.server.resourcemanager.recovery.records.impl.pb.ApplicationStateDataPBImpl;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMApp;
+import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMAppStoredEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttempt;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.event.RMAppAttemptStoredEvent;
 
@@ -50,25 +62,31 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.event.RMAppAt
  */
 public abstract class RMStateStore {
   public static final Log LOG = LogFactory.getLog(RMStateStore.class);
-  
+
   /**
    * State of an application attempt
    */
   public static class ApplicationAttemptState {
     final ApplicationAttemptId attemptId;
     final Container masterContainer;
-    
+    final Credentials appAttemptTokens;
+
     public ApplicationAttemptState(ApplicationAttemptId attemptId,
-                                   Container masterContainer) {
+        Container masterContainer,
+        Credentials appAttemptTokens) {
       this.attemptId = attemptId;
       this.masterContainer = masterContainer;
+      this.appAttemptTokens = appAttemptTokens;
     }
-    
+
     public Container getMasterContainer() {
       return masterContainer;
     }
     public ApplicationAttemptId getAttemptId() {
       return attemptId;
+    }
+    public Credentials getAppAttemptTokens() {
+      return appAttemptTokens;
     }
   }
   
@@ -78,12 +96,15 @@ public abstract class RMStateStore {
   public static class ApplicationState {
     final ApplicationSubmissionContext context;
     final long submitTime;
+    final String user;
     Map<ApplicationAttemptId, ApplicationAttemptState> attempts =
                   new HashMap<ApplicationAttemptId, ApplicationAttemptState>();
     
-    ApplicationState(long submitTime, ApplicationSubmissionContext context) {
+    ApplicationState(long submitTime, ApplicationSubmissionContext context,
+        String user) {
       this.submitTime = submitTime;
       this.context = context;
+      this.user = user;
     }
 
     public ApplicationId getAppId() {
@@ -101,17 +122,49 @@ public abstract class RMStateStore {
     public ApplicationAttemptState getAttempt(ApplicationAttemptId attemptId) {
       return attempts.get(attemptId);
     }
+    public String getUser() {
+      return user;
+    }
   }
-  
+
+  public static class RMDTSecretManagerState {
+    // DTIdentifier -> renewDate
+    Map<RMDelegationTokenIdentifier, Long> delegationTokenState =
+        new HashMap<RMDelegationTokenIdentifier, Long>();
+
+    Set<DelegationKey> masterKeyState =
+        new HashSet<DelegationKey>();
+
+    int dtSequenceNumber = 0;
+
+    public Map<RMDelegationTokenIdentifier, Long> getTokenState() {
+      return delegationTokenState;
+    }
+
+    public Set<DelegationKey> getMasterKeyState() {
+      return masterKeyState;
+    }
+
+    public int getDTSequenceNumber() {
+      return dtSequenceNumber;
+    }
+  }
+
   /**
    * State of the ResourceManager
    */
   public static class RMState {
-    Map<ApplicationId, ApplicationState> appState = 
-                                new HashMap<ApplicationId, ApplicationState>();
-    
+    Map<ApplicationId, ApplicationState> appState =
+        new HashMap<ApplicationId, ApplicationState>();
+
+    RMDTSecretManagerState rmSecretManagerState = new RMDTSecretManagerState();
+
     public Map<ApplicationId, ApplicationState> getApplicationState() {
       return appState;
+    }
+
+    public RMDTSecretManagerState getRMDTSecretManagerState() {
+      return rmSecretManagerState;
     }
   }
     
@@ -166,21 +219,19 @@ public abstract class RMStateStore {
   public abstract RMState loadState() throws Exception;
   
   /**
-   * Blocking API
+   * Non-Blocking API
    * ResourceManager services use this to store the application's state
-   * This must not be called on the dispatcher thread
+   * This does not block the dispatcher threads
+   * RMAppStoredEvent will be sent on completion to notify the RMApp
    */
-  public synchronized void storeApplication(RMApp app) throws Exception {
+  @SuppressWarnings("unchecked")
+  public synchronized void storeApplication(RMApp app) {
     ApplicationSubmissionContext context = app
                                             .getApplicationSubmissionContext();
     assert context instanceof ApplicationSubmissionContextPBImpl;
-
-    ApplicationStateDataPBImpl appStateData = new ApplicationStateDataPBImpl();
-    appStateData.setSubmitTime(app.getSubmitTime());
-    appStateData.setApplicationSubmissionContext(context);
-
-    LOG.info("Storing info for app: " + context.getApplicationId());
-    storeApplicationState(app.getApplicationId().toString(), appStateData);
+    ApplicationState appState = new ApplicationState(
+        app.getSubmitTime(), context, app.getUser());
+    dispatcher.getEventHandler().handle(new RMStateStoreAppEvent(appState));
   }
     
   /**
@@ -200,10 +251,14 @@ public abstract class RMStateStore {
    * RMAppAttemptStoredEvent will be sent on completion to notify the RMAppAttempt
    */
   public synchronized void storeApplicationAttempt(RMAppAttempt appAttempt) {
-    ApplicationAttemptState attemptState = new ApplicationAttemptState(
-                appAttempt.getAppAttemptId(), appAttempt.getMasterContainer());
+    Credentials credentials = getTokensFromAppAttempt(appAttempt);
+
+    ApplicationAttemptState attemptState =
+        new ApplicationAttemptState(appAttempt.getAppAttemptId(),
+          appAttempt.getMasterContainer(), credentials);
+
     dispatcher.getEventHandler().handle(
-                                new RMStateStoreAppAttemptEvent(attemptState));
+      new RMStateStoreAppAttemptEvent(attemptState));
   }
   
   /**
@@ -214,8 +269,76 @@ public abstract class RMStateStore {
   protected abstract void storeApplicationAttemptState(String attemptId,
                             ApplicationAttemptStateDataPBImpl attemptStateData) 
                             throws Exception;
-  
-  
+
+
+  /**
+   * RMDTSecretManager call this to store the state of a delegation token
+   * and sequence number
+   */
+  public synchronized void storeRMDelegationTokenAndSequenceNumber(
+      RMDelegationTokenIdentifier rmDTIdentifier, Long renewDate,
+      int latestSequenceNumber) throws Exception {
+    storeRMDelegationTokenAndSequenceNumberState(rmDTIdentifier, renewDate,
+      latestSequenceNumber);
+  }
+
+  /**
+   * Blocking API
+   * Derived classes must implement this method to store the state of
+   * RMDelegationToken and sequence number
+   */
+  protected abstract void storeRMDelegationTokenAndSequenceNumberState(
+      RMDelegationTokenIdentifier rmDTIdentifier, Long renewDate,
+      int latestSequenceNumber) throws Exception;
+
+  /**
+   * RMDTSecretManager call this to remove the state of a delegation token
+   */
+  public synchronized void removeRMDelegationToken(
+      RMDelegationTokenIdentifier rmDTIdentifier, int sequenceNumber)
+      throws Exception {
+    removeRMDelegationTokenState(rmDTIdentifier);
+  }
+
+  /**
+   * Blocking API
+   * Derived classes must implement this method to remove the state of RMDelegationToken
+   */
+  protected abstract void removeRMDelegationTokenState(
+      RMDelegationTokenIdentifier rmDTIdentifier) throws Exception;
+
+  /**
+   * RMDTSecretManager call this to store the state of a master key
+   */
+  public synchronized void storeRMDTMasterKey(DelegationKey delegationKey)
+      throws Exception {
+    storeRMDTMasterKeyState(delegationKey);
+  }
+
+  /**
+   * Blocking API
+   * Derived classes must implement this method to store the state of
+   * DelegationToken Master Key
+   */
+  protected abstract void storeRMDTMasterKeyState(DelegationKey delegationKey)
+      throws Exception;
+
+  /**
+   * RMDTSecretManager call this to remove the state of a master key
+   */
+  public synchronized void removeRMDTMasterKey(DelegationKey delegationKey)
+      throws Exception {
+    removeRMDTMasterKeyState(delegationKey);
+  }
+
+  /**
+   * Blocking API
+   * Derived classes must implement this method to remove the state of
+   * DelegationToken Master Key
+   */
+  protected abstract void removeRMDTMasterKeyState(DelegationKey delegationKey)
+      throws Exception;
+
   /**
    * Non-blocking API
    * ResourceManager services call this to remove an application from the state
@@ -225,10 +348,13 @@ public abstract class RMStateStore {
    */
   public synchronized void removeApplication(RMApp app) {
     ApplicationState appState = new ApplicationState(
-        app.getSubmitTime(), app.getApplicationSubmissionContext());
+            app.getSubmitTime(), app.getApplicationSubmissionContext(),
+            app.getUser());
     for(RMAppAttempt appAttempt : app.getAppAttempts().values()) {
-      ApplicationAttemptState attemptState = new ApplicationAttemptState(
-                appAttempt.getAppAttemptId(), appAttempt.getMasterContainer());
+      Credentials credentials = getTokensFromAppAttempt(appAttempt);
+      ApplicationAttemptState attemptState =
+          new ApplicationAttemptState(appAttempt.getAppAttemptId(),
+            appAttempt.getMasterContainer(), credentials);
       appState.attempts.put(attemptState.getAttemptId(), attemptState);
     }
     
@@ -250,23 +376,76 @@ public abstract class RMStateStore {
    */
   protected abstract void removeApplicationState(ApplicationState appState) 
                                                              throws Exception;
+
+  // TODO: This should eventually become cluster-Id + "AM_RM_TOKEN_SERVICE". See
+  // YARN-986 
+  public static final Text AM_RM_TOKEN_SERVICE = new Text(
+    "AM_RM_TOKEN_SERVICE");
   
+  private Credentials getTokensFromAppAttempt(RMAppAttempt appAttempt) {
+    Credentials credentials = new Credentials();
+    Token<AMRMTokenIdentifier> appToken = appAttempt.getAMRMToken();
+    if(appToken != null){
+      credentials.addToken(AM_RM_TOKEN_SERVICE, appToken);
+    }
+    Token<ClientToAMTokenIdentifier> clientToAMToken =
+        appAttempt.getClientToAMToken();
+    if(clientToAMToken != null){
+      credentials.addToken(clientToAMToken.getService(), clientToAMToken);
+    }
+    return credentials;
+  }
+
   // Dispatcher related code
   
   private synchronized void handleStoreEvent(RMStateStoreEvent event) {
     switch(event.getType()) {
+      case STORE_APP:
+        {
+          ApplicationState apptState =
+              ((RMStateStoreAppEvent) event).getAppState();
+          Exception storedException = null;
+          ApplicationStateDataPBImpl appStateData =
+              new ApplicationStateDataPBImpl();
+          appStateData.setSubmitTime(apptState.getSubmitTime());
+          appStateData.setApplicationSubmissionContext(
+              apptState.getApplicationSubmissionContext());
+          appStateData.setUser(apptState.getUser());
+          ApplicationId appId =
+              apptState.getApplicationSubmissionContext().getApplicationId();
+
+          LOG.info("Storing info for app: " + appId);
+          try {
+            storeApplicationState(appId.toString(), appStateData);
+          } catch (Exception e) {
+            LOG.error("Error storing app: " + appId, e);
+            storedException = e;
+          } finally {
+            notifyDoneStoringApplication(appId, storedException);
+          }
+        }
+        break;
       case STORE_APP_ATTEMPT:
         {
           ApplicationAttemptState attemptState = 
                     ((RMStateStoreAppAttemptEvent) event).getAppAttemptState();
           Exception storedException = null;
-          ApplicationAttemptStateDataPBImpl attemptStateData = 
-                                        new ApplicationAttemptStateDataPBImpl();
-          attemptStateData.setAttemptId(attemptState.getAttemptId());
-          attemptStateData.setMasterContainer(attemptState.getMasterContainer());
 
-          LOG.info("Storing info for attempt: " + attemptState.getAttemptId());
+          Credentials credentials = attemptState.getAppAttemptTokens();
+          ByteBuffer appAttemptTokens = null;
           try {
+            if(credentials != null){
+              DataOutputBuffer dob = new DataOutputBuffer();
+                credentials.writeTokenStorageToStream(dob);
+              appAttemptTokens =
+                  ByteBuffer.wrap(dob.getData(), 0, dob.getLength());
+            }
+            ApplicationAttemptStateDataPBImpl attemptStateData =
+              (ApplicationAttemptStateDataPBImpl) ApplicationAttemptStateDataPBImpl
+                  .newApplicationAttemptStateData(attemptState.getAttemptId(),
+                    attemptState.getMasterContainer(), appAttemptTokens);
+
+            LOG.info("Storing info for attempt: " + attemptState.getAttemptId());
             storeApplicationAttemptState(attemptState.getAttemptId().toString(), 
                                          attemptStateData);
           } catch (Exception e) {
@@ -297,11 +476,25 @@ public abstract class RMStateStore {
         LOG.error("Unknown RMStateStoreEvent type: " + event.getType());
     }
   }
+
+  @SuppressWarnings("unchecked")
+  /**
+   * In (@link handleStoreEvent}, this method is called to notify the
+   * application about operation completion
+   * @param appId id of the application that has been saved
+   * @param storedException the exception that is thrown when storing the
+   * application
+   */
+  private void notifyDoneStoringApplication(ApplicationId appId,
+                                                  Exception storedException) {
+    rmDispatcher.getEventHandler().handle(
+        new RMAppStoredEvent(appId, storedException));
+  }
   
   @SuppressWarnings("unchecked")
   /**
-   * In (@link storeApplicationAttempt}, derived class can call this method to
-   * notify the application attempt about operation completion 
+   * In (@link handleStoreEvent}, this method is called to notify the
+   * application attempt about operation completion
    * @param appAttempt attempt that has been saved
    */
   private void notifyDoneStoringApplicationAttempt(ApplicationAttemptId attemptId,
@@ -321,7 +514,5 @@ public abstract class RMStateStore {
     public void handle(RMStateStoreEvent event) {
       handleStoreEvent(event);
     }
-    
   }
-
 }

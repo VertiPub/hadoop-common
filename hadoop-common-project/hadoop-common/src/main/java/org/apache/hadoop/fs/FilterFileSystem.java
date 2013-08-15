@@ -28,6 +28,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.ContentSummary;
 import org.apache.hadoop.fs.Options.ChecksumOpt;
+import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.util.Progressable;
 
 /****************************************************************
@@ -95,16 +96,18 @@ public class FilterFileSystem extends FileSystem {
   public URI getUri() {
     return fs.getUri();
   }
-
-  /**
-   * Returns a qualified URI whose scheme and authority identify this
-   * FileSystem.
-   */
+  
+  
   @Override
   protected URI getCanonicalUri() {
     return fs.getCanonicalUri();
   }
-  
+
+  @Override
+  protected URI canonicalizeUri(URI uri) {
+    return fs.canonicalizeUri(uri);
+  }
+
   /** Make sure that a path specifies a FileSystem. */
   @Override
   public Path makeQualified(Path path) {
@@ -157,6 +160,11 @@ public class FilterFileSystem extends FileSystem {
   public FSDataOutputStream append(Path f, int bufferSize,
       Progressable progress) throws IOException {
     return fs.append(f, bufferSize, progress);
+  }
+
+  @Override
+  public void concat(Path f, Path[] psrcs) throws IOException {
+    fs.concat(f, psrcs);
   }
 
   @Override
@@ -390,6 +398,32 @@ public class FilterFileSystem extends FileSystem {
     return fs.getFileStatus(f);
   }
 
+  public void createSymlink(final Path target, final Path link,
+      final boolean createParent) throws AccessControlException,
+      FileAlreadyExistsException, FileNotFoundException,
+      ParentNotDirectoryException, UnsupportedFileSystemException, 
+      IOException {
+    fs.createSymlink(target, link, createParent);
+  }
+
+  public FileStatus getFileLinkStatus(final Path f)
+      throws AccessControlException, FileNotFoundException,
+      UnsupportedFileSystemException, IOException {
+    return fs.getFileLinkStatus(f);
+  }
+
+  public boolean supportsSymlinks() {
+    return fs.supportsSymlinks();
+  }
+
+  public Path getLinkTarget(Path f) throws IOException {
+    return fs.getLinkTarget(f);
+  }
+
+  protected Path resolveLink(Path f) throws IOException {
+    return fs.resolveLink(f);
+  }
+
   @Override
   public FileChecksum getFileChecksum(Path f) throws IOException {
     return fs.getFileChecksum(f);
@@ -454,5 +488,23 @@ public class FilterFileSystem extends FileSystem {
   @Override // FileSystem
   public FileSystem[] getChildFileSystems() {
     return new FileSystem[]{fs};
+  }
+
+  @Override // FileSystem
+  public Path createSnapshot(Path path, String snapshotName)
+      throws IOException {
+    return fs.createSnapshot(path, snapshotName);
+  }
+  
+  @Override // FileSystem
+  public void renameSnapshot(Path path, String snapshotOldName,
+      String snapshotNewName) throws IOException {
+    fs.renameSnapshot(path, snapshotOldName, snapshotNewName);
+  }
+  
+  @Override // FileSystem
+  public void deleteSnapshot(Path path, String snapshotName)
+      throws IOException {
+    fs.deleteSnapshot(path, snapshotName);
   }
 }

@@ -50,6 +50,7 @@ import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.util.Apps;
 import org.apache.hadoop.yarn.util.StringHelper;
 import org.apache.hadoop.yarn.util.TrackingUriPlugin;
@@ -66,6 +67,7 @@ public class WebAppProxyServlet extends HttpServlet {
   public static final String PROXY_USER_COOKIE_NAME = "proxy-user";
 
   private final List<TrackingUriPlugin> trackingUriPlugins;
+  private final String rmAppPageUrlBase;
 
   private static class _ implements Hamlet._ {
     //Empty
@@ -91,6 +93,8 @@ public class WebAppProxyServlet extends HttpServlet {
     this.trackingUriPlugins =
         conf.getInstances(YarnConfiguration.YARN_TRACKING_URL_GENERATOR,
             TrackingUriPlugin.class);
+    this.rmAppPageUrlBase = StringHelper.pjoin(
+        YarnConfiguration.getRMWebAppURL(conf), "cluster", "app");
   }
 
   /**
@@ -212,7 +216,8 @@ public class WebAppProxyServlet extends HttpServlet {
     return false;
   }
   
-  private ApplicationReport getApplicationReport(ApplicationId id) throws IOException {
+  private ApplicationReport getApplicationReport(ApplicationId id)
+      throws IOException, YarnException {
     return ((AppReportFetcher) getServletContext()
         .getAttribute(WebAppProxy.FETCHER_ATTRIBUTE)).getApplicationReport(id);
   }
@@ -291,25 +296,10 @@ public class WebAppProxyServlet extends HttpServlet {
       if (original != null) {
         trackingUri = ProxyUriUtils.getUriFromAMUrl(original);
       }
+      // fallback to ResourceManager's app page if no tracking URI provided
       if(original == null || original.equals("N/A")) {
-        String message;
-        switch(applicationReport.getFinalApplicationStatus()) {
-          case FAILED:
-          case KILLED:
-          case SUCCEEDED:
-            message =
-              "The requested application exited before setting a tracking URL.";
-            break;
-          case UNDEFINED:
-            message = "The requested application does not appear to be running "
-              +"yet, and has not set a tracking URL.";
-            break;
-          default:
-            //This should never happen, but just to be safe
-            message = "The requested application has not set a tracking URL.";
-            break;
-        }
-        notFound(resp, message);
+        resp.sendRedirect(resp.encodeRedirectURL(
+            StringHelper.pjoin(rmAppPageUrlBase, id.toString())));
         return;
       }
 
@@ -345,6 +335,8 @@ public class WebAppProxyServlet extends HttpServlet {
 
     } catch(URISyntaxException e) {
       throw new IOException(e); 
+    } catch (YarnException e) {
+      throw new IOException(e);
     }
   }
 }

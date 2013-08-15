@@ -21,7 +21,8 @@ package org.apache.hadoop.yarn.api.records;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Evolving;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
-import org.apache.hadoop.yarn.api.AMRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationMasterProtocol;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p><code>Resource</code> models a set of computer resources in the 
@@ -33,11 +34,20 @@ import org.apache.hadoop.yarn.api.AMRMProtocol;
  * capability to run their component tasks.</p>
  * 
  * @see ResourceRequest
- * @see AMRMProtocol#allocate(org.apache.hadoop.yarn.api.protocolrecords.AllocateRequest)
+ * @see ApplicationMasterProtocol#allocate(org.apache.hadoop.yarn.api.protocolrecords.AllocateRequest)
  */
 @Public
 @Stable
 public abstract class Resource implements Comparable<Resource> {
+
+  @Public
+  @Stable
+  public static Resource newInstance(int memory, int vCores) {
+    Resource resource = Records.newRecord(Resource.class);
+    resource.setMemory(memory);
+    resource.setVirtualCores(vCores);
+    return resource;
+  }
 
   /**
    * Get <em>memory</em> of the resource.

@@ -91,12 +91,26 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.primitives.SignedBytes;
 import com.google.protobuf.BlockingService;
 
 @InterfaceAudience.Private
 public class DFSUtil {
   public static final Log LOG = LogFactory.getLog(DFSUtil.class.getName());
   
+  public static final byte[] EMPTY_BYTES = {};
+
+  /** Compare two byte arrays by lexicographical order. */
+  public static int compareBytes(byte[] left, byte[] right) {
+    if (left == null) {
+      left = EMPTY_BYTES;
+    }
+    if (right == null) {
+      right = EMPTY_BYTES;
+    }
+    return SignedBytes.lexicographicalComparator().compare(left, right);
+  }
+
   private DFSUtil() { /* Hidden constructor */ }
   private static final ThreadLocal<Random> RANDOM = new ThreadLocal<Random>() {
     @Override
@@ -140,7 +154,7 @@ public class DFSUtil {
   /**
    * Comparator for sorting DataNodeInfo[] based on decommissioned/stale states.
    * Decommissioned/stale nodes are moved to the end of the array on sorting
-   * with this compartor.
+   * with this comparator.
    */ 
   @InterfaceAudience.Private 
   public static class DecomStaleComparator implements Comparator<DatanodeInfo> {
@@ -150,7 +164,7 @@ public class DFSUtil {
      * Constructor of DecomStaleComparator
      * 
      * @param interval
-     *          The time invertal for marking datanodes as stale is passed from
+     *          The time interval for marking datanodes as stale is passed from
      *          outside, since the interval may be changed dynamically
      */
     public DecomStaleComparator(long interval) {
@@ -217,8 +231,21 @@ public class DFSUtil {
    * Converts a byte array to a string using UTF8 encoding.
    */
   public static String bytes2String(byte[] bytes) {
+    return bytes2String(bytes, 0, bytes.length);
+  }
+  
+  /**
+   * Decode a specific range of bytes of the given byte array to a string
+   * using UTF8.
+   * 
+   * @param bytes The bytes to be decoded into characters
+   * @param offset The index of the first byte to decode
+   * @param length The number of bytes to decode
+   * @return The decoded string
+   */
+  public static String bytes2String(byte[] bytes, int offset, int length) {
     try {
-      return new String(bytes, "UTF8");
+      return new String(bytes, offset, length, "UTF8");
     } catch(UnsupportedEncodingException e) {
       assert false : "UTF8 encoding is not supported ";
     }
@@ -235,10 +262,11 @@ public class DFSUtil {
   /**
    * Given a list of path components returns a path as a UTF8 String
    */
-  public static String byteArray2String(byte[][] pathComponents) {
-    if (pathComponents.length == 0)
+  public static String byteArray2PathString(byte[][] pathComponents) {
+    if (pathComponents.length == 0) {
       return "";
-    if (pathComponents.length == 1 && pathComponents[0].length == 0) {
+    } else if (pathComponents.length == 1
+        && (pathComponents[0] == null || pathComponents[0].length == 0)) {
       return Path.SEPARATOR;
     }
     StringBuilder result = new StringBuilder();
@@ -249,6 +277,45 @@ public class DFSUtil {
       }
     }
     return result.toString();
+  }
+  
+  /**
+   * Given a list of path components returns a byte array
+   */
+  public static byte[] byteArray2bytes(byte[][] pathComponents) {
+    if (pathComponents.length == 0) {
+      return EMPTY_BYTES;
+    } else if (pathComponents.length == 1
+        && (pathComponents[0] == null || pathComponents[0].length == 0)) {
+      return new byte[]{(byte) Path.SEPARATOR_CHAR};
+    }
+    int length = 0;
+    for (int i = 0; i < pathComponents.length; i++) {
+      length += pathComponents[i].length;
+      if (i < pathComponents.length - 1) {
+        length++; // for SEPARATOR
+      }
+    }
+    byte[] path = new byte[length];
+    int index = 0;
+    for (int i = 0; i < pathComponents.length; i++) {
+      System.arraycopy(pathComponents[i], 0, path, index,
+          pathComponents[i].length);
+      index += pathComponents[i].length;
+      if (i < pathComponents.length - 1) {
+        path[index] = (byte) Path.SEPARATOR_CHAR;
+        index++;
+      }
+    }
+    return path;
+  }
+
+  /** Convert an object representing a path to a string. */
+  public static String path2String(final Object path) {
+    return path == null? null
+        : path instanceof String? (String)path
+        : path instanceof byte[][]? byteArray2PathString((byte[][])path)
+        : path.toString();
   }
 
   /**
@@ -458,7 +525,7 @@ public class DFSUtil {
     
     // Look for configurations of the form <key>[.<nameserviceId>][.<namenodeId>]
     // across all of the configured nameservices and namenodes.
-    Map<String, Map<String, InetSocketAddress>> ret = Maps.newHashMap();
+    Map<String, Map<String, InetSocketAddress>> ret = Maps.newLinkedHashMap();
     for (String nsId : emptyAsSingletonNull(nameserviceIds)) {
       Map<String, InetSocketAddress> isas =
         getAddressesForNameserviceId(conf, nsId, defaultAddress, keys);
@@ -764,6 +831,13 @@ public class DFSUtil {
     
     // Add the default URI if it is an HDFS URI.
     URI defaultUri = FileSystem.getDefaultUri(conf);
+    // checks if defaultUri is ip:port format
+    // and convert it to hostname:port format
+    if (defaultUri != null && (defaultUri.getPort() != -1)) {
+      defaultUri = createUri(defaultUri.getScheme(),
+          NetUtils.createSocketAddr(defaultUri.getHost(), 
+              defaultUri.getPort()));
+    }
     if (defaultUri != null &&
         HdfsConstants.HDFS_URI_SCHEME.equals(defaultUri.getScheme()) &&
         !nonPreferredUris.contains(defaultUri)) {
@@ -921,6 +995,11 @@ public class DFSUtil {
   /** Return remaining as percentage of capacity */
   public static float getPercentRemaining(long remaining, long capacity) {
     return capacity <= 0 ? 0 : (remaining * 100.0f)/capacity; 
+  }
+
+  /** Convert percentage to a string. */
+  public static String percent2String(double percentage) {
+    return StringUtils.format("%.2f%%", percentage);
   }
 
   /**
@@ -1244,5 +1323,21 @@ public class DFSUtil {
         " = '" + blocksReplWorkMultiplier + "' is invalid. " +
         "It should be a positive, non-zero integer value.");
     return blocksReplWorkMultiplier;
+  }
+  
+  /**
+   * Get SPNEGO keytab Key from configuration
+   * 
+   * @param conf
+   *          Configuration
+   * @param defaultKey
+   * @return DFS_WEB_AUTHENTICATION_KERBEROS_KEYTAB_KEY if the key is not empty
+   *         else return defaultKey
+   */
+  public static String getSpnegoKeytabKey(Configuration conf, String defaultKey) {
+    String value = 
+        conf.get(DFSConfigKeys.DFS_WEB_AUTHENTICATION_KERBEROS_KEYTAB_KEY);
+    return (value == null || value.isEmpty()) ?
+        defaultKey : DFSConfigKeys.DFS_WEB_AUTHENTICATION_KERBEROS_KEYTAB_KEY;
   }
 }

@@ -23,14 +23,27 @@ import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.util.ReflectionUtils;
+import org.apache.hadoop.util.Shell;
 
 /**
  * Plugin to calculate resource information on the system.
  *
  */
-@InterfaceAudience.Private
+@InterfaceAudience.LimitedPrivate({"YARN", "MAPREDUCE"})
 @InterfaceStability.Unstable
 public abstract class ResourceCalculatorPlugin extends Configured {
+  
+  protected String processPid = null;
+
+  /**
+   * set the pid of the process for which <code>getProcResourceValues</code>
+   * will be invoked
+   * 
+   * @param pid
+   */
+  public void setProcessPid(String pid) {
+    processPid = pid;
+  }
 
   /**
    * Obtain the total size of the virtual memory present in the system.
@@ -109,9 +122,11 @@ public abstract class ResourceCalculatorPlugin extends Configured {
 
     // No class given, try a os specific class
     try {
-      String osName = System.getProperty("os.name");
-      if (osName.startsWith("Linux")) {
+      if (Shell.LINUX) {
         return new LinuxResourceCalculatorPlugin();
+      }
+      if (Shell.WINDOWS) {
+        return new WindowsResourceCalculatorPlugin();
       }
     } catch (SecurityException se) {
       // Failed to get Operating System name.

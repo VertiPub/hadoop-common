@@ -30,6 +30,7 @@ import org.apache.hadoop.mapreduce.v2.app.job.Job;
 import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncher;
 import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncherEvent;
 import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerRemoteLaunchEvent;
+import org.apache.hadoop.util.Shell;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.junit.Test;
 
@@ -37,7 +38,7 @@ public class TestMapReduceChildJVM {
 
   private static final Log LOG = LogFactory.getLog(TestMapReduceChildJVM.class);
 
-  @Test
+  @Test (timeout = 30000)
   public void testCommandLine() throws Exception {
 
     MyMRApp app = new MyMRApp(1, 0, true, this.getClass().getName(), true);
@@ -46,13 +47,13 @@ public class TestMapReduceChildJVM {
     app.verifyCompleted();
 
     Assert.assertEquals(
-      "[exec $JAVA_HOME/bin/java" +
+      "[" + envVar("JAVA_HOME") + "/bin/java" +
       " -Djava.net.preferIPv4Stack=true" +
       " -Dhadoop.metrics.log.level=WARN" +
-      "  -Xmx200m -Djava.io.tmpdir=$PWD/tmp" +
+      "  -Xmx200m -Djava.io.tmpdir=" + envVar("PWD") + "/tmp" +
       " -Dlog4j.configuration=container-log4j.properties" +
-      " -Dyarn.app.mapreduce.container.log.dir=<LOG_DIR>" +
-      " -Dyarn.app.mapreduce.container.log.filesize=0" +
+      " -Dyarn.app.container.log.dir=<LOG_DIR>" +
+      " -Dyarn.app.container.log.filesize=0" +
       " -Dhadoop.root.logger=INFO,CLA" +
       " org.apache.hadoop.mapred.YarnChild 127.0.0.1" +
       " 54321" +
@@ -78,7 +79,8 @@ public class TestMapReduceChildJVM {
         public void handle(ContainerLauncherEvent event) {
           if (event.getType() == EventType.CONTAINER_REMOTE_LAUNCH) {
             ContainerRemoteLaunchEvent launchEvent = (ContainerRemoteLaunchEvent) event;
-            ContainerLaunchContext launchContext = launchEvent.getContainer();
+            ContainerLaunchContext launchContext =
+                launchEvent.getContainerLaunchContext();
             String cmdString = launchContext.getCommands().toString();
             LOG.info("launchContext " + cmdString);
             myCommandLine = cmdString;
@@ -87,5 +89,17 @@ public class TestMapReduceChildJVM {
         }
       };
     }
+  }
+
+  /**
+   * Returns platform-specific string for retrieving the value of an environment
+   * variable with the given name.  On Unix, this returns $name.  On Windows,
+   * this returns %name%.
+   * 
+   * @param name String environment variable name
+   * @return String for retrieving value of environment variable
+   */
+  private static String envVar(String name) {
+    return Shell.WINDOWS ? '%' + name + '%' : '$' + name;
   }
 }

@@ -49,16 +49,15 @@ import org.apache.hadoop.mapreduce.v2.api.records.TaskAttemptState;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskId;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskType;
 import org.apache.hadoop.yarn.ContainerLogAppender;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.ApplicationConstants.Environment;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceType;
 import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.util.ApplicationClassLoader;
 import org.apache.hadoop.yarn.util.Apps;
-import org.apache.hadoop.yarn.util.BuilderUtils;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 
 /**
@@ -98,7 +97,7 @@ public class MRApps extends Apps {
       case MAP:           return "m";
       case REDUCE:        return "r";
     }
-    throw new YarnException("Unknown task type: "+ type.toString());
+    throw new YarnRuntimeException("Unknown task type: "+ type.toString());
   }
 
   public static enum TaskAttemptStateUI {
@@ -127,7 +126,7 @@ public class MRApps extends Apps {
     // JDK 7 supports switch on strings
     if (symbol.equals("m")) return TaskType.MAP;
     if (symbol.equals("r")) return TaskType.REDUCE;
-    throw new YarnException("Unknown task symbol: "+ symbol);
+    throw new YarnRuntimeException("Unknown task symbol: "+ symbol);
   }
 
   public static TaskAttemptStateUI taskAttemptState(String attemptStateStr) {
@@ -337,17 +336,6 @@ public class MRApps extends Apps {
     return startCommitFile;
   }
 
-  private static long[] parseTimeStamps(String[] strs) {
-    if (null == strs) {
-      return null;
-    }
-    long[] result = new long[strs.length];
-    for(int i=0; i < strs.length; ++i) {
-      result[i] = Long.parseLong(strs[i]);
-    }
-    return result;
-  }
-
   public static void setupDistributedCache( 
       Configuration conf, 
       Map<String, LocalResource> localResources) 
@@ -357,7 +345,7 @@ public class MRApps extends Apps {
     parseDistributedCacheArtifacts(conf, localResources,  
         LocalResourceType.ARCHIVE, 
         DistributedCache.getCacheArchives(conf), 
-        parseTimeStamps(DistributedCache.getArchiveTimestamps(conf)), 
+        DistributedCache.getArchiveTimestamps(conf),
         getFileSizes(conf, MRJobConfig.CACHE_ARCHIVES_SIZES), 
         DistributedCache.getArchiveVisibilities(conf));
     
@@ -366,7 +354,7 @@ public class MRApps extends Apps {
         localResources,  
         LocalResourceType.FILE, 
         DistributedCache.getCacheFiles(conf),
-        parseTimeStamps(DistributedCache.getFileTimestamps(conf)),
+        DistributedCache.getFileTimestamps(conf),
         getFileSizes(conf, MRJobConfig.CACHE_FILES_SIZES),
         DistributedCache.getFileVisibilities(conf));
   }
@@ -435,15 +423,10 @@ public class MRApps extends Apps {
               " This will be an error in Hadoop 2.0");
           continue;
         }
-        localResources.put(
-            linkName,
-            BuilderUtils.newLocalResource(
-                p.toUri(), type, 
-                visibilities[i]
-                  ? LocalResourceVisibility.PUBLIC
-                  : LocalResourceVisibility.PRIVATE,
-                sizes[i], timestamps[i])
-        );
+        localResources.put(linkName, LocalResource.newInstance(ConverterUtils
+          .getYarnUrlFromURI(p.toUri()), type, visibilities[i]
+            ? LocalResourceVisibility.PUBLIC : LocalResourceVisibility.PRIVATE,
+          sizes[i], timestamps[i]));
       }
     }
   }
@@ -470,9 +453,10 @@ public class MRApps extends Apps {
   public static void addLog4jSystemProperties(
       String logLevel, long logSize, List<String> vargs) {
     vargs.add("-Dlog4j.configuration=container-log4j.properties");
-    vargs.add("-D" + MRJobConfig.TASK_LOG_DIR + "=" +
+    vargs.add("-D" + YarnConfiguration.YARN_APP_CONTAINER_LOG_DIR + "=" +
         ApplicationConstants.LOG_DIR_EXPANSION_VAR);
-    vargs.add("-D" + MRJobConfig.TASK_LOG_SIZE + "=" + logSize);
+    vargs.add(
+        "-D" + YarnConfiguration.YARN_APP_CONTAINER_LOG_SIZE + "=" + logSize);
     vargs.add("-Dhadoop.root.logger=" + logLevel + ",CLA"); 
   }
 }

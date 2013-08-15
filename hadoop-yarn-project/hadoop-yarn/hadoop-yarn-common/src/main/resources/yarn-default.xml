@@ -59,9 +59,15 @@
   
   <!-- Resource Manager Configs -->
   <property>
+    <description>The hostname of the RM.</description>
+    <name>yarn.resourcemanager.hostname</name>
+    <value>0.0.0.0</value>
+  </property>    
+  
+  <property>
     <description>The address of the applications manager interface in the RM.</description>
     <name>yarn.resourcemanager.address</name>
-    <value>0.0.0.0:8032</value>
+    <value>${yarn.resourcemanager.hostname}:8032</value>
   </property>
 
   <property>
@@ -84,7 +90,7 @@
   <property>
     <description>The address of the scheduler interface.</description>
     <name>yarn.resourcemanager.scheduler.address</name>
-    <value>0.0.0.0:8030</value>
+    <value>${yarn.resourcemanager.hostname}:8030</value>
   </property>
 
   <property>
@@ -96,12 +102,12 @@
   <property>
     <description>The address of the RM web application.</description>
     <name>yarn.resourcemanager.webapp.address</name>
-    <value>0.0.0.0:8088</value>
+    <value>${yarn.resourcemanager.hostname}:8088</value>
   </property>
 
   <property>
     <name>yarn.resourcemanager.resource-tracker.address</name>
-    <value>0.0.0.0:8031</value>
+    <value>${yarn.resourcemanager.hostname}:8031</value>
   </property>
 
   <property>
@@ -119,7 +125,7 @@
   <property>
     <description>The address of the RM admin interface.</description>
     <name>yarn.resourcemanager.admin.address</name>
-    <value>0.0.0.0:8033</value>
+    <value>${yarn.resourcemanager.hostname}:8033</value>
   </property>
 
   <property>
@@ -135,9 +141,28 @@
   </property>
 
   <property>
-    <description>The maximum number of application master retries.</description>
-    <name>yarn.resourcemanager.am.max-retries</name>
-    <value>1</value>
+    <description>Maximum time to wait to establish connection to
+    ResourceManager.</description>
+    <name>yarn.resourcemanager.connect.max-wait.ms</name>
+    <value>900000</value>
+  </property>
+
+  <property>
+    <description>How often to try connecting to the
+    ResourceManager.</description>
+    <name>yarn.resourcemanager.connect.retry-interval.ms</name>
+    <value>30000</value>
+  </property>
+
+  <property>
+    <description>The maximum number of application attempts. It's a global
+    setting for all application masters. Each application master can specify
+    its individual maximum number of application attempts via the API, but the
+    individual number cannot be more than the global upper bound. If it is,
+    the resourcemanager will override it. The default number is set to 2, to
+    allow at least one retry for AM.</description>
+    <name>yarn.resourcemanager.am.max-attempts</name>
+    <value>2</value>
   </property>
 
   <property>
@@ -238,7 +263,7 @@
     RM state will be stored. This must be supplied when using
     org.apache.hadoop.yarn.server.resourcemanager.recovery.FileSystemRMStateStore
     as the value for yarn.resourcemanager.store.class</description>
-    <name>yarn.resourcemanager.fs.rm-state-store.uri</name>
+    <name>yarn.resourcemanager.fs.state-store.uri</name>
     <value>${hadoop.tmp.dir}/yarn/system/rmstore</value>
     <!--value>hdfs://localhost:9000/rmstore</value-->
   </property>
@@ -274,11 +299,39 @@
     <value>86400</value>
   </property>
 
+  <property>
+    <description>The heart-beat interval in milliseconds for every NodeManager in the cluster.</description>
+    <name>yarn.resourcemanager.nodemanagers.heartbeat-interval-ms</name>
+    <value>1000</value>
+  </property>
+
+  <property>
+    <description>Enable a set of periodic monitors (specified in
+        yarn.resourcemanager.scheduler.monitor.policies) that affect the
+        scheduler.</description>
+    <name>yarn.resourcemanager.scheduler.monitor.enable</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <description>The list of SchedulingEditPolicy classes that interact with
+        the scheduler. A particular module may be incompatible with the
+        scheduler, other policies, or a configuration of either.</description>
+    <name>yarn.resourcemanager.scheduler.monitor.policies</name>
+    <value>org.apache.hadoop.yarn.server.resourcemanager.monitor.capacity.ProportionalCapacityPreemptionPolicy</value>
+  </property>
+
   <!-- Node Manager Configs -->
+  <property>
+    <description>The hostname of the NM.</description>
+    <name>yarn.nodemanager.hostname</name>
+    <value>0.0.0.0</value>
+  </property>
+  
   <property>
     <description>The address of the container manager in the NM.</description>
     <name>yarn.nodemanager.address</name>
-    <value>0.0.0.0:0</value>
+    <value>${yarn.nodemanager.hostname}:0</value>
   </property>
 
   <property>
@@ -333,12 +386,6 @@
   </property>
 
   <property>
-    <description>Heartbeat interval to RM</description>
-    <name>yarn.nodemanager.heartbeat.interval-ms</name>
-    <value>1000</value>
-  </property>
-
-  <property>
     <description>Keytab for NM.</description>
     <name>yarn.nodemanager.keytab</name>
     <value>/etc/krb5.keytab</value>
@@ -356,9 +403,28 @@
   </property>
 
   <property>
+    <description>It limits the maximum number of files which will be localized
+      in a single local directory. If the limit is reached then sub-directories
+      will be created and new files will be localized in them. If it is set to
+      a value less than or equal to 36 [which are sub-directories (0-9 and then
+      a-z)] then NodeManager will fail to start. For example; [for public
+      cache] if this is configured with a value of 40 ( 4 files +
+      36 sub-directories) and the local-dir is "/tmp/local-dir1" then it will
+      allow 4 files to be created directly inside "/tmp/local-dir1/filecache".
+      For files that are localized further it will create a sub-directory "0"
+      inside "/tmp/local-dir1/filecache" and will localize files inside it
+      until it becomes full. If a file is removed from a sub-directory that
+      is marked full, then that sub-directory will be used back again to
+      localize files.
+   </description>
+    <name>yarn.nodemanager.local-cache.max-files-per-directory</name>
+    <value>8192</value>
+  </property>
+
+  <property>
     <description>Address where the localizer IPC is.</description>
     <name>yarn.nodemanager.localizer.address</name>
-    <value>0.0.0.0:8040</value>
+    <value>${yarn.nodemanager.hostname}:8040</value>
   </property>
 
   <property>
@@ -411,6 +477,15 @@
   </property> 
   
   <property>
+    <description>How long to wait between aggregated log retention checks.
+    If set to 0 or a negative value then the value is computed as one-tenth
+    of the aggregated log retention time. Be careful set this too small and
+    you will spam the name node.</description>
+    <name>yarn.log-aggregation.retain-check-interval-seconds</name>
+    <value>-1</value>
+  </property>
+
+  <property>
     <description>Time in seconds to retain user logs. Only applicable if
     log aggregation is disabled
     </description>
@@ -439,6 +514,20 @@
   </property>
 
   <property>
+    <description>Whether physical memory limits will be enforced for
+    containers.</description>
+    <name>yarn.nodemanager.pmem-check-enabled</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <description>Whether virtual memory limits will be enforced for
+    containers.</description>
+    <name>yarn.nodemanager.vmem-check-enabled</name>
+    <value>true</value>
+  </property>
+
+  <property>
     <description>Ratio between virtual memory to physical memory when
     setting memory limits for containers. Container allocations are
     expressed in terms of physical memory, and virtual memory usage
@@ -451,22 +540,14 @@
   <property>
     <description>Number of CPU cores that can be allocated 
     for containers.</description>
-    <name>yarn.nodemanager.resource.cpu-cores</name>
+    <name>yarn.nodemanager.resource.cpu-vcores</name>
     <value>8</value>
-  </property>
-
-  <property>
-    <description>Ratio between virtual cores to physical cores when
-    allocating CPU resources to containers. 
-    </description>
-    <name>yarn.nodemanager.vcores-pcores-ratio</name>
-    <value>2</value>
   </property>
 
   <property>
     <description>NM Webapp address.</description>
     <name>yarn.nodemanager.webapp.address</name>
-    <value>0.0.0.0:8042</value>
+    <value>${yarn.nodemanager.hostname}:8042</value>
   </property>
 
   <property>
@@ -526,6 +607,39 @@
   </property>
 
   <property>
+    <description>The class which should help the LCE handle resources.</description>
+    <name>yarn.nodemanager.linux-container-executor.resources-handler.class</name>
+    <value>org.apache.hadoop.yarn.server.nodemanager.util.DefaultLCEResourcesHandler</value>
+    <!-- <value>org.apache.hadoop.yarn.server.nodemanager.util.CgroupsLCEResourcesHandler</value> -->
+  </property>
+
+  <property>
+    <description>The cgroups hierarchy under which to place YARN proccesses (cannot contain commas).
+    If yarn.nodemanager.linux-container-executor.cgroups.mount is false (that is, if cgroups have
+    been pre-configured), then this cgroups hierarchy must already exist and be writable by the
+    NodeManager user, otherwise the NodeManager may fail.
+    Only used when the LCE resources handler is set to the CgroupsLCEResourcesHandler.</description>
+    <name>yarn.nodemanager.linux-container-executor.cgroups.hierarchy</name>
+    <value>/hadoop-yarn</value>
+  </property>
+
+  <property>
+    <description>Whether the LCE should attempt to mount cgroups if not found.
+    Only used when the LCE resources handler is set to the CgroupsLCEResourcesHandler.</description>
+    <name>yarn.nodemanager.linux-container-executor.cgroups.mount</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <description>Where the LCE should attempt to mount cgroups if not found. Common locations
+    include /sys/fs/cgroup and /cgroup; the default location can vary depending on the Linux
+    distribution in use. This path must exist before the NodeManager is launched.
+    Only used when the LCE resources handler is set to the CgroupsLCEResourcesHandler, and
+    yarn.nodemanager.linux-container-executor.cgroups.mount is true.</description>
+    <name>yarn.nodemanager.linux-container-executor.cgroups.mount-path</name>
+  </property>
+
+  <property>
     <description>T-file compression types used to compress aggregated logs.</description>
     <name>yarn.nodemanager.log-aggregation.compression-type</name>
     <value>none</value>
@@ -555,6 +669,45 @@
     <value>2000</value>
   </property>
 
+  <property>
+    <description>Max time, in seconds, to wait to establish a connection to RM when NM starts.
+    The NM will shutdown if it cannot connect to RM within the specified max time period.
+    If the value is set as -1, then NM will retry forever.</description>
+    <name>yarn.nodemanager.resourcemanager.connect.wait.secs</name>
+    <value>900</value>
+  </property>
+
+  <property>
+    <description>Time interval, in seconds, between each NM attempt to connect to RM.</description>
+    <name>yarn.nodemanager.resourcemanager.connect.retry_interval.secs</name>
+    <value>30</value>
+  </property>
+
+  <property>
+    <description>Max number of threads in NMClientAsync to process container
+    management events</description>
+    <name>yarn.client.nodemanager-client-async.thread-pool-max-size</name>
+    <value>500</value>
+  </property>
+  
+  <property>
+  	<description>
+  	  Maximum number of proxy connections for node manager. It should always be
+      more than 1. NMClient and MRAppMaster will use this to cache connection
+      with node manager. There will be at max one connection per node manager.
+      Ex. configuring it to a value of 5 will make sure that client will at
+      max have 5 connections cached with 5 different node managers. These
+      connections will be timed out if idle for more than system wide idle
+      timeout period. The token if used for authentication then it will be used
+      only at connection creation time. If new token is received then earlier
+      connection should be closed in order to use newer token. This and
+      (yarn.client.nodemanager-client-async.thread-pool-max-size) are related
+      and should be sync (no need for them to be equal).
+  	</description>
+  	<name>yarn.client.max-nodemanagers-proxies</name>
+  	<value>500</value>
+  </property>
+  
   <!--Map Reduce configuration-->
   <property>
     <name>yarn.nodemanager.aux-services.mapreduce.shuffle.class</name>
@@ -600,6 +753,14 @@
     of CLASSPATH entries</description>
      <name>yarn.application.classpath</name>
      <value>$HADOOP_CONF_DIR,$HADOOP_COMMON_HOME/share/hadoop/common/*,$HADOOP_COMMON_HOME/share/hadoop/common/lib/*,$HADOOP_HDFS_HOME/share/hadoop/hdfs/*,$HADOOP_HDFS_HOME/share/hadoop/hdfs/lib/*,$HADOOP_YARN_HOME/share/hadoop/yarn/*,$HADOOP_YARN_HOME/share/hadoop/yarn/lib/*</value>
+  </property>
+
+  <!-- Other configuration -->
+  <property>
+    <description>The interval of the yarn client's querying application state
+    after application submission. The unit is millisecond.</description>
+    <name>yarn.client.app-submission.poll-interval</name>
+    <value>1000</value>
   </property>
 
 </configuration>

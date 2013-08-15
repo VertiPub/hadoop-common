@@ -108,7 +108,7 @@ public class NNStorageRetentionManager {
     long purgeLogsFrom = Math.max(0, minimumRequiredTxId - numExtraEditsToRetain);
     
     ArrayList<EditLogInputStream> editLogs = new ArrayList<EditLogInputStream>();
-    purgeableLogs.selectInputStreams(editLogs, purgeLogsFrom, false);
+    purgeableLogs.selectInputStreams(editLogs, purgeLogsFrom, false, false);
     Collections.sort(editLogs, new Comparator<EditLogInputStream>() {
       @Override
       public int compare(EditLogInputStream a, EditLogInputStream b) {
@@ -118,11 +118,17 @@ public class NNStorageRetentionManager {
             .result();
       }
     });
+
+    // Remove from consideration any edit logs that are in fact required.
+    while (editLogs.size() > 0 &&
+        editLogs.get(editLogs.size() - 1).getFirstTxId() >= minimumRequiredTxId) {
+      editLogs.remove(editLogs.size() - 1);
+    }
     
     // Next, adjust the number of transactions to retain if doing so would mean
     // keeping too many segments around.
     while (editLogs.size() > maxExtraEditsSegmentsToRetain) {
-      purgeLogsFrom = editLogs.get(0).getFirstTxId();
+      purgeLogsFrom = editLogs.get(0).getLastTxId() + 1;
       editLogs.remove(0);
     }
     

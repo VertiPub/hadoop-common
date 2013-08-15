@@ -20,8 +20,8 @@ package org.apache.hadoop.hdfs.server.blockmanagement;
 import java.util.Iterator;
 
 import org.apache.hadoop.hdfs.protocol.Block;
-import org.apache.hadoop.hdfs.util.GSet;
-import org.apache.hadoop.hdfs.util.LightWeightGSet;
+import org.apache.hadoop.util.GSet;
+import org.apache.hadoop.util.LightWeightGSet;
 
 /**
  * This class maintains the map from a block to its metadata.
@@ -57,44 +57,20 @@ class BlocksMap {
   /** Constant {@link LightWeightGSet} capacity. */
   private final int capacity;
   
-  private GSet<Block, BlockInfo> blocks;
+  private volatile GSet<Block, BlockInfo> blocks;
 
   BlocksMap(final float loadFactor) {
-    this.capacity = computeCapacity();
+    // Use 2% of total memory to size the GSet capacity
+    this.capacity = LightWeightGSet.computeCapacity(2.0, "BlocksMap");
     this.blocks = new LightWeightGSet<Block, BlockInfo>(capacity);
   }
 
-  /**
-   * Let t = 2% of max memory.
-   * Let e = round(log_2 t).
-   * Then, we choose capacity = 2^e/(size of reference),
-   * unless it is outside the close interval [1, 2^30].
-   */
-  private static int computeCapacity() {
-    //VM detection
-    //See http://java.sun.com/docs/hotspot/HotSpotFAQ.html#64bit_detection
-    final String vmBit = System.getProperty("sun.arch.data.model");
-
-    //2% of max memory
-    final double twoPC = Runtime.getRuntime().maxMemory()/50.0;
-
-    //compute capacity
-    final int e1 = (int)(Math.log(twoPC)/Math.log(2.0) + 0.5);
-    final int e2 = e1 - ("32".equals(vmBit)? 2: 3);
-    final int exponent = e2 < 0? 0: e2 > 30? 30: e2;
-    final int c = 1 << exponent;
-
-    if (LightWeightGSet.LOG.isDebugEnabled()) {
-      LightWeightGSet.LOG.debug("VM type       = " + vmBit + "-bit");
-      LightWeightGSet.LOG.debug("2% max memory = " + twoPC/(1 << 20) + " MB");
-      LightWeightGSet.LOG.debug("capacity      = 2^" + exponent
-          + " = " + c + " entries");
-    }
-    return c;
-  }
 
   void close() {
-    // Empty blocks once GSet#clear is implemented (HDFS-3940)
+    if (blocks != null) {
+      blocks.clear();
+      blocks = null;
+    }
   }
 
   BlockCollection getBlockCollection(Block b) {

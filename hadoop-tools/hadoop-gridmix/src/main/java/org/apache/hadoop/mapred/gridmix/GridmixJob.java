@@ -72,6 +72,7 @@ abstract class GridmixJob implements Callable<Job>, Delayed {
       }
     };
 
+  private boolean submitted;
   protected final int seq;
   protected final Path outdir;
   protected final Job job;
@@ -310,7 +311,7 @@ abstract class GridmixJob implements Callable<Job>, Delayed {
     // set the memory per map task
     scaleConfigParameter(sourceConf, destConf, 
                          MRConfig.MAPMEMORY_MB, MRJobConfig.MAP_MEMORY_MB, 
-                         JobConf.DISABLED_MEMORY_LIMIT);
+                         MRJobConfig.DEFAULT_MAP_MEMORY_MB);
     
     // validate and fail early
     validateTaskMemoryLimits(destConf, MRJobConfig.MAP_MEMORY_MB, 
@@ -319,7 +320,7 @@ abstract class GridmixJob implements Callable<Job>, Delayed {
     // set the memory per reduce task
     scaleConfigParameter(sourceConf, destConf, 
                          MRConfig.REDUCEMEMORY_MB, MRJobConfig.REDUCE_MEMORY_MB,
-                         JobConf.DISABLED_MEMORY_LIMIT);
+                         MRJobConfig.DEFAULT_REDUCE_MEMORY_MB);
     // validate and fail early
     validateTaskMemoryLimits(destConf, MRJobConfig.REDUCE_MEMORY_MB, 
                              JTConfig.JT_MAX_REDUCEMEMORY_MB);
@@ -412,6 +413,14 @@ abstract class GridmixJob implements Callable<Job>, Delayed {
     return jobdesc;
   }
 
+  void setSubmitted() {
+    submitted = true;
+  }
+  
+  boolean isSubmitted() {
+    return submitted;
+  }
+  
   static void pushDescription(int seq, List<InputSplit> splits) {
     if (null != descCache.putIfAbsent(seq, splits)) {
       throw new IllegalArgumentException("Description exists for id " + seq);

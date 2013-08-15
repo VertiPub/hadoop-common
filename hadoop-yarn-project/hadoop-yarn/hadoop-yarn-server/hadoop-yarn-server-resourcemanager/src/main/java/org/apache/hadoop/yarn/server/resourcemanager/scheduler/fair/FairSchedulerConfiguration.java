@@ -18,13 +18,30 @@
 package org.apache.hadoop.yarn.server.resourcemanager.scheduler.fair;
 
 import java.io.File;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import org.apache.hadoop.classification.InterfaceAudience.Private;
+import org.apache.hadoop.classification.InterfaceStability.Evolving;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
+import org.apache.hadoop.yarn.util.resource.Resources;
 
+@Private
+@Evolving
 public class FairSchedulerConfiguration extends Configuration {
+
+  /** Increment request grant-able by the RM scheduler. 
+   * These properties are looked up in the yarn-site.xml  */
+  public static final String RM_SCHEDULER_INCREMENT_ALLOCATION_MB =
+    YarnConfiguration.YARN_PREFIX + "scheduler.increment-allocation-mb";
+  public static final int DEFAULT_RM_SCHEDULER_INCREMENT_ALLOCATION_MB = 1024;
+  public static final String RM_SCHEDULER_INCREMENT_ALLOCATION_VCORES =
+    YarnConfiguration.YARN_PREFIX + "scheduler.increment-allocation-vcores";
+  public static final int DEFAULT_RM_SCHEDULER_INCREMENT_ALLOCATION_VCORES = 1;
+  
   public static final String FS_CONFIGURATION_FILE = "fair-scheduler.xml";
 
   private static final String CONF_PREFIX =  "yarn.scheduler.fair.";
@@ -37,7 +54,6 @@ public class FairSchedulerConfiguration extends Configuration {
   protected static final String  USER_AS_DEFAULT_QUEUE = CONF_PREFIX + "user-as-default-queue";
   protected static final boolean DEFAULT_USER_AS_DEFAULT_QUEUE = true;
 
-  protected static final String LOCALITY_THRESHOLD = CONF_PREFIX + "locality.threshold";
   protected static final float  DEFAULT_LOCALITY_THRESHOLD = -1.0f;
 
   /** Cluster threshold for node locality. */
@@ -53,6 +69,11 @@ public class FairSchedulerConfiguration extends Configuration {
   /** Whether preemption is enabled. */
   protected static final String  PREEMPTION = CONF_PREFIX + "preemption";
   protected static final boolean DEFAULT_PREEMPTION = false;
+  
+  protected static final String PREEMPTION_INTERVAL = CONF_PREFIX + "preemptionInterval";
+  protected static final int DEFAULT_PREEMPTION_INTERVAL = 5000;
+  protected static final String WAIT_TIME_BEFORE_KILL = CONF_PREFIX + "waitTimeBeforeKill";
+  protected static final int DEFAULT_WAIT_TIME_BEFORE_KILL = 15000;
 
   /** Whether to assign multiple containers in one check-in. */
   protected static final String  ASSIGN_MULTIPLE = CONF_PREFIX + "assignmultiple";
@@ -71,26 +92,38 @@ public class FairSchedulerConfiguration extends Configuration {
     addResource(FS_CONFIGURATION_FILE);
   }
 
-  public Resource getMinimumMemoryAllocation() {
+  public Resource getMinimumAllocation() {
     int mem = getInt(
         YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_MB,
         YarnConfiguration.DEFAULT_RM_SCHEDULER_MINIMUM_ALLOCATION_MB);
-    return Resources.createResource(mem);
+    int cpu = getInt(
+        YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_VCORES,
+        YarnConfiguration.DEFAULT_RM_SCHEDULER_MINIMUM_ALLOCATION_VCORES);
+    return Resources.createResource(mem, cpu);
   }
 
-  public Resource getMaximumMemoryAllocation() {
+  public Resource getMaximumAllocation() {
     int mem = getInt(
         YarnConfiguration.RM_SCHEDULER_MAXIMUM_ALLOCATION_MB,
         YarnConfiguration.DEFAULT_RM_SCHEDULER_MAXIMUM_ALLOCATION_MB);
-    return Resources.createResource(mem);
+    int cpu = getInt(
+        YarnConfiguration.RM_SCHEDULER_MAXIMUM_ALLOCATION_VCORES,
+        YarnConfiguration.DEFAULT_RM_SCHEDULER_MAXIMUM_ALLOCATION_VCORES);
+    return Resources.createResource(mem, cpu);
+  }
+
+  public Resource getIncrementAllocation() {
+    int incrementMemory = getInt(
+      RM_SCHEDULER_INCREMENT_ALLOCATION_MB,
+      DEFAULT_RM_SCHEDULER_INCREMENT_ALLOCATION_MB);
+    int incrementCores = getInt(
+      RM_SCHEDULER_INCREMENT_ALLOCATION_VCORES,
+      DEFAULT_RM_SCHEDULER_INCREMENT_ALLOCATION_VCORES);
+    return Resources.createResource(incrementMemory, incrementCores);
   }
 
   public boolean getUserAsDefaultQueue() {
     return getBoolean(USER_AS_DEFAULT_QUEUE, DEFAULT_USER_AS_DEFAULT_QUEUE);
-  }
-
-  public float getLocalityThreshold() {
-    return getFloat(LOCALITY_THRESHOLD, DEFAULT_LOCALITY_THRESHOLD);
   }
 
   public float getLocalityThresholdNode() {
@@ -124,5 +157,43 @@ public class FairSchedulerConfiguration extends Configuration {
   public String getEventlogDir() {
     return get(EVENT_LOG_DIR, new File(System.getProperty("hadoop.log.dir",
     		"/tmp/")).getAbsolutePath() + File.separator + "fairscheduler");
+  }
+  
+  public int getPreemptionInterval() {
+    return getInt(PREEMPTION_INTERVAL, DEFAULT_PREEMPTION_INTERVAL);
+  }
+  
+  public int getWaitTimeBeforeKill() {
+    return getInt(WAIT_TIME_BEFORE_KILL, DEFAULT_WAIT_TIME_BEFORE_KILL);
+  }
+  
+  /**
+   * Parses a resource config value of a form like "1024", "1024 mb",
+   * or "1024 mb, 3 vcores". If no units are given, megabytes are assumed.
+   * 
+   * @throws AllocationConfigurationException
+   */
+  public static Resource parseResourceConfigValue(String val)
+      throws AllocationConfigurationException {
+    try {
+      int memory = findResource(val, "mb");
+      int vcores = findResource(val, "vcores");
+      return BuilderUtils.newResource(memory, vcores);
+    } catch (AllocationConfigurationException ex) {
+      throw ex;
+    } catch (Exception ex) {
+      throw new AllocationConfigurationException(
+          "Error reading resource config", ex);
+    }
+  }
+  
+  private static int findResource(String val, String units)
+    throws AllocationConfigurationException {
+    Pattern pattern = Pattern.compile("(\\d+) ?" + units);
+    Matcher matcher = pattern.matcher(val);
+    if (!matcher.find()) {
+      throw new AllocationConfigurationException("Missing resource: " + units);
+    }
+    return Integer.parseInt(matcher.group(1));
   }
 }

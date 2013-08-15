@@ -28,7 +28,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.security.Credentials;
-import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.yarn.api.records.ApplicationAccessType;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
@@ -78,7 +77,7 @@ public class ApplicationImpl implements Application {
       ApplicationACLsManager aclsManager, String user, ApplicationId appId,
       Credentials credentials, Context context) {
     this.dispatcher = dispatcher;
-    this.user = user.toString();
+    this.user = user;
     this.appId = appId;
     this.credentials = credentials;
     this.aclsManager = aclsManager;
@@ -149,6 +148,9 @@ public class ApplicationImpl implements Application {
            .addTransition(ApplicationState.INITING, ApplicationState.INITING,
                ApplicationEventType.APPLICATION_LOG_HANDLING_INITED,
                new AppLogInitDoneTransition())
+           .addTransition(ApplicationState.INITING, ApplicationState.INITING,
+               ApplicationEventType.APPLICATION_LOG_HANDLING_FAILED,
+               new AppLogInitFailTransition())
            .addTransition(ApplicationState.INITING, ApplicationState.RUNNING,
                ApplicationEventType.APPLICATION_INITED,
                new AppInitDoneTransition())
@@ -238,6 +240,26 @@ public class ApplicationImpl implements Application {
   }
 
   /**
+   * Handles the APPLICATION_LOG_HANDLING_FAILED event that occurs after
+   * {@link LogAggregationService} has failed to initialize the log 
+   * aggregation service
+   * 
+   * In particular, this requests that the {@link ResourceLocalizationService}
+   * localize the application-scoped resources.
+   */
+  @SuppressWarnings("unchecked")
+  static class AppLogInitFailTransition implements
+      SingleArcTransition<ApplicationImpl, ApplicationEvent> {
+    @Override
+    public void transition(ApplicationImpl app, ApplicationEvent event) {
+      LOG.warn("Log Aggregation service failed to initialize, there will " + 
+               "be no logs for this application");
+      app.dispatcher.getEventHandler().handle(
+          new ApplicationLocalizationEvent(
+              LocalizationEventType.INIT_APPLICATION_RESOURCES, app));
+    }
+  }
+  /**
    * Handles INIT_CONTAINER events which request that we launch a new
    * container. When we're still in the INITTING state, we simply
    * queue these up. When we're in the RUNNING state, we pass along
@@ -251,14 +273,14 @@ public class ApplicationImpl implements Application {
       ApplicationContainerInitEvent initEvent =
         (ApplicationContainerInitEvent) event;
       Container container = initEvent.getContainer();
-      app.containers.put(container.getContainerID(), container);
-      LOG.info("Adding " + container.getContainerID()
+      app.containers.put(container.getContainerId(), container);
+      LOG.info("Adding " + container.getContainerId()
           + " to application " + app.toString());
       
       switch (app.getApplicationState()) {
       case RUNNING:
         app.dispatcher.getEventHandler().handle(new ContainerInitEvent(
-            container.getContainerID()));
+            container.getContainerId()));
         break;
       case INITING:
       case NEW:
@@ -279,7 +301,7 @@ public class ApplicationImpl implements Application {
       // Start all the containers waiting for ApplicationInit
       for (Container container : app.containers.values()) {
         app.dispatcher.getEventHandler().handle(new ContainerInitEvent(
-              container.getContainerID()));
+              container.getContainerId()));
       }
     }
   }
@@ -370,10 +392,6 @@ public class ApplicationImpl implements Application {
     @Override
     public void transition(ApplicationImpl app, ApplicationEvent event) {
 
-      // Inform the ContainerTokenSecretManager
-      if (UserGroupInformation.isSecurityEnabled()) {
-        app.context.getContainerTokenSecretManager().appFinished(app.appId);
-      }
       // Inform the logService
       app.dispatcher.getEventHandler().handle(
           new LogHandlerAppFinishedEvent(app.appId));

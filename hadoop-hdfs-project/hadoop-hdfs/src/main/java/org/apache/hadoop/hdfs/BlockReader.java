@@ -18,10 +18,8 @@
 package org.apache.hadoop.hdfs;
 
 import java.io.IOException;
-import java.net.Socket;
 
 import org.apache.hadoop.fs.ByteBufferReadable;
-import org.apache.hadoop.hdfs.protocol.datatransfer.IOStreamPair;
 
 /**
  * A BlockReader is responsible for reading a single block
@@ -43,6 +41,18 @@ public interface BlockReader extends ByteBufferReadable {
    */
   long skip(long n) throws IOException;
 
+  /**
+   * Returns an estimate of the number of bytes that can be read
+   * (or skipped over) from this input stream without performing
+   * network I/O.
+   */
+  int available() throws IOException;
+
+  /**
+   * Close the block reader.
+   *
+   * @throws IOException
+   */
   void close() throws IOException;
 
   /**
@@ -62,18 +72,13 @@ public interface BlockReader extends ByteBufferReadable {
   int readAll(byte[] buf, int offset, int len) throws IOException;
 
   /**
-   * Take the socket used to talk to the DN.
+   * @return              true only if this is a local read.
    */
-  Socket takeSocket();
-
+  boolean isLocal();
+  
   /**
-   * Whether the BlockReader has reached the end of its input stream
-   * and successfully sent a status code back to the datanode.
+   * @return              true only if this is a short-circuit read.
+   *                      All short-circuit reads are also local.
    */
-  boolean hasSentStatusCode();
-
-  /**
-   * @return a reference to the streams this block reader is using.
-   */
-  IOStreamPair getStreams();
+  boolean isShortCircuit();
 }

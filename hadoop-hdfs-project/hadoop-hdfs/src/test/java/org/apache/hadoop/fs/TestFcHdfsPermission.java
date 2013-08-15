@@ -35,8 +35,22 @@ import org.junit.BeforeClass;
 
 public class TestFcHdfsPermission extends FileContextPermissionBase {
   
+  private static final FileContextTestHelper fileContextTestHelper =
+      new FileContextTestHelper("/tmp/TestFcHdfsPermission");
+  private static FileContext fc;
+
   private static MiniDFSCluster cluster;
   private static Path defaultWorkingDirectory;
+  
+  @Override
+  protected FileContextTestHelper getFileContextHelper() {
+    return fileContextTestHelper;
+  }
+  
+  @Override
+  protected FileContext getFileContext() {
+    return fc;
+  }
   
   @BeforeClass
   public static void clusterSetupAtBegining()
@@ -65,16 +79,5 @@ public class TestFcHdfsPermission extends FileContextPermissionBase {
   @After
   public void tearDown() throws Exception {
     super.tearDown();
-  }
-  
-  /*
-   * HDFS ignore the "x" bit if the permission.
-   * 
-   */
-  static final FsPermission FILE_MASK_IGNORE_X_BIT = 
-    new FsPermission((short) ~0666);
-  @Override
-  FsPermission getFileMask() {
-    return FILE_MASK_IGNORE_X_BIT;
   }
 }

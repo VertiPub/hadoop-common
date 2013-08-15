@@ -19,24 +19,28 @@ package org.apache.hadoop.yarn.client.cli;
 
 import java.io.PrintStream;
 
+import org.apache.hadoop.classification.InterfaceAudience.Private;
+import org.apache.hadoop.classification.InterfaceStability.Unstable;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.util.Tool;
-import org.apache.hadoop.yarn.client.YarnClient;
-import org.apache.hadoop.yarn.client.YarnClientImpl;
+import org.apache.hadoop.yarn.client.api.YarnClient;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 
+@Private
+@Unstable
 public abstract class YarnCLI extends Configured implements Tool {
 
   public static final String STATUS_CMD = "status";
   public static final String LIST_CMD = "list";
   public static final String KILL_CMD = "kill";
+  public static final String HELP_CMD = "help";
   protected PrintStream sysout;
   protected PrintStream syserr;
   protected YarnClient client;
 
   public YarnCLI() {
     super(new YarnConfiguration());
-    client = new YarnClientImpl();
+    client = YarnClient.createYarnClient();
     client.init(getConf());
     client.start();
   }

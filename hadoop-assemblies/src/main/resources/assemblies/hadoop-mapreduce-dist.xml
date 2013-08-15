@@ -28,6 +28,7 @@
       <outputDirectory>bin</outputDirectory>
       <includes>
         <include>mapred</include>
+        <include>mapred.cmd</include>
       </includes>
       <fileMode>0755</fileMode>
     </fileSet>
@@ -36,6 +37,7 @@
       <outputDirectory>libexec</outputDirectory>
       <includes>
         <include>mapred-config.sh</include>
+        <include>mapred-config.cmd</include>
       </includes>
       <fileMode>0755</fileMode>
     </fileSet>
@@ -90,6 +92,62 @@
     <fileSet>
       <directory>${project.build.directory}/site</directory>
       <outputDirectory>/share/doc/hadoop/${hadoop.component}</outputDirectory>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-mapreduce-client/hadoop-mapreduce-client-app/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-mapreduce-client/hadoop-mapreduce-client-common/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-mapreduce-client/hadoop-mapreduce-client-core/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-mapreduce-client/hadoop-mapreduce-client-hs/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-mapreduce-client/hadoop-mapreduce-client-hs-plugins/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-mapreduce-client/hadoop-mapreduce-client-jobclient/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-mapreduce-client/hadoop-mapreduce-client-shuffle/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-mapreduce-examples/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
     </fileSet>
   </fileSets>
   <moduleSets>

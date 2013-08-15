@@ -123,6 +123,11 @@ class RedundantEditLogInputStream extends EditLogInputStream {
   }
 
   @Override
+  public String getCurrentStreamName() {
+    return streams[curIdx].getCurrentStreamName();
+  }
+
+  @Override
   public String getName() {
     StringBuilder bld = new StringBuilder();
     String prefix = "";
@@ -265,6 +270,13 @@ class RedundantEditLogInputStream extends EditLogInputStream {
     private static final long serialVersionUID = 1L;
     PrematureEOFException(String msg) {
       super(msg);
+    }
+  }
+
+  @Override
+  public void setMaxOpSize(int maxOpSize) {
+    for (EditLogInputStream elis : streams) {
+      elis.setMaxOpSize(maxOpSize);
     }
   }
 }

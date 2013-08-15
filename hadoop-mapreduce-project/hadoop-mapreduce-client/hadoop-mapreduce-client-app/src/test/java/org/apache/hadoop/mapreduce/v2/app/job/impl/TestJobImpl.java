@@ -25,6 +25,8 @@ import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
@@ -33,6 +35,10 @@ import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.JobACL;
 import org.apache.hadoop.mapreduce.JobContext;
+import org.apache.hadoop.mapreduce.jobhistory.EventType;
+import org.apache.hadoop.mapreduce.jobhistory.JobHistoryEvent;
+import org.apache.hadoop.mapreduce.jobhistory.JobHistoryParser.TaskInfo;
+import org.apache.hadoop.mapreduce.jobhistory.JobSubmittedEvent;
 import org.apache.hadoop.mapreduce.JobID;
 import org.apache.hadoop.mapreduce.JobStatus.State;
 import org.apache.hadoop.mapreduce.MRConfig;
@@ -44,37 +50,47 @@ import org.apache.hadoop.mapreduce.security.token.JobTokenSecretManager;
 import org.apache.hadoop.mapreduce.split.JobSplit.TaskSplitMetaInfo;
 import org.apache.hadoop.mapreduce.v2.api.records.JobId;
 import org.apache.hadoop.mapreduce.v2.api.records.JobState;
+import org.apache.hadoop.mapreduce.v2.api.records.TaskId;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskState;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskType;
 import org.apache.hadoop.mapreduce.v2.app.AppContext;
 import org.apache.hadoop.mapreduce.v2.app.commit.CommitterEventHandler;
 import org.apache.hadoop.mapreduce.v2.app.commit.CommitterEventType;
 import org.apache.hadoop.mapreduce.v2.app.job.JobStateInternal;
+import org.apache.hadoop.mapreduce.v2.app.job.Task;
+import org.apache.hadoop.mapreduce.v2.app.job.TaskAttempt;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobDiagnosticsUpdateEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobEventType;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobFinishEvent;
+import org.apache.hadoop.mapreduce.v2.app.job.event.JobStartEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobTaskEvent;
+import org.apache.hadoop.mapreduce.v2.app.job.event.TaskEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.TaskEventType;
+import org.apache.hadoop.mapreduce.v2.app.job.event.TaskTAttemptEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.impl.JobImpl.InitTransition;
 import org.apache.hadoop.mapreduce.v2.app.metrics.MRAppMetrics;
 import org.apache.hadoop.mapreduce.v2.app.rm.RMHeartbeatHandler;
 import org.apache.hadoop.mapreduce.v2.util.MRBuilderUtils;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.yarn.SystemClock;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
+import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.event.AsyncDispatcher;
 import org.apache.hadoop.yarn.event.Dispatcher;
+import org.apache.hadoop.yarn.event.DrainDispatcher;
 import org.apache.hadoop.yarn.event.EventHandler;
+import org.apache.hadoop.yarn.event.InlineDispatcher;
 import org.apache.hadoop.yarn.state.StateMachine;
 import org.apache.hadoop.yarn.state.StateMachineFactory;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
+import org.apache.hadoop.yarn.util.SystemClock;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 
 /**
@@ -105,6 +121,14 @@ public class TestJobImpl {
     Configuration conf = new Configuration();
     conf.setInt(MRJobConfig.NUM_REDUCES, 0);
     conf.set(MRJobConfig.MR_AM_STAGING_DIR, stagingDir);
+    conf.set(MRJobConfig.WORKFLOW_ID, "testId");
+    conf.set(MRJobConfig.WORKFLOW_NAME, "testName");
+    conf.set(MRJobConfig.WORKFLOW_NODE_NAME, "testNodeName");
+    conf.set(MRJobConfig.WORKFLOW_ADJACENCY_PREFIX_STRING + "key1", "value1");
+    conf.set(MRJobConfig.WORKFLOW_ADJACENCY_PREFIX_STRING + "key2", "value2");
+    conf.set(MRJobConfig.WORKFLOW_TAGS, "tag1,tag2");
+    
+ 
     AsyncDispatcher dispatcher = new AsyncDispatcher();
     dispatcher.init(conf);
     dispatcher.start();
@@ -114,13 +138,22 @@ public class TestJobImpl {
     commitHandler.init(conf);
     commitHandler.start();
 
+    JobSubmittedEventHandler jseHandler = new JobSubmittedEventHandler("testId",
+        "testName", "testNodeName", "\"key2\"=\"value2\" \"key1\"=\"value1\" ",
+        "tag1,tag2");
+    dispatcher.register(EventType.class, jseHandler);
     JobImpl job = createStubbedJob(conf, dispatcher, 0);
     job.handle(new JobEvent(job.getID(), JobEventType.JOB_INIT));
     assertJobState(job, JobStateInternal.INITED);
-    job.handle(new JobEvent(job.getID(), JobEventType.JOB_START));
+    job.handle(new JobStartEvent(job.getID()));
     assertJobState(job, JobStateInternal.SUCCEEDED);
     dispatcher.stop();
     commitHandler.stop();
+    try {
+      Assert.assertTrue(jseHandler.getAssertValue());
+    } catch (InterruptedException e) {
+      Assert.fail("Workflow related attributes are not tested properly");
+    }
   }
 
   @Test(timeout=20000)
@@ -169,6 +202,77 @@ public class TestJobImpl {
     // let the committer complete and verify the job succeeds
     syncBarrier.await();
     assertJobState(job, JobStateInternal.SUCCEEDED);
+    
+    job.handle(new JobEvent(job.getID(),
+        JobEventType.JOB_TASK_ATTEMPT_COMPLETED));
+    assertJobState(job, JobStateInternal.SUCCEEDED);
+
+    job.handle(new JobEvent(job.getID(), 
+        JobEventType.JOB_MAP_TASK_RESCHEDULED));
+    assertJobState(job, JobStateInternal.SUCCEEDED);
+    
+    dispatcher.stop();
+    commitHandler.stop();
+  }
+
+  @Test(timeout=20000)
+  public void testRebootedDuringSetup() throws Exception{
+    Configuration conf = new Configuration();
+    conf.set(MRJobConfig.MR_AM_STAGING_DIR, stagingDir);
+    AsyncDispatcher dispatcher = new AsyncDispatcher();
+    dispatcher.init(conf);
+    dispatcher.start();
+    OutputCommitter committer = new StubbedOutputCommitter() {
+      @Override
+      public synchronized void setupJob(JobContext jobContext)
+          throws IOException {
+        while(!Thread.interrupted()){
+          try{
+            wait();
+          }catch (InterruptedException e) {
+          }
+        }
+      }
+    };
+    CommitterEventHandler commitHandler =
+        createCommitterEventHandler(dispatcher, committer);
+    commitHandler.init(conf);
+    commitHandler.start();
+
+    JobImpl job = createStubbedJob(conf, dispatcher, 2);
+    JobId jobId = job.getID();
+    job.handle(new JobEvent(jobId, JobEventType.JOB_INIT));
+    assertJobState(job, JobStateInternal.INITED);
+    job.handle(new JobStartEvent(jobId));
+    assertJobState(job, JobStateInternal.SETUP);
+
+    job.handle(new JobEvent(job.getID(), JobEventType.JOB_AM_REBOOT));
+    assertJobState(job, JobStateInternal.REBOOT);
+    dispatcher.stop();
+    commitHandler.stop();
+  }
+
+  @Test(timeout=20000)
+  public void testRebootedDuringCommit() throws Exception {
+    Configuration conf = new Configuration();
+    conf.set(MRJobConfig.MR_AM_STAGING_DIR, stagingDir);
+    AsyncDispatcher dispatcher = new AsyncDispatcher();
+    dispatcher.init(conf);
+    dispatcher.start();
+    CyclicBarrier syncBarrier = new CyclicBarrier(2);
+    OutputCommitter committer = new WaitingOutputCommitter(syncBarrier, true);
+    CommitterEventHandler commitHandler =
+        createCommitterEventHandler(dispatcher, committer);
+    commitHandler.init(conf);
+    commitHandler.start();
+
+    JobImpl job = createRunningStubbedJob(conf, dispatcher, 2);
+    completeJobTasks(job);
+    assertJobState(job, JobStateInternal.COMMITTING);
+
+    syncBarrier.await();
+    job.handle(new JobEvent(job.getID(), JobEventType.JOB_AM_REBOOT));
+    assertJobState(job, JobStateInternal.REBOOT);
     dispatcher.stop();
     commitHandler.stop();
   }
@@ -201,7 +305,7 @@ public class TestJobImpl {
     JobId jobId = job.getID();
     job.handle(new JobEvent(jobId, JobEventType.JOB_INIT));
     assertJobState(job, JobStateInternal.INITED);
-    job.handle(new JobEvent(jobId, JobEventType.JOB_START));
+    job.handle(new JobStartEvent(jobId));
     assertJobState(job, JobStateInternal.SETUP);
 
     job.handle(new JobEvent(job.getID(), JobEventType.JOB_KILL));
@@ -233,6 +337,78 @@ public class TestJobImpl {
     assertJobState(job, JobStateInternal.KILLED);
     dispatcher.stop();
     commitHandler.stop();
+  }
+
+  @Test
+  public void testAbortJobCalledAfterKillingTasks() throws IOException {
+    Configuration conf = new Configuration();
+    conf.set(MRJobConfig.MR_AM_STAGING_DIR, stagingDir);
+    conf.set(MRJobConfig.MR_AM_COMMITTER_CANCEL_TIMEOUT_MS, "1000");
+    InlineDispatcher dispatcher = new InlineDispatcher();
+    dispatcher.init(conf);
+    dispatcher.start();
+    OutputCommitter committer = Mockito.mock(OutputCommitter.class);
+    CommitterEventHandler commitHandler =
+        createCommitterEventHandler(dispatcher, committer);
+    commitHandler.init(conf);
+    commitHandler.start();
+    JobImpl job = createRunningStubbedJob(conf, dispatcher, 2);
+
+    //Fail one task. This should land the JobImpl in the FAIL_WAIT state
+    job.handle(new JobTaskEvent(
+      MRBuilderUtils.newTaskId(job.getID(), 1, TaskType.MAP),
+      TaskState.FAILED));
+    //Verify abort job hasn't been called
+    Mockito.verify(committer, Mockito.never())
+      .abortJob((JobContext) Mockito.any(), (State) Mockito.any());
+    assertJobState(job, JobStateInternal.FAIL_WAIT);
+
+    //Verify abortJob is called once and the job failed
+    Mockito.verify(committer, Mockito.timeout(2000).times(1))
+      .abortJob((JobContext) Mockito.any(), (State) Mockito.any());
+    assertJobState(job, JobStateInternal.FAILED);
+
+    dispatcher.stop();
+  }
+
+  @Test (timeout=10000)
+  public void testFailAbortDoesntHang() throws IOException {
+    Configuration conf = new Configuration();
+    conf.set(MRJobConfig.MR_AM_STAGING_DIR, stagingDir);
+    conf.set(MRJobConfig.MR_AM_COMMITTER_CANCEL_TIMEOUT_MS, "1000");
+    
+    DrainDispatcher dispatcher = new DrainDispatcher();
+    dispatcher.init(conf);
+    dispatcher.start();
+    OutputCommitter committer = Mockito.mock(OutputCommitter.class);
+    CommitterEventHandler commitHandler =
+        createCommitterEventHandler(dispatcher, committer);
+    commitHandler.init(conf);
+    commitHandler.start();
+    //Job has only 1 mapper task. No reducers
+    conf.setInt(MRJobConfig.NUM_REDUCES, 0);
+    conf.setInt(MRJobConfig.MAP_MAX_ATTEMPTS, 1);
+    JobImpl job = createRunningStubbedJob(conf, dispatcher, 1);
+
+    //Fail / finish all the tasks. This should land the JobImpl directly in the
+    //FAIL_ABORT state
+    for(Task t: job.tasks.values()) {
+      TaskImpl task = (TaskImpl) t;
+      task.handle(new TaskEvent(task.getID(), TaskEventType.T_SCHEDULE));
+      for(TaskAttempt ta: task.getAttempts().values()) {
+        task.handle(new TaskTAttemptEvent(ta.getID(),
+          TaskEventType.T_ATTEMPT_FAILED));
+      }
+    }
+    assertJobState(job, JobStateInternal.FAIL_ABORT);
+
+    dispatcher.await();
+    //Verify abortJob is called once and the job failed
+    Mockito.verify(committer, Mockito.timeout(2000).times(1))
+      .abortJob((JobContext) Mockito.any(), (State) Mockito.any());
+    assertJobState(job, JobStateInternal.FAILED);
+
+    dispatcher.stop();
   }
 
   @Test(timeout=20000)
@@ -268,7 +444,7 @@ public class TestJobImpl {
     JobId jobId = job.getID();
     job.handle(new JobEvent(jobId, JobEventType.JOB_INIT));
     assertJobState(job, JobStateInternal.INITED);
-    job.handle(new JobEvent(jobId, JobEventType.JOB_START));
+    job.handle(new JobStartEvent(jobId));
     assertJobState(job, JobStateInternal.FAIL_ABORT);
 
     job.handle(new JobEvent(jobId, JobEventType.JOB_KILL));
@@ -305,7 +481,7 @@ public class TestJobImpl {
     JobId jobId = job.getID();
     job.handle(new JobEvent(jobId, JobEventType.JOB_INIT));
     assertJobState(job, JobStateInternal.INITED);
-    job.handle(new JobEvent(jobId, JobEventType.JOB_START));
+    job.handle(new JobStartEvent(jobId));
     assertJobState(job, JobStateInternal.SETUP);
 
     job.handle(new JobEvent(jobId, JobEventType.JOB_KILL));
@@ -345,7 +521,7 @@ public class TestJobImpl {
 
     // Verify access
     JobImpl job1 = new JobImpl(jobId, null, conf1, null, null, null, null, null,
-        null, null, true, null, 0, null, null, null, null);
+        null, null, null, true, null, 0, null, null, null, null);
     Assert.assertTrue(job1.checkAccess(ugi1, JobACL.VIEW_JOB));
     Assert.assertFalse(job1.checkAccess(ugi2, JobACL.VIEW_JOB));
 
@@ -356,7 +532,7 @@ public class TestJobImpl {
 
     // Verify access
     JobImpl job2 = new JobImpl(jobId, null, conf2, null, null, null, null, null,
-        null, null, true, null, 0, null, null, null, null);
+        null, null, null, true, null, 0, null, null, null, null);
     Assert.assertTrue(job2.checkAccess(ugi1, JobACL.VIEW_JOB));
     Assert.assertTrue(job2.checkAccess(ugi2, JobACL.VIEW_JOB));
 
@@ -367,7 +543,7 @@ public class TestJobImpl {
 
     // Verify access
     JobImpl job3 = new JobImpl(jobId, null, conf3, null, null, null, null, null,
-        null, null, true, null, 0, null, null, null, null);
+        null, null, null, true, null, 0, null, null, null, null);
     Assert.assertTrue(job3.checkAccess(ugi1, JobACL.VIEW_JOB));
     Assert.assertTrue(job3.checkAccess(ugi2, JobACL.VIEW_JOB));
 
@@ -378,7 +554,7 @@ public class TestJobImpl {
 
     // Verify access
     JobImpl job4 = new JobImpl(jobId, null, conf4, null, null, null, null, null,
-        null, null, true, null, 0, null, null, null, null);
+        null, null, null, true, null, 0, null, null, null, null);
     Assert.assertTrue(job4.checkAccess(ugi1, JobACL.VIEW_JOB));
     Assert.assertTrue(job4.checkAccess(ugi2, JobACL.VIEW_JOB));
 
@@ -389,7 +565,7 @@ public class TestJobImpl {
 
     // Verify access
     JobImpl job5 = new JobImpl(jobId, null, conf5, null, null, null, null, null,
-        null, null, true, null, 0, null, null, null, null);
+        null, null, null, true, null, 0, null, null, null, null);
     Assert.assertTrue(job5.checkAccess(ugi1, null));
     Assert.assertTrue(job5.checkAccess(ugi2, null));
   }
@@ -407,7 +583,7 @@ public class TestJobImpl {
         mock(EventHandler.class),
         null, mock(JobTokenSecretManager.class), null,
         new SystemClock(), null,
-        mrAppMetrics, true, null, 0, null, null, null, null);
+        mrAppMetrics, null, true, null, 0, null, null, null, null);
     job.handle(diagUpdateEvent);
     String diagnostics = job.getReport().getDiagnostics();
     Assert.assertNotNull(diagnostics);
@@ -418,7 +594,7 @@ public class TestJobImpl {
         mock(EventHandler.class),
         null, mock(JobTokenSecretManager.class), null,
         new SystemClock(), null,
-        mrAppMetrics, true, null, 0, null, null, null, null);
+        mrAppMetrics, null, true, null, 0, null, null, null, null);
     job.handle(new JobEvent(jobId, JobEventType.JOB_KILL));
     job.handle(diagUpdateEvent);
     diagnostics = job.getReport().getDiagnostics();
@@ -470,10 +646,11 @@ public class TestJobImpl {
     JobID jobID = JobID.forName("job_1234567890000_0001");
     JobId jobId = TypeConverter.toYarn(jobID);
     MRAppMetrics mrAppMetrics = MRAppMetrics.create();
-    JobImpl job = new JobImpl(jobId, Records
-        .newRecord(ApplicationAttemptId.class), conf, mock(EventHandler.class),
-        null, mock(JobTokenSecretManager.class), null, null, null,
-        mrAppMetrics, true, null, 0, null, null, null, null);
+    JobImpl job =
+        new JobImpl(jobId, ApplicationAttemptId.newInstance(
+          ApplicationId.newInstance(0, 0), 0), conf, mock(EventHandler.class),
+          null, new JobTokenSecretManager(), new Credentials(), null, null,
+          mrAppMetrics, null, true, null, 0, null, null, null, null);
     InitTransition initTransition = getInitTransition(2);
     JobEvent mockJobEvent = mock(JobEvent.class);
     initTransition.transition(job, mockJobEvent);
@@ -514,7 +691,7 @@ public class TestJobImpl {
     JobId jobId = job.getID();
     job.handle(new JobEvent(jobId, JobEventType.JOB_INIT));
     assertJobState(job, JobStateInternal.INITED);
-    job.handle(new JobEvent(jobId, JobEventType.JOB_START));
+    job.handle(new JobStartEvent(jobId));
     assertJobState(job, JobStateInternal.FAILED);
 
     job.handle(new JobEvent(jobId, JobEventType.JOB_TASK_COMPLETED));
@@ -562,8 +739,8 @@ public class TestJobImpl {
     JobID jobID = JobID.forName("job_1234567890000_0001");
     JobId jobId = TypeConverter.toYarn(jobID);
     StubbedJob job = new StubbedJob(jobId,
-        Records.newRecord(ApplicationAttemptId.class), conf,
-        dispatcher.getEventHandler(), true, "somebody", numSplits);
+        ApplicationAttemptId.newInstance(ApplicationId.newInstance(0, 0), 0),
+        conf,dispatcher.getEventHandler(), true, "somebody", numSplits);
     dispatcher.register(JobEventType.class, job);
     EventHandler mockHandler = mock(EventHandler.class);
     dispatcher.register(TaskEventType.class, mockHandler);
@@ -578,7 +755,7 @@ public class TestJobImpl {
     StubbedJob job = createStubbedJob(conf, dispatcher, numSplits);
     job.handle(new JobEvent(job.getID(), JobEventType.JOB_INIT));
     assertJobState(job, JobStateInternal.INITED);
-    job.handle(new JobEvent(job.getID(), JobEventType.JOB_START));
+    job.handle(new JobStartEvent(job.getID()));
     assertJobState(job, JobStateInternal.RUNNING);
     return job;
   }
@@ -614,6 +791,80 @@ public class TestJobImpl {
     Assert.assertEquals(state, job.getInternalState());
   }
 
+  private static class JobSubmittedEventHandler implements
+      EventHandler<JobHistoryEvent> {
+
+    private String workflowId;
+    
+    private String workflowName;
+    
+    private String workflowNodeName;
+    
+    private String workflowAdjacencies;
+    
+    private String workflowTags;
+    
+    private Boolean assertBoolean;
+
+    public JobSubmittedEventHandler(String workflowId, String workflowName,
+        String workflowNodeName, String workflowAdjacencies,
+        String workflowTags) {
+      this.workflowId = workflowId;
+      this.workflowName = workflowName;
+      this.workflowNodeName = workflowNodeName;
+      this.workflowAdjacencies = workflowAdjacencies;
+      this.workflowTags = workflowTags;
+      assertBoolean = null;
+    }
+
+    @Override
+    public void handle(JobHistoryEvent jhEvent) {
+      if (jhEvent.getType() != EventType.JOB_SUBMITTED) {
+        return;
+      }
+      JobSubmittedEvent jsEvent = (JobSubmittedEvent) jhEvent.getHistoryEvent();
+      if (!workflowId.equals(jsEvent.getWorkflowId())) {
+        setAssertValue(false);
+        return;
+      }
+      if (!workflowName.equals(jsEvent.getWorkflowName())) {
+        setAssertValue(false);
+        return;
+      }
+      if (!workflowNodeName.equals(jsEvent.getWorkflowNodeName())) {
+        setAssertValue(false);
+        return;
+      }
+     
+      String[] wrkflowAdj = workflowAdjacencies.split(" ");
+      String[] jswrkflowAdj = jsEvent.getWorkflowAdjacencies().split(" ");
+      Arrays.sort(wrkflowAdj);
+      Arrays.sort(jswrkflowAdj);
+      if (!Arrays.equals(wrkflowAdj, jswrkflowAdj)) {
+        setAssertValue(false);
+        return;
+      }
+      if (!workflowTags.equals(jsEvent.getWorkflowTags())) {
+        setAssertValue(false);
+        return;
+      }
+      setAssertValue(true);
+    }
+    
+    private synchronized void setAssertValue(Boolean bool) {
+      assertBoolean = bool;
+      notify();
+    }
+    
+    public synchronized boolean getAssertValue() throws InterruptedException {
+      while (assertBoolean == null) {
+        wait();
+      }
+      return assertBoolean;
+    }
+
+  }
+
   private static class StubbedJob extends JobImpl {
     //override the init transition
     private final InitTransition initTransition;
@@ -633,9 +884,9 @@ public class TestJobImpl {
         boolean newApiCommitter, String user, int numSplits) {
       super(jobId, applicationAttemptId, conf, eventHandler,
           null, new JobTokenSecretManager(), new Credentials(),
-          new SystemClock(), null, MRAppMetrics.create(),
-          newApiCommitter, user, System.currentTimeMillis(), null, null, null,
-          null);
+          new SystemClock(), Collections.<TaskId, TaskInfo> emptyMap(),
+          MRAppMetrics.create(), null, newApiCommitter, user,
+          System.currentTimeMillis(), null, null, null, null);
 
       initTransition = getInitTransition(numSplits);
       localFactory = stateMachineFactory.addTransition(JobStateInternal.NEW,

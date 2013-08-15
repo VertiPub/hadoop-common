@@ -20,10 +20,8 @@ package org.apache.hadoop.mapred;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.security.PrivilegedExceptionAction;
@@ -59,6 +57,9 @@ import org.apache.hadoop.util.DiskChecker.DiskErrorException;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.yarn.YarnUncaughtExceptionHandler;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
+import org.apache.hadoop.yarn.api.ApplicationConstants.Environment;
+import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
+import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.log4j.LogManager;
 
 /**
@@ -148,6 +149,9 @@ class YarnChild {
       // Add tokens to new user so that it may execute its task correctly.
       childUGI.addCredentials(credentials);
 
+      // set job classloader if configured before invoking the task
+      MRApps.setJobClassLoader(job);
+
       // Create a final reference to the task for the doAs block
       final Task taskFinal = task;
       childUGI.doAs(new PrivilegedExceptionAction<Object>() {
@@ -215,7 +219,7 @@ class YarnChild {
    */
   private static void configureLocalDirs(Task task, JobConf job) throws IOException {
     String[] localSysDirs = StringUtils.getTrimmedStrings(
-        System.getenv(ApplicationConstants.LOCAL_DIR_ENV));
+        System.getenv(Environment.LOCAL_DIRS.name()));
     job.setStrings(MRConfig.LOCAL_DIR, localSysDirs);
     LOG.info(MRConfig.LOCAL_DIR + " for child: " + job.get(MRConfig.LOCAL_DIR));
     LocalDirAllocator lDirAlloc = new LocalDirAllocator(MRConfig.LOCAL_DIR);
@@ -255,23 +259,30 @@ class YarnChild {
     final JobConf job = new JobConf(MRJobConfig.JOB_CONF_FILE);
     job.setCredentials(credentials);
 
-    // set job classloader if configured
-    MRApps.setJobClassLoader(job);
-
-    String appAttemptIdEnv = System
-        .getenv(MRJobConfig.APPLICATION_ATTEMPT_ID_ENV);
-    LOG.debug("APPLICATION_ATTEMPT_ID: " + appAttemptIdEnv);
+    ApplicationAttemptId appAttemptId =
+        ConverterUtils.toContainerId(
+            System.getenv(Environment.CONTAINER_ID.name()))
+            .getApplicationAttemptId();
+    LOG.debug("APPLICATION_ATTEMPT_ID: " + appAttemptId);
     // Set it in conf, so as to be able to be used the the OutputCommitter.
-    job.setInt(MRJobConfig.APPLICATION_ATTEMPT_ID, Integer
-        .parseInt(appAttemptIdEnv));
+    job.setInt(MRJobConfig.APPLICATION_ATTEMPT_ID,
+        appAttemptId.getAttemptId());
 
     // set tcp nodelay
     job.setBoolean("ipc.client.tcpnodelay", true);
     job.setClass(MRConfig.TASK_LOCAL_OUTPUT_CLASS,
         YarnOutputFiles.class, MapOutputFile.class);
-    // set the jobTokenFile into task
+    // set the jobToken and shuffle secrets into task
     task.setJobTokenSecret(
         JobTokenSecretManager.createSecretKey(jt.getPassword()));
+    byte[] shuffleSecret = TokenCache.getShuffleSecretKey(credentials);
+    if (shuffleSecret == null) {
+      LOG.warn("Shuffle secret missing from task credentials."
+          + " Using job token secret as shuffle secret.");
+      shuffleSecret = jt.getPassword();
+    }
+    task.setShuffleSecret(
+        JobTokenSecretManager.createSecretKey(shuffleSecret));
 
     // setup the child's MRConfig.LOCAL_DIR.
     configureLocalDirs(task, job);

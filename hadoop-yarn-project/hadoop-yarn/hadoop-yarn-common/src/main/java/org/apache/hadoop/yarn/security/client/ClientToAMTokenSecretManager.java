@@ -20,19 +20,35 @@ package org.apache.hadoop.yarn.security.client;
 
 import javax.crypto.SecretKey;
 
+import org.apache.hadoop.classification.InterfaceAudience.Public;
+import org.apache.hadoop.classification.InterfaceStability.Evolving;
 import org.apache.hadoop.security.token.SecretManager;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 
+/**
+ * A simple {@link SecretManager} for AMs to validate Client-RM tokens issued to
+ * clients by the RM using the underlying master-key shared by RM to the AMs on
+ * their launch. All the methods are called by either Hadoop RPC or YARN, so
+ * this class is strictly for the purpose of inherit/extend and register with
+ * Hadoop RPC.
+ */
+@Public
+@Evolving
 public class ClientToAMTokenSecretManager extends
     BaseClientToAMTokenSecretManager {
 
   // Only one client-token and one master-key for AM
-  private final SecretKey masterKey;
+  private SecretKey masterKey;
 
   public ClientToAMTokenSecretManager(
-      ApplicationAttemptId applicationAttemptID, byte[] secretKeyBytes) {
+      ApplicationAttemptId applicationAttemptID, byte[] key) {
     super();
-    this.masterKey = SecretManager.createSecretKey(secretKeyBytes);
+    if (key !=  null) {
+      this.masterKey = SecretManager.createSecretKey(key);
+    } else {
+      this.masterKey = null;
+    }
+    
   }
 
   @Override
@@ -41,4 +57,7 @@ public class ClientToAMTokenSecretManager extends
     return this.masterKey;
   }
 
+  public void setMasterKey(byte[] key) {
+    this.masterKey = SecretManager.createSecretKey(key);
+  }
 }

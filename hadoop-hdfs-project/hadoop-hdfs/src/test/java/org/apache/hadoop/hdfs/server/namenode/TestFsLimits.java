@@ -27,15 +27,16 @@ import static org.mockito.Mockito.when;
 import java.io.File;
 import java.io.IOException;
 
+import org.apache.hadoop.HadoopIllegalArgumentException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.permission.PermissionStatus;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
+import org.apache.hadoop.hdfs.DFSUtil;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
-import org.apache.hadoop.hdfs.protocol.FSLimitException;
 import org.apache.hadoop.hdfs.protocol.FSLimitException.MaxDirectoryItemsExceededException;
 import org.apache.hadoop.hdfs.protocol.FSLimitException.PathComponentTooLongException;
-import org.apache.hadoop.hdfs.protocol.QuotaExceededException;
+import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -60,16 +61,10 @@ public class TestFsLimits {
     return fsn;
   }
   
-  private static class TestFSDirectory extends FSDirectory {
-    public TestFSDirectory() throws IOException {
+  private static class MockFSDirectory extends FSDirectory {
+    public MockFSDirectory() throws IOException {
       super(new FSImage(conf), getMockNamesystem(), conf);
       setReady(fsIsReady);
-    }
-    
-    @Override
-    public <T extends INode> void verifyFsLimits(INode[] pathComponents,
-        int pos, T child) throws FSLimitException {
-      super.verifyFsLimits(pathComponents, pos, child);
     }
   }
 
@@ -80,7 +75,8 @@ public class TestFsLimits {
              fileAsURI(new File(MiniDFSCluster.getBaseDirectory(),
                                 "namenode")).toString());
 
-    rootInode = new INodeDirectoryWithQuota(INodeDirectory.ROOT_NAME, perms, 0L, 0L);
+    rootInode = new INodeDirectoryWithQuota(getMockNamesystem()
+        .allocateNewInodeId(), INodeDirectory.ROOT_NAME, perms);
     inodes = new INode[]{ rootInode, null };
     fs = null;
     fsIsReady = true;
@@ -109,6 +105,8 @@ public class TestFsLimits {
     addChildWithName("333", null);
     addChildWithName("4444", null);
     addChildWithName("55555", null);
+    addChildWithName(HdfsConstants.DOT_SNAPSHOT_DIR,
+        HadoopIllegalArgumentException.class);
   }
 
   @Test
@@ -148,6 +146,8 @@ public class TestFsLimits {
     conf.setInt(DFSConfigKeys.DFS_NAMENODE_MAX_DIRECTORY_ITEMS_KEY, 2);
     fsIsReady = false;
     
+    addChildWithName(HdfsConstants.DOT_SNAPSHOT_DIR,
+        HadoopIllegalArgumentException.class);
     addChildWithName("1", null);
     addChildWithName("22", null);
     addChildWithName("333", null);
@@ -157,16 +157,19 @@ public class TestFsLimits {
   private void addChildWithName(String name, Class<?> expected)
   throws Exception {
     // have to create after the caller has had a chance to set conf values
-    if (fs == null) fs = new TestFSDirectory();
+    if (fs == null) fs = new MockFSDirectory();
 
-    INode child = new INodeDirectory(name, perms);
-    child.setLocalName(name);
+    INode child = new INodeDirectory(getMockNamesystem().allocateNewInodeId(),
+        DFSUtil.string2Bytes(name), perms, 0L);
     
     Class<?> generated = null;
     try {
-      fs.verifyFsLimits(inodes, 1, child);
-      rootInode.addChild(child, false);
-    } catch (QuotaExceededException e) {
+      fs.verifyMaxComponentLength(child.getLocalNameBytes(), inodes, 1);
+      fs.verifyMaxDirItems(inodes, 1);
+      fs.verifyINodeName(child.getLocalNameBytes());
+
+      rootInode.addChild(child);
+    } catch (Throwable e) {
       generated = e.getClass();
     }
     assertEquals(expected, generated);

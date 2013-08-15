@@ -91,7 +91,12 @@
                                     "values": "string"
                                    }
           },
-          {"name": "jobQueueName", "type": "string"}
+          {"name": "jobQueueName", "type": "string"},
+          {"name": "workflowId", "type": "string"},
+          {"name": "workflowName", "type": "string"},
+          {"name": "workflowNodeName", "type": "string"},
+          {"name": "workflowAdjacencies", "type": "string"},
+          {"name": "workflowTags", "type": "string"}
       ]
      },
 
@@ -191,7 +196,9 @@
           {"name": "trackerName", "type": "string"},
           {"name": "httpPort", "type": "int"},
           {"name": "shufflePort", "type": "int"},
-          {"name": "containerId", "type": "string"}
+          {"name": "containerId", "type": "string"},
+          {"name": "locality", "type": "string"},
+          {"name": "avataar", "type": "string"}
       ]
      },
 
@@ -206,6 +213,7 @@
           {"name": "rackname", "type": "string"},
           {"name": "status", "type": "string"},
           {"name": "error", "type": "string"},
+          {"name": "counters", "type": "JhCounters"},
           {"name": "clockSplits", "type": { "type": "array", "items": "int"}},
           {"name": "cpuUsages", "type": { "type": "array", "items": "int"}},
           {"name": "vMemKbytes", "type": { "type": "array", "items": "int"}},
@@ -220,7 +228,8 @@
           {"name": "finishTime", "type": "long"},
           {"name": "error", "type": "string"},
           {"name": "failedDueToAttempt", "type": ["null", "string"] },
-          {"name": "status", "type": "string"}
+          {"name": "status", "type": "string"},
+          {"name": "counters", "type": "JhCounters"}
       ]
      },
 

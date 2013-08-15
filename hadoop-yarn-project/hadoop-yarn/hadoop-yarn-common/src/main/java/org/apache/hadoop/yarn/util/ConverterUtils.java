@@ -20,6 +20,7 @@ package org.apache.hadoop.yarn.util;
 
 import static org.apache.hadoop.yarn.util.StringHelper._split;
 
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.HashMap;
@@ -27,7 +28,12 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.security.SecurityUtil;
+import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.security.token.TokenIdentifier;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
@@ -42,6 +48,7 @@ import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
  * from/to 'serializableFormat' to/from hadoop/nativejava data structures.
  *
  */
+@Private
 public class ConverterUtils {
 
   public static final String APPLICATION_PREFIX = "application";
@@ -114,30 +121,24 @@ public class ConverterUtils {
 
   private static ApplicationId toApplicationId(RecordFactory recordFactory,
       Iterator<String> it) {
-    ApplicationId appId =
-        recordFactory.newRecordInstance(ApplicationId.class);
-    appId.setClusterTimestamp(Long.parseLong(it.next()));
-    appId.setId(Integer.parseInt(it.next()));
+    ApplicationId appId = ApplicationId.newInstance(Long.parseLong(it.next()),
+        Integer.parseInt(it.next()));
     return appId;
   }
 
   private static ApplicationAttemptId toApplicationAttemptId(
       Iterator<String> it) throws NumberFormatException {
-    ApplicationId appId = Records.newRecord(ApplicationId.class);
-    appId.setClusterTimestamp(Long.parseLong(it.next()));
-    appId.setId(Integer.parseInt(it.next()));
-    ApplicationAttemptId appAttemptId = Records
-        .newRecord(ApplicationAttemptId.class);
-    appAttemptId.setApplicationId(appId);
-    appAttemptId.setAttemptId(Integer.parseInt(it.next()));
+    ApplicationId appId = ApplicationId.newInstance(Long.parseLong(it.next()),
+        Integer.parseInt(it.next()));
+    ApplicationAttemptId appAttemptId =
+        ApplicationAttemptId.newInstance(appId, Integer.parseInt(it.next()));
     return appAttemptId;
   }
 
   private static ApplicationId toApplicationId(
       Iterator<String> it) throws NumberFormatException {
-    ApplicationId appId = Records.newRecord(ApplicationId.class);
-    appId.setClusterTimestamp(Long.parseLong(it.next()));
-    appId.setId(Integer.parseInt(it.next()));
+    ApplicationId appId = ApplicationId.newInstance(Long.parseLong(it.next()),
+        Integer.parseInt(it.next()));
     return appId;
   }
 
@@ -153,7 +154,7 @@ public class ConverterUtils {
     }
     try {
       NodeId nodeId =
-          BuilderUtils.newNodeId(parts[0], Integer.parseInt(parts[1]));
+          NodeId.newInstance(parts[0], Integer.parseInt(parts[1]));
       return nodeId;
     } catch (NumberFormatException e) {
       throw new IllegalArgumentException("Invalid port: " + parts[1], e);
@@ -168,9 +169,8 @@ public class ConverterUtils {
     }
     try {
       ApplicationAttemptId appAttemptID = toApplicationAttemptId(it);
-      ContainerId containerId = Records.newRecord(ContainerId.class);
-      containerId.setApplicationAttemptId(appAttemptID);
-      containerId.setId(Integer.parseInt(it.next()));
+      ContainerId containerId =
+          ContainerId.newInstance(appAttemptID, Integer.parseInt(it.next()));
       return containerId;
     } catch (NumberFormatException n) {
       throw new IllegalArgumentException("Invalid ContainerId: "
@@ -206,5 +206,25 @@ public class ConverterUtils {
       throw new IllegalArgumentException("Invalid AppAttemptId: "
           + appIdStr, n);
     }
+  }
+
+  /**
+   * Convert a protobuf token into a rpc token and set its service
+   * 
+   * @param protoToken the yarn token
+   * @param serviceAddr the connect address for the service
+   * @return rpc token
+   */
+  public static <T extends TokenIdentifier> Token<T> convertFromYarn(
+      org.apache.hadoop.yarn.api.records.Token protoToken,
+      InetSocketAddress serviceAddr) {
+    Token<T> token = new Token<T>(protoToken.getIdentifier().array(),
+                                  protoToken.getPassword().array(),
+                                  new Text(protoToken.getKind()),
+                                  new Text(protoToken.getService()));
+    if (serviceAddr != null) {
+      SecurityUtil.setTokenService(token, serviceAddr);
+    }
+    return token;
   }
 }

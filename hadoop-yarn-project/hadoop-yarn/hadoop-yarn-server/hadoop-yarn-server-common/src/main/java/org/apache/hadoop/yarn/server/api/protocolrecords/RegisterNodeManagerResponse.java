@@ -18,11 +18,28 @@
 
 package org.apache.hadoop.yarn.server.api.protocolrecords;
 
-import org.apache.hadoop.yarn.server.api.records.RegistrationResponse;
+import org.apache.hadoop.yarn.server.api.records.MasterKey;
+import org.apache.hadoop.yarn.server.api.records.NodeAction;
 
 public interface RegisterNodeManagerResponse {
-  public abstract RegistrationResponse getRegistrationResponse();
-  
-  public abstract void setRegistrationResponse(RegistrationResponse registrationResponse);
+  MasterKey getContainerTokenMasterKey();
+
+  void setContainerTokenMasterKey(MasterKey secretKey);
+
+  MasterKey getNMTokenMasterKey();
+
+  void setNMTokenMasterKey(MasterKey secretKey);
+
+  NodeAction getNodeAction();
+
+  void setNodeAction(NodeAction nodeAction);
+
+  long getRMIdentifier();
+
+  void setRMIdentifier(long rmIdentifier);
+
+  String getDiagnosticsMessage();
+
+  void setDiagnosticsMessage(String diagnosticsMessage);
 
 }

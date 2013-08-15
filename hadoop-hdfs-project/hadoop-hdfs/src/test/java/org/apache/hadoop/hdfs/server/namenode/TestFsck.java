@@ -23,6 +23,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
@@ -49,6 +50,7 @@ import java.util.regex.Pattern;
 import org.apache.commons.logging.impl.Log4JLogger;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.UnresolvedLinkException;
@@ -57,6 +59,7 @@ import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DFSInputStream;
 import org.apache.hadoop.hdfs.DFSTestUtil;
+import org.apache.hadoop.hdfs.DFSUtil;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
@@ -80,6 +83,8 @@ import org.apache.log4j.RollingFileAppender;
 import org.junit.Test;
 
 import com.google.common.collect.Sets;
+import org.mockito.Mockito;
+import static org.mockito.Mockito.*;
 
 /**
  * A JUnit test for doing fsck
@@ -106,6 +111,9 @@ public class TestFsck {
   static final Pattern numCorruptBlocksPattern = Pattern.compile(
       ".*Corrupt blocks:\t\t([0123456789]*).*");
   
+  private static final String LINE_SEPARATOR =
+    System.getProperty("line.separator");
+
   static String runFsck(Configuration conf, int expectedErrCode, 
                         boolean checkErrorCode,String... path) 
                         throws Exception {
@@ -321,7 +329,7 @@ public class TestFsck {
       while (true) {
         outStr = runFsck(conf, 1, false, "/");
         String numCorrupt = null;
-        for (String line : outStr.split("\n")) {
+        for (String line : outStr.split(LINE_SEPARATOR)) {
           Matcher m = numCorruptBlocksPattern.matcher(line);
           if (m.matches()) {
             numCorrupt = m.group(1);
@@ -869,6 +877,99 @@ public class TestFsck {
       if(cluster != null) {
         cluster.shutdown();
       }
+    }
+  }
+
+  /** Test fsck with FileNotFound */
+  @Test
+  public void testFsckFileNotFound() throws Exception {
+
+    // Number of replicas to actually start
+    final short NUM_REPLICAS = 1;
+
+    Configuration conf = new Configuration();
+    NameNode namenode = mock(NameNode.class);
+    NetworkTopology nettop = mock(NetworkTopology.class);
+    Map<String,String[]> pmap = new HashMap<String, String[]>();
+    Writer result = new StringWriter();
+    PrintWriter out = new PrintWriter(result, true);
+    InetAddress remoteAddress = InetAddress.getLocalHost();
+    FSNamesystem fsName = mock(FSNamesystem.class);
+    when(namenode.getNamesystem()).thenReturn(fsName);
+    when(fsName.getBlockLocations(anyString(), anyLong(), anyLong(),
+        anyBoolean(), anyBoolean(), anyBoolean())).
+        thenThrow(new FileNotFoundException()) ;
+
+    NamenodeFsck fsck = new NamenodeFsck(conf, namenode, nettop, pmap, out,
+        NUM_REPLICAS, (short)1, remoteAddress);
+
+    String pathString = "/tmp/testFile";
+
+    long length = 123L;
+    boolean isDir = false;
+    int blockReplication = 1;
+    long blockSize = 128 *1024L;
+    long modTime = 123123123L;
+    long accessTime = 123123120L;
+    FsPermission perms = FsPermission.getDefault();
+    String owner = "foo";
+    String group = "bar";
+    byte [] symlink = null;
+    byte [] path = new byte[128];
+    path = DFSUtil.string2Bytes(pathString);
+    long fileId = 312321L;
+    int numChildren = 1;
+
+    HdfsFileStatus file = new HdfsFileStatus(length, isDir, blockReplication,
+        blockSize, modTime, accessTime, perms, owner, group, symlink, path,
+        fileId, numChildren);
+    Result res = new Result(conf);
+
+    try {
+      fsck.check(pathString, file, res);
+    } catch (Exception e) {
+      fail("Unexpected exception "+ e.getMessage());
+    }
+    assertTrue(res.toString().contains("HEALTHY"));
+  }
+
+  /** Test fsck with symlinks in the filesystem */
+  @Test
+  public void testFsckSymlink() throws Exception {
+    final DFSTestUtil util = new DFSTestUtil.Builder().
+        setName(getClass().getSimpleName()).setNumFiles(1).build();
+    final Configuration conf = new HdfsConfiguration();
+    conf.setLong(DFSConfigKeys.DFS_BLOCKREPORT_INTERVAL_MSEC_KEY, 10000L);
+
+    MiniDFSCluster cluster = null;
+    FileSystem fs = null;
+    try {
+      final long precision = 1L;
+      conf.setLong(DFSConfigKeys.DFS_NAMENODE_ACCESSTIME_PRECISION_KEY, precision);
+      conf.setLong(DFSConfigKeys.DFS_BLOCKREPORT_INTERVAL_MSEC_KEY, 10000L);
+      cluster = new MiniDFSCluster.Builder(conf).numDataNodes(4).build();
+      fs = cluster.getFileSystem();
+      final String fileName = "/srcdat";
+      util.createFiles(fs, fileName);
+      final FileContext fc = FileContext.getFileContext(
+          cluster.getConfiguration(0));
+      final Path file = new Path(fileName);
+      final Path symlink = new Path("/srcdat-symlink");
+      fc.createSymlink(file, symlink, false);
+      util.waitReplication(fs, fileName, (short)3);
+      long aTime = fc.getFileStatus(symlink).getAccessTime();
+      Thread.sleep(precision);
+      setupAuditLogs();
+      String outStr = runFsck(conf, 0, true, "/");
+      verifyAuditLogs();
+      assertEquals(aTime, fc.getFileStatus(symlink).getAccessTime());
+      assertTrue(outStr.contains(NamenodeFsck.HEALTHY_STATUS));
+      assertTrue(outStr.contains("Total symlinks:\t\t1\n"));
+      System.out.println(outStr);
+      util.cleanup(fs, fileName);
+    } finally {
+      if (fs != null) {try{fs.close();} catch(Exception e){}}
+      if (cluster != null) { cluster.shutdown(); }
     }
   }
 }

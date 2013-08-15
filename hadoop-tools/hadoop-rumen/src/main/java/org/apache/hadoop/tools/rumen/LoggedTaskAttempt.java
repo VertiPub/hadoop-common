@@ -170,7 +170,7 @@ public class LoggedTaskAttempt implements DeepCompare {
 
   /**
    *
-   * @returns a list of all splits vectors, ordered in enumeral order
+   * @return a list of all splits vectors, ordered in enumeral order
    *           within {@link SplitVectorKind} .  Do NOT use hard-coded
    *           indices within the return for this with a hard-coded
    *           index to get individual values; use
@@ -275,6 +275,12 @@ public class LoggedTaskAttempt implements DeepCompare {
   void adjustTimes(long adjustment) {
     startTime += adjustment;
     finishTime += adjustment;
+
+    // For reduce attempts, adjust the different phases' finish times also 
+    if (sortFinished >= 0) {
+      shuffleFinished += adjustment;
+      sortFinished += adjustment;
+    }
   }
 
   public long getShuffleFinished() {

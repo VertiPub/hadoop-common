@@ -68,8 +68,9 @@ if (NOT GENERATED_JAVAH)
     MESSAGE(FATAL_ERROR "You must set the CMake variable GENERATED_JAVAH")
 endif (NOT GENERATED_JAVAH)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -Wall -O2 -D_GNU_SOURCE")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_REENTRANT -D_FILE_OFFSET_BITS=64")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -Wall -O2")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_REENTRANT -D_GNU_SOURCE")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64")
 
 include_directories(
     ${GENERATED_JAVAH}
@@ -90,6 +91,8 @@ add_dual_library(hdfs
 )
 target_link_dual_libraries(hdfs
     ${JAVA_JVM_LIBRARY}
+    dl
+    pthread
 )
 dual_output_directory(hdfs target/usr/local/lib)
 set(LIBHDFS_VERSION "0.0.0")

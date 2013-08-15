@@ -17,7 +17,6 @@
 */
 package org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer;
 
-import java.util.EnumSet;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.concurrent.Semaphore;
@@ -32,15 +31,16 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.event.Dispatcher;
 import org.apache.hadoop.yarn.event.EventHandler;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerResourceFailedEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerResourceLocalizedEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.event.LocalizerResourceRequestEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.event.ResourceEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.event.ResourceEventType;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.event.ResourceFailedLocalizationEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.event.ResourceLocalizedEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.event.ResourceReleaseEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.event.ResourceRequestEvent;
 import org.apache.hadoop.yarn.state.InvalidStateTransitonException;
-import org.apache.hadoop.yarn.state.MultipleArcTransition;
 import org.apache.hadoop.yarn.state.SingleArcTransition;
 import org.apache.hadoop.yarn.state.StateMachine;
 import org.apache.hadoop.yarn.state.StateMachineFactory;
@@ -76,25 +76,20 @@ public class LocalizedResource implements EventHandler<ResourceEvent> {
     // From INIT (ref == 0, awaiting req)
     .addTransition(ResourceState.INIT, ResourceState.DOWNLOADING,
         ResourceEventType.REQUEST, new FetchResourceTransition())
-    .addTransition(ResourceState.INIT, ResourceState.LOCALIZED,
-        ResourceEventType.LOCALIZED, new FetchDirectTransition())
-    .addTransition(ResourceState.INIT, ResourceState.INIT,
-        ResourceEventType.RELEASE, new ReleaseTransition())
 
     // From DOWNLOADING (ref > 0, may be localizing)
     .addTransition(ResourceState.DOWNLOADING, ResourceState.DOWNLOADING,
         ResourceEventType.REQUEST, new FetchResourceTransition()) // TODO: Duplicate addition!!
     .addTransition(ResourceState.DOWNLOADING, ResourceState.LOCALIZED,
         ResourceEventType.LOCALIZED, new FetchSuccessTransition())
-    .addTransition(ResourceState.DOWNLOADING,
-        EnumSet.of(ResourceState.DOWNLOADING, ResourceState.INIT),
-        ResourceEventType.RELEASE, new ReleasePendingTransition())
+    .addTransition(ResourceState.DOWNLOADING,ResourceState.DOWNLOADING,
+        ResourceEventType.RELEASE, new ReleaseTransition())
+    .addTransition(ResourceState.DOWNLOADING, ResourceState.FAILED,
+        ResourceEventType.LOCALIZATION_FAILED, new FetchFailedTransition())
 
     // From LOCALIZED (ref >= 0, on disk)
     .addTransition(ResourceState.LOCALIZED, ResourceState.LOCALIZED,
         ResourceEventType.REQUEST, new LocalizedResourceTransition())
-    .addTransition(ResourceState.LOCALIZED, ResourceState.LOCALIZED,
-        ResourceEventType.LOCALIZED)
     .addTransition(ResourceState.LOCALIZED, ResourceState.LOCALIZED,
         ResourceEventType.RELEASE, new ReleaseTransition())
     .installTopology();
@@ -117,21 +112,28 @@ public class LocalizedResource implements EventHandler<ResourceEvent> {
       .append(getState() == ResourceState.LOCALIZED
           ? getLocalPath() + "," + getSize()
           : "pending").append(",[");
-    for (ContainerId c : ref) {
-      sb.append("(").append(c.toString()).append(")");
+    try {
+      this.readLock.lock();
+      for (ContainerId c : ref) {
+        sb.append("(").append(c.toString()).append(")");
+      }
+      sb.append("],").append(getTimestamp()).append(",").append(getState())
+        .append("}");
+      return sb.toString();
+    } finally {
+      this.readLock.unlock();
     }
-    sb.append("],").append(getTimestamp()).append(",")
-      .append(getState()).append("}");
-    return sb.toString();
   }
 
   private void release(ContainerId container) {
-    if (!ref.remove(container)) {
-      LOG.info("Attempt to release claim on " + this +
-               " from unregistered container " + container);
-      assert false; // TODO: FIX
+    if (ref.remove(container)) {
+      // updating the timestamp only in case of success.
+      timestamp.set(currentTime());
+    } else {
+      LOG.info("Container " + container
+          + " doesn't exist in the container list of the Resource " + this
+          + " to which it sent RELEASE event");
     }
-    timestamp.set(currentTime());
   }
 
   private long currentTime() {
@@ -191,8 +193,8 @@ public class LocalizedResource implements EventHandler<ResourceEvent> {
         LOG.warn("Can't handle this event at current state", e);
       }
       if (oldState != newState) {
-        LOG.info("Resource " + resourcePath + " transitioned from "
-            + oldState
+        LOG.info("Resource " + resourcePath + (localPath != null ? 
+          "(->" + localPath + ")": "") + " transitioned from " + oldState
             + " to " + newState);
       }
     } finally {
@@ -224,14 +226,6 @@ public class LocalizedResource implements EventHandler<ResourceEvent> {
     }
   }
 
-  private static class FetchDirectTransition extends FetchSuccessTransition {
-    @Override
-    public void transition(LocalizedResource rsrc, ResourceEvent event) {
-      LOG.warn("Resource " + rsrc + " localized without listening container");
-      super.transition(rsrc, event);
-    }
-  }
-
   /**
    * Resource localized, notify waiting containers.
    */
@@ -246,6 +240,24 @@ public class LocalizedResource implements EventHandler<ResourceEvent> {
         rsrc.dispatcher.getEventHandler().handle(
             new ContainerResourceLocalizedEvent(
               container, rsrc.rsrc, rsrc.localPath));
+      }
+    }
+  }
+
+  /**
+   * Resource localization failed, notify waiting containers.
+   */
+  @SuppressWarnings("unchecked")
+  private static class FetchFailedTransition extends ResourceTransition {
+    @Override
+    public void transition(LocalizedResource rsrc, ResourceEvent event) {
+      ResourceFailedLocalizationEvent failedEvent =
+          (ResourceFailedLocalizationEvent) event;
+      Queue<ContainerId> containers = rsrc.ref;
+      for (ContainerId container : containers) {
+        rsrc.dispatcher.getEventHandler().handle(
+          new ContainerResourceFailedEvent(container, failedEvent
+            .getLocalResourceRequest(), failedEvent.getDiagnosticMessage()));
       }
     }
   }
@@ -277,19 +289,6 @@ public class LocalizedResource implements EventHandler<ResourceEvent> {
       // Note: assumes that localizing container must succeed or fail
       ResourceReleaseEvent relEvent = (ResourceReleaseEvent) event;
       rsrc.release(relEvent.getContainer());
-    }
-  }
-
-  private static class ReleasePendingTransition implements
-      MultipleArcTransition<LocalizedResource,ResourceEvent,ResourceState> {
-    @Override
-    public ResourceState transition(LocalizedResource rsrc,
-        ResourceEvent event) {
-      ResourceReleaseEvent relEvent = (ResourceReleaseEvent) event;
-      rsrc.release(relEvent.getContainer());
-      return rsrc.ref.isEmpty()
-        ? ResourceState.INIT
-        : ResourceState.DOWNLOADING;
     }
   }
 }

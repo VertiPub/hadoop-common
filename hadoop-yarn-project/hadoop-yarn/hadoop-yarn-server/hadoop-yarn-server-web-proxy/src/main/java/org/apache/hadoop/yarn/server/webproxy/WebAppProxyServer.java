@@ -24,12 +24,12 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.security.SecurityUtil;
+import org.apache.hadoop.service.CompositeService;
 import org.apache.hadoop.util.ShutdownHookManager;
 import org.apache.hadoop.util.StringUtils;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.YarnUncaughtExceptionHandler;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.service.CompositeService;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 
 /**
  * ProxyServer will sit in between the end user and AppMaster
@@ -51,16 +51,16 @@ public class WebAppProxyServer extends CompositeService {
   }
 
   @Override
-  public synchronized void init(Configuration conf) {
+  protected void serviceInit(Configuration conf) throws Exception {
     Configuration config = new YarnConfiguration(conf);
     try {
       doSecureLogin(conf);      
     } catch(IOException ie) {
-      throw new YarnException("Proxy Server Failed to login", ie);
+      throw new YarnRuntimeException("Proxy Server Failed to login", ie);
     }
     proxy = new WebAppProxy();
     addService(proxy);
-    super.init(config);
+    super.serviceInit(config);
   }
 
   /**

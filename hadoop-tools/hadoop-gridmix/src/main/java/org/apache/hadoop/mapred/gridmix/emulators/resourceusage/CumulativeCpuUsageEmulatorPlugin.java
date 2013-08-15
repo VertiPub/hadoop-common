@@ -22,8 +22,8 @@ import java.util.Random;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapred.gridmix.Progressive;
-import org.apache.hadoop.mapreduce.util.ResourceCalculatorPlugin;
 import org.apache.hadoop.tools.rumen.ResourceUsageMetrics;
+import org.apache.hadoop.yarn.util.ResourceCalculatorPlugin;
 
 /**
  * <p>A {@link ResourceUsageEmulatorPlugin} that emulates the cumulative CPU 
@@ -67,7 +67,7 @@ implements ResourceUsageEmulatorPlugin {
   private float emulationInterval; // emulation interval
   private long targetCpuUsage = 0;
   private float lastSeenProgress = 0;
-  private long lastSeenCpuUsageCpuUsage = 0;
+  private long lastSeenCpuUsage = 0;
   
   // Configuration parameters
   public static final String CPU_EMULATION_PROGRESS_INTERVAL = 
@@ -166,7 +166,7 @@ implements ResourceUsageEmulatorPlugin {
      */
     public void calibrate(ResourceCalculatorPlugin monitor, 
                           long totalCpuUsage) {
-      long initTime = monitor.getProcResourceValues().getCumulativeCpuTime();
+      long initTime = monitor.getCumulativeCpuTime();
       
       long defaultLoopSize = 0;
       long finalTime = initTime;
@@ -175,7 +175,7 @@ implements ResourceUsageEmulatorPlugin {
       while (finalTime - initTime < 100) { // 100 ms
         ++defaultLoopSize;
         performUnitComputation(); //perform unit computation
-        finalTime = monitor.getProcResourceValues().getCumulativeCpuTime();
+        finalTime = monitor.getCumulativeCpuTime();
       }
       
       long referenceRuntime = finalTime - initTime;
@@ -229,6 +229,18 @@ implements ResourceUsageEmulatorPlugin {
     return progress * progress * progress * progress;
   }
   
+  private synchronized long getCurrentCPUUsage() {
+    return monitor.getCumulativeCpuTime();
+
+  }
+  
+  @Override
+  public float getProgress() {
+    return enabled 
+           ? Math.min(1f, ((float)getCurrentCPUUsage())/targetCpuUsage)
+           : 1.0f;
+  }
+  
   @Override
   //TODO Multi-threading for speedup?
   public void emulate() throws IOException, InterruptedException {
@@ -249,10 +261,9 @@ implements ResourceUsageEmulatorPlugin {
         //   Note that (Cc-Cl)/(Pc-Pl) is termed as 'rate' in the following 
         //   section
         
-        long currentCpuUsage = 
-          monitor.getProcResourceValues().getCumulativeCpuTime();
+        long currentCpuUsage = getCurrentCPUUsage();
         // estimate the cpu usage rate
-        float rate = (currentCpuUsage - lastSeenCpuUsageCpuUsage)
+        float rate = (currentCpuUsage - lastSeenCpuUsage)
                      / (currentProgress - lastSeenProgress);
         long projectedUsage = 
           currentCpuUsage + (long)((1 - currentProgress) * rate);
@@ -264,8 +275,7 @@ implements ResourceUsageEmulatorPlugin {
             (long)(targetCpuUsage 
                    * getWeightForProgressInterval(currentProgress));
           
-          while (monitor.getProcResourceValues().getCumulativeCpuTime() 
-                 < currentWeighedTarget) {
+          while (getCurrentCPUUsage() < currentWeighedTarget) {
             emulatorCore.compute();
             // sleep for 100ms
             try {
@@ -281,8 +291,7 @@ implements ResourceUsageEmulatorPlugin {
         // set the last seen progress
         lastSeenProgress = progress.getProgress();
         // set the last seen usage
-        lastSeenCpuUsageCpuUsage = 
-          monitor.getProcResourceValues().getCumulativeCpuTime();
+        lastSeenCpuUsage = getCurrentCPUUsage();
       }
     }
   }
@@ -291,6 +300,9 @@ implements ResourceUsageEmulatorPlugin {
   public void initialize(Configuration conf, ResourceUsageMetrics metrics,
                          ResourceCalculatorPlugin monitor,
                          Progressive progress) {
+    this.monitor = monitor;
+    this.progress = progress;
+    
     // get the target CPU usage
     targetCpuUsage = metrics.getCumulativeCpuUsage();
     if (targetCpuUsage <= 0 ) {
@@ -300,8 +312,6 @@ implements ResourceUsageEmulatorPlugin {
       enabled = true;
     }
     
-    this.monitor = monitor;
-    this.progress = progress;
     emulationInterval =  conf.getFloat(CPU_EMULATION_PROGRESS_INTERVAL, 
                                        DEFAULT_EMULATION_FREQUENCY);
     
@@ -310,6 +320,6 @@ implements ResourceUsageEmulatorPlugin {
     
     // initialize the states
     lastSeenProgress = 0;
-    lastSeenCpuUsageCpuUsage = 0;
+    lastSeenCpuUsage = 0;
   }
 }

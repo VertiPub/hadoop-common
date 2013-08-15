@@ -29,11 +29,11 @@ import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NAMENODE_SECONDARY_HTTP_A
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NAMENODE_SERVICE_RPC_ADDRESS_KEY;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NAMESERVICES;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NAMESERVICE_ID;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import org.apache.hadoop.util.Shell;
+
+import static org.junit.Assert.*;
+import org.junit.Assume;
+import static org.hamcrest.CoreMatchers.*;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -620,12 +620,51 @@ public class TestDFSUtil {
     assertEquals(1, uris.size());
     assertTrue(uris.contains(new URI("hdfs://" + NN1_SRVC_ADDR)));
   }
-  
-  @Test
+
+  @Test (timeout=15000)
+  public void testLocalhostReverseLookup() {
+    // 127.0.0.1 -> localhost reverse resolution does not happen on Windows.
+    Assume.assumeTrue(!Shell.WINDOWS);
+
+    // Make sure when config FS_DEFAULT_NAME_KEY using IP address,
+    // it will automatically convert it to hostname
+    HdfsConfiguration conf = new HdfsConfiguration();
+    conf.set(CommonConfigurationKeys.FS_DEFAULT_NAME_KEY, "hdfs://127.0.0.1:8020");
+    Collection<URI> uris = DFSUtil.getNameServiceUris(conf);
+    assertEquals(1, uris.size());
+    for (URI uri : uris) {
+      assertThat(uri.getHost(), not("127.0.0.1"));
+    }
+  }
+
+  @Test (timeout=15000)
   public void testIsValidName() {
     assertFalse(DFSUtil.isValidName("/foo/../bar"));
+    assertFalse(DFSUtil.isValidName("/foo/./bar"));
     assertFalse(DFSUtil.isValidName("/foo//bar"));
     assertTrue(DFSUtil.isValidName("/"));
     assertTrue(DFSUtil.isValidName("/bar/"));
+    assertFalse(DFSUtil.isValidName("/foo/:/bar"));
+    assertFalse(DFSUtil.isValidName("/foo:bar"));
+  }
+  
+  @Test(timeout=5000)
+  public void testGetSpnegoKeytabKey() {
+    HdfsConfiguration conf = new HdfsConfiguration();
+    String defaultKey = "default.spengo.key";
+    conf.unset(DFSConfigKeys.DFS_WEB_AUTHENTICATION_KERBEROS_KEYTAB_KEY);
+    assertEquals("Test spnego key in config is null", defaultKey,
+        DFSUtil.getSpnegoKeytabKey(conf, defaultKey));
+
+    conf.set(DFSConfigKeys.DFS_WEB_AUTHENTICATION_KERBEROS_KEYTAB_KEY, "");
+    assertEquals("Test spnego key is empty", defaultKey,
+        DFSUtil.getSpnegoKeytabKey(conf, defaultKey));
+
+    String spengoKey = "spengo.key";
+    conf.set(DFSConfigKeys.DFS_WEB_AUTHENTICATION_KERBEROS_KEYTAB_KEY,
+        spengoKey);
+    assertEquals("Test spnego key is NOT null",
+        DFSConfigKeys.DFS_WEB_AUTHENTICATION_KERBEROS_KEYTAB_KEY,
+        DFSUtil.getSpnegoKeytabKey(conf, defaultKey));
   }
 }

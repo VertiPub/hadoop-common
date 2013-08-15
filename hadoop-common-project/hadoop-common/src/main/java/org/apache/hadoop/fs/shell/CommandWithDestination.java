@@ -18,9 +18,10 @@
 
 package org.apache.hadoop.fs.shell;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.LinkedList;
 
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -44,6 +45,7 @@ import org.apache.hadoop.io.IOUtils;
 abstract class CommandWithDestination extends FsCommand {  
   protected PathData dst;
   private boolean overwrite = false;
+  private boolean preserve = false;
   private boolean verifyChecksum = true;
   private boolean writeChecksum = true;
   
@@ -66,14 +68,28 @@ abstract class CommandWithDestination extends FsCommand {
   }
   
   /**
+   * If true, the last modified time, last access time,
+   * owner, group and permission information of the source
+   * file will be preserved as far as target {@link FileSystem}
+   * implementation allows.
+   */
+  protected void setPreserve(boolean preserve) {
+    this.preserve = preserve;
+  }
+
+  /**
    *  The last arg is expected to be a local path, if only one argument is
    *  given then the destination will be the current directory 
    *  @param args is the list of arguments
    */
   protected void getLocalDestination(LinkedList<String> args)
   throws IOException {
-    String pathString = (args.size() < 2) ? Path.CUR_DIR : args.removeLast();
-    dst = new PathData(new File(pathString), getConf());
+    try {
+      String pathString = (args.size() < 2) ? Path.CUR_DIR : args.removeLast();
+      dst = new PathData(new URI(pathString), getConf());
+    } catch (URISyntaxException e) {
+      throw new IOException("unexpected URISyntaxException", e);
+    }
   }
 
   /**
@@ -218,7 +234,26 @@ abstract class CommandWithDestination extends FsCommand {
    */ 
   protected void copyFileToTarget(PathData src, PathData target) throws IOException {
     src.fs.setVerifyChecksum(verifyChecksum);
-    copyStreamToTarget(src.fs.open(src.path), target);
+    InputStream in = null;
+    try {
+      in = src.fs.open(src.path);
+      copyStreamToTarget(in, target);
+    } finally {
+      IOUtils.closeStream(in);
+    }
+    if(preserve) {
+      target.fs.setTimes(
+        target.path,
+        src.stat.getModificationTime(),
+        src.stat.getAccessTime());
+      target.fs.setOwner(
+        target.path,
+        src.stat.getOwner(),
+        src.stat.getGroup());
+      target.fs.setPermission(
+        target.path,
+        src.stat.getPermission());
+  }
   }
   
   /**

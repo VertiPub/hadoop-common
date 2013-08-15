@@ -18,16 +18,23 @@
 
 package org.apache.hadoop.yarn.server.resourcemanager;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.security.PrivilegedAction;
 import java.util.Map;
 
 import junit.framework.Assert;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
+import org.apache.hadoop.io.DataOutputBuffer;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
 import org.apache.hadoop.yarn.api.protocolrecords.GetNewApplicationRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.GetNewApplicationResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.KillApplicationRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.SubmitApplicationRequest;
+import org.apache.hadoop.yarn.api.protocolrecords.SubmitApplicationResponse;
 import org.apache.hadoop.yarn.api.records.ApplicationAccessType;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
@@ -37,6 +44,7 @@ import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.NodeState;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.server.resourcemanager.amlauncher.AMLauncherEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.amlauncher.ApplicationMasterLauncher;
 import org.apache.hadoop.yarn.server.resourcemanager.recovery.RMStateStore;
@@ -51,6 +59,7 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeEventType;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeImpl;
+import org.apache.hadoop.yarn.server.resourcemanager.security.RMDelegationTokenSecretManager;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;
@@ -82,10 +91,10 @@ public class MockRM extends ResourceManager {
     RMApp app = getRMContext().getRMApps().get(appId);
     Assert.assertNotNull("app shouldn't be null", app);
     int timeoutSecs = 0;
-    while (!finalState.equals(app.getState()) && timeoutSecs++ < 20) {
+    while (!finalState.equals(app.getState()) && timeoutSecs++ < 40) {
       System.out.println("App : " + appId + " State is : " + app.getState()
           + " Waiting for state : " + finalState);
-      Thread.sleep(500);
+      Thread.sleep(2000);
     }
     System.out.println("App State is : " + app.getState());
     Assert.assertEquals("App state is not correct (timedout)", finalState,
@@ -99,11 +108,11 @@ public class MockRM extends ResourceManager {
     Assert.assertNotNull("app shouldn't be null", app);
     RMAppAttempt attempt = app.getCurrentAppAttempt();
     int timeoutSecs = 0;
-    while (!finalState.equals(attempt.getAppAttemptState()) && timeoutSecs++ < 20) {
+    while (!finalState.equals(attempt.getAppAttemptState()) && timeoutSecs++ < 40) {
       System.out.println("AppAttempt : " + attemptId 
           + " State is : " + attempt.getAppAttemptState()
           + " Waiting for state : " + finalState);
-      Thread.sleep(500);
+      Thread.sleep(1000);
     }
     System.out.println("Attempt State is : " + attempt.getAppAttemptState());
     Assert.assertEquals("Attempt state is not correct (timedout)", finalState,
@@ -112,28 +121,48 @@ public class MockRM extends ResourceManager {
 
   // get new application id
   public GetNewApplicationResponse getNewAppId() throws Exception {
-    ClientRMProtocol client = getClientRMService();
+    ApplicationClientProtocol client = getClientRMService();
     return client.getNewApplication(Records
         .newRecord(GetNewApplicationRequest.class));
   }
 
   public RMApp submitApp(int masterMemory) throws Exception {
-    return submitApp(masterMemory, "", "");
+    return submitApp(masterMemory, "", UserGroupInformation.getCurrentUser()
+      .getShortUserName());
   }
 
   // client
   public RMApp submitApp(int masterMemory, String name, String user) throws Exception {
-    return submitApp(masterMemory, name, user, null, false);
+    return submitApp(masterMemory, name, user, null, false, null,
+      super.getConfig().getInt(YarnConfiguration.RM_AM_MAX_ATTEMPTS,
+        YarnConfiguration.DEFAULT_RM_AM_MAX_ATTEMPTS), null);
   }
   
   public RMApp submitApp(int masterMemory, String name, String user,
       Map<ApplicationAccessType, String> acls) throws Exception {
-    return submitApp(masterMemory, name, user, acls, false);
+    return submitApp(masterMemory, name, user, acls, false, null,
+      super.getConfig().getInt(YarnConfiguration.RM_AM_MAX_ATTEMPTS,
+        YarnConfiguration.DEFAULT_RM_AM_MAX_ATTEMPTS), null);
   }  
 
   public RMApp submitApp(int masterMemory, String name, String user,
-      Map<ApplicationAccessType, String> acls, boolean unmanaged) throws Exception {
-    ClientRMProtocol client = getClientRMService();
+      Map<ApplicationAccessType, String> acls, String queue) throws Exception {
+    return submitApp(masterMemory, name, user, acls, false, queue,
+      super.getConfig().getInt(YarnConfiguration.RM_AM_MAX_ATTEMPTS,
+        YarnConfiguration.DEFAULT_RM_AM_MAX_ATTEMPTS), null);
+  }
+
+  public RMApp submitApp(int masterMemory, String name, String user,
+      Map<ApplicationAccessType, String> acls, boolean unmanaged, String queue,
+      int maxAppAttempts, Credentials ts) throws Exception {
+    return submitApp(masterMemory, name, user, acls, unmanaged, queue,
+      maxAppAttempts, ts, null);
+  }
+
+  public RMApp submitApp(int masterMemory, String name, String user,
+      Map<ApplicationAccessType, String> acls, boolean unmanaged, String queue,
+      int maxAppAttempts, Credentials ts, String appType) throws Exception {
+    ApplicationClientProtocol client = getClientRMService();
     GetNewApplicationResponse resp = client.getNewApplication(Records
         .newRecord(GetNewApplicationRequest.class));
     ApplicationId appId = resp.getApplicationId();
@@ -144,20 +173,53 @@ public class MockRM extends ResourceManager {
         .newRecord(ApplicationSubmissionContext.class);
     sub.setApplicationId(appId);
     sub.setApplicationName(name);
-    sub.setUser(user);
+    sub.setMaxAppAttempts(maxAppAttempts);
     if(unmanaged) {
       sub.setUnmanagedAM(true);
     }
+    if (queue != null) {
+      sub.setQueue(queue);
+    }
+    sub.setApplicationType(appType);
     ContainerLaunchContext clc = Records
         .newRecord(ContainerLaunchContext.class);
-    Resource capability = Records.newRecord(Resource.class);
+    final Resource capability = Records.newRecord(Resource.class);
     capability.setMemory(masterMemory);
-    clc.setResource(capability);
+    sub.setResource(capability);
     clc.setApplicationACLs(acls);
+    if (ts != null && UserGroupInformation.isSecurityEnabled()) {
+      DataOutputBuffer dob = new DataOutputBuffer();
+      ts.writeTokenStorageToStream(dob);
+      ByteBuffer securityTokens = ByteBuffer.wrap(dob.getData(), 0, dob.getLength());
+      clc.setTokens(securityTokens);
+    }
     sub.setAMContainerSpec(clc);
     req.setApplicationSubmissionContext(sub);
-
-    client.submitApplication(req);
+    UserGroupInformation fakeUser =
+      UserGroupInformation.createUserForTesting(user, new String[] {"someGroup"});
+    PrivilegedAction<SubmitApplicationResponse> action =
+      new PrivilegedAction<SubmitApplicationResponse>() {
+      ApplicationClientProtocol client;
+      SubmitApplicationRequest req;
+      @Override
+      public SubmitApplicationResponse run() {
+        try {
+          return client.submitApplication(req);
+        } catch (YarnException e) {
+          e.printStackTrace();
+        } catch (IOException e) {
+          e.printStackTrace();
+        }
+        return null;
+      }
+      PrivilegedAction<SubmitApplicationResponse> setClientReq(
+        ApplicationClientProtocol client, SubmitApplicationRequest req) {
+        this.client = client;
+        this.req = req;
+        return this;
+      }
+    }.setClientReq(client, req);
+    fakeUser.doAs(action);
     // make sure app is immediately available after submit
     waitForState(appId, RMAppState.ACCEPTED);
     return getRMContext().getRMApps().get(appId);
@@ -197,7 +259,7 @@ public class MockRM extends ResourceManager {
   }
 
   public void killApp(ApplicationId appId) throws Exception {
-    ClientRMProtocol client = getClientRMService();
+    ApplicationClientProtocol client = getClientRMService();
     KillApplicationRequest req = Records
         .newRecord(KillApplicationRequest.class);
     req.setApplicationId(appId);
@@ -228,14 +290,14 @@ public class MockRM extends ResourceManager {
   @Override
   protected ClientRMService createClientRMService() {
     return new ClientRMService(getRMContext(), getResourceScheduler(),
-        rmAppManager, applicationACLsManager, null) {
+        rmAppManager, applicationACLsManager, rmDTSecretManager) {
       @Override
-      public void start() {
+      protected void serviceStart() {
         // override to not start rpc handler
       }
 
       @Override
-      public void stop() {
+      protected void serviceStop() {
         // don't do anything
       }
     };
@@ -243,15 +305,21 @@ public class MockRM extends ResourceManager {
 
   @Override
   protected ResourceTrackerService createResourceTrackerService() {
+    Configuration conf = new Configuration();
+    
+    containerTokenSecretManager.rollMasterKey();
+    nmTokenSecretManager.rollMasterKey();
     return new ResourceTrackerService(getRMContext(), nodesListManager,
-        this.nmLivelinessMonitor, this.containerTokenSecretManager) {
+        this.nmLivelinessMonitor, containerTokenSecretManager,
+        nmTokenSecretManager) {
+
       @Override
-      public void start() {
+      protected void serviceStart() {
         // override to not start rpc handler
       }
 
       @Override
-      public void stop() {
+      protected void serviceStop() {
         // don't do anything
       }
     };
@@ -261,12 +329,12 @@ public class MockRM extends ResourceManager {
   protected ApplicationMasterService createApplicationMasterService() {
     return new ApplicationMasterService(getRMContext(), scheduler) {
       @Override
-      public void start() {
+      protected void serviceStart() {
         // override to not start rpc handler
       }
 
       @Override
-      public void stop() {
+      protected void serviceStop() {
         // don't do anything
       }
     };
@@ -276,7 +344,7 @@ public class MockRM extends ResourceManager {
   protected ApplicationMasterLauncher createAMLauncher() {
     return new ApplicationMasterLauncher(getRMContext()) {
       @Override
-      public void start() {
+      protected void serviceStart() {
         // override to not start rpc handler
       }
 
@@ -286,7 +354,7 @@ public class MockRM extends ResourceManager {
       }
 
       @Override
-      public void stop() {
+      protected void serviceStop() {
         // don't do anything
       }
     };
@@ -300,12 +368,12 @@ public class MockRM extends ResourceManager {
         this.nodesListManager, clientRMService, applicationMasterService,
         resourceTrackerService) {
       @Override
-      public void start() {
+      protected void serviceStart() {
         // override to not start rpc handler
       }
 
       @Override
-      public void stop() {
+      protected void serviceStop() {
         // don't do anything
       }
     };
@@ -313,6 +381,10 @@ public class MockRM extends ResourceManager {
 
   public NodesListManager getNodesListManager() {
     return this.nodesListManager;
+  }
+
+  public RMDelegationTokenSecretManager getRMDTSecretManager() {
+    return this.rmDTSecretManager;
   }
 
   @Override

@@ -18,28 +18,19 @@
 
 package org.apache.hadoop.yarn.server.security;
 
-import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-
-import javax.crypto.SecretKey;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.security.token.SecretManager;
-import org.apache.hadoop.yarn.api.records.ContainerId;
-import org.apache.hadoop.yarn.api.records.ContainerToken;
-import org.apache.hadoop.yarn.api.records.NodeId;
-import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.security.ContainerTokenIdentifier;
 import org.apache.hadoop.yarn.server.api.records.MasterKey;
-import org.apache.hadoop.yarn.util.BuilderUtils;
-import org.apache.hadoop.yarn.util.Records;
 
 /**
  * SecretManager for ContainerTokens. Extended by both RM and NM and hence is
@@ -65,37 +56,6 @@ public class BaseContainerTokenSecretManager extends
    */
   protected MasterKeyData currentMasterKey;
 
-  protected final class MasterKeyData {
-
-    private final MasterKey masterKeyRecord;
-    // Underlying secret-key also stored to avoid repetitive encoding and
-    // decoding the masterKeyRecord bytes.
-    private final SecretKey generatedSecretKey;
-
-    private MasterKeyData() {
-      this.masterKeyRecord = Records.newRecord(MasterKey.class);
-      this.masterKeyRecord.setKeyId(serialNo++);
-      this.generatedSecretKey = generateSecret();
-      this.masterKeyRecord.setBytes(ByteBuffer.wrap(generatedSecretKey
-        .getEncoded()));
-    }
-
-    public MasterKeyData(MasterKey masterKeyRecord) {
-      this.masterKeyRecord = masterKeyRecord;
-      this.generatedSecretKey =
-          SecretManager.createSecretKey(this.masterKeyRecord.getBytes().array()
-            .clone());
-    }
-
-    public MasterKey getMasterKey() {
-      return this.masterKeyRecord;
-    }
-
-    private SecretKey getSecretKey() {
-      return this.generatedSecretKey;
-    }
-  }
-
   protected final long containerTokenExpiryInterval;
 
   public BaseContainerTokenSecretManager(Configuration conf) {
@@ -108,7 +68,7 @@ public class BaseContainerTokenSecretManager extends
   protected MasterKeyData createNewMasterKey() {
     this.writeLock.lock();
     try {
-    return new MasterKeyData();
+      return new MasterKeyData(serialNo++, generateSecret());
     } finally {
       this.writeLock.unlock();
     }
@@ -168,37 +128,5 @@ public class BaseContainerTokenSecretManager extends
   @Override
   public ContainerTokenIdentifier createIdentifier() {
     return new ContainerTokenIdentifier();
-  }
-
-  /**
-   * Helper function for creating ContainerTokens
-   * 
-   * @param containerId
-   * @param nodeId
-   * @param appSubmitter
-   * @param capability
-   * @return the container-token
-   */
-  public ContainerToken createContainerToken(ContainerId containerId,
-      NodeId nodeId, String appSubmitter, Resource capability) {
-    byte[] password;
-    ContainerTokenIdentifier tokenIdentifier;
-    long expiryTimeStamp =
-        System.currentTimeMillis() + containerTokenExpiryInterval;
-
-    // Lock so that we use the same MasterKey's keyId and its bytes
-    this.readLock.lock();
-    try {
-      tokenIdentifier =
-          new ContainerTokenIdentifier(containerId, nodeId.toString(),
-            appSubmitter, capability, expiryTimeStamp, this.currentMasterKey
-              .getMasterKey().getKeyId());
-      password = this.createPassword(tokenIdentifier);
-
-    } finally {
-      this.readLock.unlock();
-    }
-
-    return BuilderUtils.newContainerToken(nodeId, password, tokenIdentifier);
   }
 }

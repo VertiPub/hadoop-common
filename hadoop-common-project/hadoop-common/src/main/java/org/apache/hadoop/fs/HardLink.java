@@ -25,9 +25,11 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Arrays;
 
+import org.apache.hadoop.util.Shell;
+
 /**
  * Class for creating hardlinks.
- * Supports Unix/Linux, WinXP/2003/Vista via Cygwin, and Mac OS X.
+ * Supports Unix/Linux, Windows via winutils , and Mac OS X.
  * 
  * The HardLink class was formerly a static inner class of FSUtil,
  * and the methods provided were blatantly non-thread-safe.
@@ -39,15 +41,6 @@ import java.util.Arrays;
  */
 public class HardLink { 
 
-  public enum OSType {
-    OS_TYPE_UNIX,
-    OS_TYPE_WINXP,
-    OS_TYPE_SOLARIS,
-    OS_TYPE_MAC,
-    OS_TYPE_FREEBSD
-  }
-  
-  public static OSType osType;
   private static HardLinkCommandGetter getHardLinkCommand;
   
   public final LinkStats linkStats; //not static
@@ -55,19 +48,18 @@ public class HardLink {
   //initialize the command "getters" statically, so can use their 
   //methods without instantiating the HardLink object
   static { 
-    osType = getOSType();
-    if (osType == OSType.OS_TYPE_WINXP) {
+    if (Shell.WINDOWS) {
       // Windows
       getHardLinkCommand = new HardLinkCGWin();
     } else {
-      // Unix
+      // Unix or Linux
       getHardLinkCommand = new HardLinkCGUnix();
       //override getLinkCountCommand for the particular Unix variant
       //Linux is already set as the default - {"stat","-c%h", null}
-      if (osType == OSType.OS_TYPE_MAC || osType == OSType.OS_TYPE_FREEBSD) {
+      if (Shell.MAC || Shell.FREEBSD) {
         String[] linkCountCmdTemplate = {"/usr/bin/stat","-f%l", null};
         HardLinkCGUnix.setLinkCountCmdTemplate(linkCountCmdTemplate);
-      } else if (osType == OSType.OS_TYPE_SOLARIS) {
+      } else if (Shell.SOLARIS) {
         String[] linkCountCmdTemplate = {"ls","-l", null};
         HardLinkCGUnix.setLinkCountCmdTemplate(linkCountCmdTemplate);        
       }
@@ -76,32 +68,6 @@ public class HardLink {
 
   public HardLink() {
     linkStats = new LinkStats();
-  }
-  
-  static private OSType getOSType() {
-    String osName = System.getProperty("os.name");
-    if (osName.contains("Windows") &&
-            (osName.contains("XP") 
-            || osName.contains("2003") 
-            || osName.contains("Vista")
-            || osName.contains("Windows_7")
-            || osName.contains("Windows 7") 
-            || osName.contains("Windows7"))) {
-      return OSType.OS_TYPE_WINXP;
-    }
-    else if (osName.contains("SunOS") 
-            || osName.contains("Solaris")) {
-       return OSType.OS_TYPE_SOLARIS;
-    }
-    else if (osName.contains("Mac")) {
-       return OSType.OS_TYPE_MAC;
-    }
-    else if (osName.contains("FreeBSD")) {
-       return OSType.OS_TYPE_FREEBSD;
-    }
-    else {
-      return OSType.OS_TYPE_UNIX;
-    }
   }
   
   /**
@@ -258,11 +224,6 @@ public class HardLink {
   
   /**
    * Implementation of HardLinkCommandGetter class for Windows
-   * 
-   * Note that the linkCount shell command for Windows is actually
-   * a Cygwin shell command, and depends on ${cygwin}/bin
-   * being in the Windows PATH environment variable, so
-   * stat.exe can be found.
    */
   static class HardLinkCGWin extends HardLinkCommandGetter {
     //The Windows command getter impl class and its member fields are
@@ -270,14 +231,16 @@ public class HardLink {
     //unit testing (sort of) on non-Win servers
 
     static String[] hardLinkCommand = {
-                        "fsutil","hardlink","create", null, null};
+                        Shell.WINUTILS,"hardlink","create", null, null};
     static String[] hardLinkMultPrefix = {
                         "cmd","/q","/c","for", "%f", "in", "("};
     static String   hardLinkMultDir = "\\%f";
     static String[] hardLinkMultSuffix = {
-                        ")", "do", "fsutil", "hardlink", "create", null, 
+                        ")", "do", Shell.WINUTILS, "hardlink", "create", null,
                         "%f", "1>NUL"};
-    static String[] getLinkCountCommand = {"stat","-c%h", null};
+    static String[] getLinkCountCommand = {
+                        Shell.WINUTILS, "hardlink",
+                        "stat", null};
     //Windows guarantees only 8K - 1 bytes cmd length.
     //Subtract another 64b to allow for Java 'exec' overhead
     static final int maxAllowedCmdArgLength = 8*1024 - 65;
@@ -328,12 +291,6 @@ public class HardLink {
       String[] buf = new String[getLinkCountCommand.length];
       System.arraycopy(getLinkCountCommand, 0, buf, 0, 
                        getLinkCountCommand.length);
-      //The linkCount command is actually a Cygwin shell command,
-      //not a Windows shell command, so we should use "makeShellPath()"
-      //instead of "getCanonicalPath()".  However, that causes another
-      //shell exec to "cygpath.exe", and "stat.exe" actually can handle
-      //DOS-style paths (it just prints a couple hundred bytes of warning
-      //to stderr), so we use the more efficient "getCanonicalPath()".
       buf[getLinkCountCommand.length - 1] = file.getCanonicalPath();
       return buf;
     }
@@ -354,7 +311,7 @@ public class HardLink {
       //add the fixed overhead of the hardLinkMult command 
       //(prefix, suffix, and Dir suffix)
       sum += ("cmd.exe /q /c for %f in ( ) do "
-              + "fsutil hardlink create \\%f %f 1>NUL ").length();
+              + Shell.WINUTILS + " hardlink create \\%f %f 1>NUL ").length();
       return sum;
     }
     
@@ -561,7 +518,7 @@ public class HardLink {
       if (inpMsg == null || exitValue != 0) {
         throw createIOException(fileName, inpMsg, errMsg, exitValue, null);
       }
-      if (osType == OSType.OS_TYPE_SOLARIS) {
+      if (Shell.SOLARIS) {
         String[] result = inpMsg.split("\\s+");
         return Integer.parseInt(result[1]);
       } else {
@@ -581,14 +538,10 @@ public class HardLink {
   /* Create an IOException for failing to get link count. */
   private static IOException createIOException(File f, String message,
       String error, int exitvalue, Exception cause) {
-    
-    final String winErrMsg = "; Windows errors in getLinkCount are often due "
-         + "to Cygwin misconfiguration";
 
     final String s = "Failed to get link count on file " + f
         + ": message=" + message
         + "; error=" + error
-        + ((osType == OSType.OS_TYPE_WINXP) ? winErrMsg : "")
         + "; exit value=" + exitvalue;
     return (cause == null) ? new IOException(s) : new IOException(s, cause);
   }

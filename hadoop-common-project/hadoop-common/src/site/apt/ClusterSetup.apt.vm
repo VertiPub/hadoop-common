@@ -249,7 +249,7 @@ Hadoop MapReduce Next Generation - Cluster Setup
 *-------------------------+-------------------------+------------------------+
 | <<<yarn.resourcemanager.scheduler.class>>> | | |
 | | <<<ResourceManager>>> Scheduler class. | |
-| | | <<<CapacityScheduler>>> (recommended) or <<<FifoScheduler>>> |
+| | | <<<CapacityScheduler>>> (recommended), <<<FairScheduler>>> (also recommended), or <<<FifoScheduler>>> |
 *-------------------------+-------------------------+------------------------+
 | <<<yarn.scheduler.minimum-allocation-mb>>> | | |
 | | Minimum limit of memory to allocate to each container request at the <<<Resource Manager>>>. | |
@@ -323,6 +323,13 @@ Hadoop MapReduce Next Generation - Cluster Setup
 | <<<yarn.log-aggregation.retain-seconds>>> | | |
 | | <-1> | |
 | | | How long to keep aggregation logs before deleting them. -1 disables. |
+| | | Be careful, set this too small and you will spam the name node. |
+*-------------------------+-------------------------+------------------------+
+| <<<yarn.log-aggregation.retain-check-interval-seconds>>> | | |
+| | <-1> | |
+| | | Time between checks for aggregated log retention. If set to 0 or a |
+| | | negative value then the value is computed as one-tenth of the |
+| | | aggregated log retention time. |
 | | | Be careful, set this too small and you will spam the name node. |
 *-------------------------+-------------------------+------------------------+
 

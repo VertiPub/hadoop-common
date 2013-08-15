@@ -209,6 +209,7 @@ public class TestFilterFileSystem {
     public String getScheme() {
       return "dontcheck";
     }
+    public Path fixRelativePart(Path p) { return null; }
   }
   
   @Test
@@ -217,6 +218,8 @@ public class TestFilterFileSystem {
       if (Modifier.isStatic(m.getModifiers()))
         continue;
       if (Modifier.isPrivate(m.getModifiers()))
+        continue;
+      if (Modifier.isFinal(m.getModifiers()))
         continue;
       
       try {

@@ -17,6 +17,8 @@
  */
 package org.apache.hadoop.hdfs.server.namenode;
 
+import static org.apache.hadoop.util.Time.now;
+
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
@@ -31,14 +33,18 @@ import java.util.Map;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hdfs.DFSConfigKeys;
+import org.apache.hadoop.hdfs.DFSUtil;
+import org.apache.hadoop.hdfs.HAUtil;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.apache.hadoop.hdfs.protocol.LayoutVersion;
 import org.apache.hadoop.hdfs.protocol.LayoutVersion.Feature;
 import org.apache.hadoop.hdfs.server.common.Storage.FormatConfirmable;
+import org.apache.hadoop.hdfs.server.common.HdfsServerConstants.NamenodeRole;
+import org.apache.hadoop.hdfs.server.common.HdfsServerConstants.StartupOption;
 import org.apache.hadoop.hdfs.server.common.InconsistentFSStateException;
 import org.apache.hadoop.hdfs.server.common.Storage;
 import org.apache.hadoop.hdfs.server.common.Storage.StorageDirectory;
@@ -47,9 +53,11 @@ import org.apache.hadoop.hdfs.server.common.Util;
 import static org.apache.hadoop.util.Time.now;
 import org.apache.hadoop.hdfs.server.common.HdfsServerConstants.NamenodeRole;
 import org.apache.hadoop.hdfs.server.common.HdfsServerConstants.StartupOption;
-
+import org.apache.hadoop.hdfs.server.namenode.FSImageStorageInspector.FSImageFile;
 import org.apache.hadoop.hdfs.server.namenode.NNStorage.NameNodeDirType;
 import org.apache.hadoop.hdfs.server.namenode.NNStorage.NameNodeFile;
+import org.apache.hadoop.hdfs.server.namenode.startupprogress.Phase;
+import org.apache.hadoop.hdfs.server.namenode.startupprogress.StartupProgress;
 import org.apache.hadoop.hdfs.server.protocol.CheckpointCommand;
 import org.apache.hadoop.hdfs.server.protocol.NamenodeCommand;
 import org.apache.hadoop.hdfs.server.protocol.NamenodeProtocol;
@@ -58,11 +66,7 @@ import org.apache.hadoop.hdfs.server.protocol.NamespaceInfo;
 import org.apache.hadoop.hdfs.util.Canceler;
 import org.apache.hadoop.hdfs.util.MD5FileUtils;
 import org.apache.hadoop.io.MD5Hash;
-import org.apache.hadoop.util.IdGenerator;
 import org.apache.hadoop.util.Time;
-import org.apache.hadoop.hdfs.DFSConfigKeys;
-import org.apache.hadoop.hdfs.DFSUtil;
-import org.apache.hadoop.hdfs.HAUtil;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
@@ -92,7 +96,6 @@ public class FSImage implements Closeable {
   final private Configuration conf;
 
   protected NNStorageRetentionManager archivalManager;
-  protected IdGenerator blockIdGenerator;
 
   /**
    * Construct an FSImage
@@ -138,9 +141,6 @@ public class FSImage implements Closeable {
     Preconditions.checkState(fileCount == 1,
         "FSImage.format should be called with an uninitialized namesystem, has " +
         fileCount + " files");
-    // BlockIdGenerator is defined during formatting
-    // currently there is only one BlockIdGenerator
-    blockIdGenerator = createBlockIdGenerator(fsn);
     NamespaceInfo ns = NNStorage.newNamespaceInfo();
     ns.clusterID = clusterId;
     
@@ -583,11 +583,17 @@ public class FSImage implements Closeable {
   boolean loadFSImage(FSNamesystem target, MetaRecoveryContext recovery)
       throws IOException {
     FSImageStorageInspector inspector = storage.readAndInspectDirs();
+    FSImageFile imageFile = null;
     
     isUpgradeFinalized = inspector.isUpgradeFinalized();
  
-    FSImageStorageInspector.FSImageFile imageFile 
-      = inspector.getLatestImage();   
+    List<FSImageFile> imageFiles = inspector.getLatestImages();
+
+    StartupProgress prog = NameNode.getStartupProgress();
+    prog.beginPhase(Phase.LOADING_FSIMAGE);
+    File phaseFile = imageFiles.get(0).getFile();
+    prog.setFile(Phase.LOADING_FSIMAGE, phaseFile.getAbsolutePath());
+    prog.setSize(Phase.LOADING_FSIMAGE, phaseFile.length());
     boolean needToSave = inspector.needToSave();
 
     Iterable<EditLogInputStream> editStreams = null;
@@ -600,14 +606,20 @@ public class FSImage implements Closeable {
       // we better be able to load all the edits. If we're the standby NN, it's
       // OK to not be able to read all of edits right now.
       long toAtLeastTxId = editLog.isOpenForWrite() ? inspector.getMaxSeenTxId() : 0;
-      editStreams = editLog.selectInputStreams(imageFile.getCheckpointTxId() + 1,
+      editStreams = editLog.selectInputStreams(
+          imageFiles.get(0).getCheckpointTxId() + 1,
           toAtLeastTxId, recovery, false);
     } else {
       editStreams = FSImagePreTransactionalStorageInspector
         .getEditLogStreams(storage);
     }
+    int maxOpSize = conf.getInt(DFSConfigKeys.
+          DFS_NAMENODE_MAX_OP_SIZE_KEY,
+        DFSConfigKeys.DFS_NAMENODE_MAX_OP_SIZE_DEFAULT);
+    for (EditLogInputStream elis : editStreams) {
+      elis.setMaxOpSize(maxOpSize);
+    }
  
-    LOG.debug("Planning to load image :\n" + imageFile);
     for (EditLogInputStream l : editStreams) {
       LOG.debug("Planning to load edit log stream: " + l);
     }
@@ -615,40 +627,57 @@ public class FSImage implements Closeable {
       LOG.info("No edit log streams selected.");
     }
     
-    try {
-      StorageDirectory sdForProperties = imageFile.sd;
-      storage.readProperties(sdForProperties);
-
-      if (LayoutVersion.supports(Feature.TXID_BASED_LAYOUT,
-                                 getLayoutVersion())) {
-        // For txid-based layout, we should have a .md5 file
-        // next to the image file
-        loadFSImage(imageFile.getFile(), target, recovery);
-      } else if (LayoutVersion.supports(Feature.FSIMAGE_CHECKSUM,
-                                        getLayoutVersion())) {
-        // In 0.22, we have the checksum stored in the VERSION file.
-        String md5 = storage.getDeprecatedProperty(
-            NNStorage.DEPRECATED_MESSAGE_DIGEST_PROPERTY);
-        if (md5 == null) {
-          throw new InconsistentFSStateException(sdForProperties.getRoot(),
-              "Message digest property " +
-              NNStorage.DEPRECATED_MESSAGE_DIGEST_PROPERTY +
-              " not set for storage directory " + sdForProperties.getRoot());
-        }
-        loadFSImage(imageFile.getFile(), new MD5Hash(md5), target, recovery);
-      } else {
-        // We don't have any record of the md5sum
-        loadFSImage(imageFile.getFile(), null, target, recovery);
+    for (int i = 0; i < imageFiles.size(); i++) {
+      try {
+        imageFile = imageFiles.get(i);
+        loadFSImageFile(target, recovery, imageFile);
+        break;
+      } catch (IOException ioe) {
+        LOG.error("Failed to load image from " + imageFile, ioe);
+        target.clear();
+        imageFile = null;
       }
-    } catch (IOException ioe) {
-      FSEditLog.closeAllStreams(editStreams);
-      throw new IOException("Failed to load image from " + imageFile, ioe);
     }
+    // Failed to load any images, error out
+    if (imageFile == null) {
+      FSEditLog.closeAllStreams(editStreams);
+      throw new IOException("Failed to load an FSImage file!");
+    }
+    prog.endPhase(Phase.LOADING_FSIMAGE);
     long txnsAdvanced = loadEdits(editStreams, target, recovery);
     needToSave |= needsResaveBasedOnStaleCheckpoint(imageFile.getFile(),
                                                     txnsAdvanced);
     editLog.setNextTxId(lastAppliedTxId + 1);
     return needToSave;
+  }
+
+  void loadFSImageFile(FSNamesystem target, MetaRecoveryContext recovery,
+      FSImageFile imageFile) throws IOException {
+    LOG.debug("Planning to load image :\n" + imageFile);
+    StorageDirectory sdForProperties = imageFile.sd;
+    storage.readProperties(sdForProperties);
+
+    if (LayoutVersion.supports(Feature.TXID_BASED_LAYOUT,
+                               getLayoutVersion())) {
+      // For txid-based layout, we should have a .md5 file
+      // next to the image file
+      loadFSImage(imageFile.getFile(), target, recovery);
+    } else if (LayoutVersion.supports(Feature.FSIMAGE_CHECKSUM,
+                                      getLayoutVersion())) {
+      // In 0.22, we have the checksum stored in the VERSION file.
+      String md5 = storage.getDeprecatedProperty(
+          NNStorage.DEPRECATED_MESSAGE_DIGEST_PROPERTY);
+      if (md5 == null) {
+        throw new InconsistentFSStateException(sdForProperties.getRoot(),
+            "Message digest property " +
+            NNStorage.DEPRECATED_MESSAGE_DIGEST_PROPERTY +
+            " not set for storage directory " + sdForProperties.getRoot());
+      }
+      loadFSImage(imageFile.getFile(), new MD5Hash(md5), target, recovery);
+    } else {
+      // We don't have any record of the md5sum
+      loadFSImage(imageFile.getFile(), null, target, recovery);
+    }
   }
 
   public void initEditLog() {
@@ -689,6 +718,8 @@ public class FSImage implements Closeable {
   public long loadEdits(Iterable<EditLogInputStream> editStreams,
       FSNamesystem target, MetaRecoveryContext recovery) throws IOException {
     LOG.debug("About to load edits:\n  " + Joiner.on("\n  ").join(editStreams));
+    StartupProgress prog = NameNode.getStartupProgress();
+    prog.beginPhase(Phase.LOADING_EDITS);
     
     long prevLastAppliedTxId = lastAppliedTxId;  
     try {    
@@ -713,11 +744,59 @@ public class FSImage implements Closeable {
     } finally {
       FSEditLog.closeAllStreams(editStreams);
       // update the counts
-      target.dir.updateCountForINodeWithQuota();   
+      updateCountForQuota(target.dir.rootDir);   
     }
+    prog.endPhase(Phase.LOADING_EDITS);
     return lastAppliedTxId - prevLastAppliedTxId;
   }
 
+  /**
+   * Update the count of each directory with quota in the namespace.
+   * A directory's count is defined as the total number inodes in the tree
+   * rooted at the directory.
+   * 
+   * This is an update of existing state of the filesystem and does not
+   * throw QuotaExceededException.
+   */
+  static void updateCountForQuota(INodeDirectoryWithQuota root) {
+    updateCountForQuotaRecursively(root, Quota.Counts.newInstance());
+  }
+  
+  private static void updateCountForQuotaRecursively(INodeDirectory dir,
+      Quota.Counts counts) {
+    final long parentNamespace = counts.get(Quota.NAMESPACE);
+    final long parentDiskspace = counts.get(Quota.DISKSPACE);
+
+    dir.computeQuotaUsage4CurrentDirectory(counts);
+    
+    for (INode child : dir.getChildrenList(null)) {
+      if (child.isDirectory()) {
+        updateCountForQuotaRecursively(child.asDirectory(), counts);
+      } else {
+        // file or symlink: count here to reduce recursive calls.
+        child.computeQuotaUsage(counts, false);
+      }
+    }
+      
+    if (dir.isQuotaSet()) {
+      // check if quota is violated. It indicates a software bug.
+      final long namespace = counts.get(Quota.NAMESPACE) - parentNamespace;
+      if (Quota.isViolated(dir.getNsQuota(), namespace)) {
+        LOG.error("BUG: Namespace quota violation in image for "
+            + dir.getFullPathName()
+            + " quota = " + dir.getNsQuota() + " < consumed = " + namespace);
+      }
+
+      final long diskspace = counts.get(Quota.DISKSPACE) - parentDiskspace;
+      if (Quota.isViolated(dir.getDsQuota(), diskspace)) {
+        LOG.error("BUG: Diskspace quota violation in image for "
+            + dir.getFullPathName()
+            + " quota = " + dir.getDsQuota() + " < consumed = " + diskspace);
+      }
+
+      ((INodeDirectoryWithQuota)dir).setSpaceConsumed(namespace, diskspace);
+    }
+  }
 
   /**
    * Load the image namespace from the given image file, verifying
@@ -742,9 +821,6 @@ public class FSImage implements Closeable {
     FSImageFormat.Loader loader = new FSImageFormat.Loader(
         conf, target);
     loader.load(curFile);
-    // BlockIdGenerator is determined after loading image
-    // currently there is only one BlockIdGenerator
-    blockIdGenerator = createBlockIdGenerator(target);
     target.setBlockPoolId(this.getBlockPoolID());
 
     // Check that the image digest we loaded matches up with what
@@ -884,6 +960,8 @@ public class FSImage implements Closeable {
   protected synchronized void saveFSImageInAllDirs(FSNamesystem source, long txid,
       Canceler canceler)
       throws IOException {    
+    StartupProgress prog = NameNode.getStartupProgress();
+    prog.beginPhase(Phase.SAVING_CHECKPOINT);
     if (storage.getNumStorageDirs(NameNodeDirType.IMAGE) == 0) {
       throw new IOException("No image directories available!");
     }
@@ -929,6 +1007,7 @@ public class FSImage implements Closeable {
       ctx.markComplete();
       ctx = null;
     }
+    prog.endPhase(Phase.SAVING_CHECKPOINT);
   }
 
   /**
@@ -1079,7 +1158,7 @@ public class FSImage implements Closeable {
    */
   public synchronized void saveDigestAndRenameCheckpointImage(
       long txid, MD5Hash digest) throws IOException {
-    renameCheckpoint(txid);
+    // Write and rename MD5 file
     List<StorageDirectory> badSds = Lists.newArrayList();
     
     for (StorageDirectory sd : storage.dirIterable(NameNodeDirType.IMAGE)) {
@@ -1092,6 +1171,10 @@ public class FSImage implements Closeable {
     }
     storage.reportErrorsOnDirectories(badSds);
     
+    CheckpointFaultInjector.getInstance().afterMD5Rename();
+    
+    // Rename image from tmp file
+    renameCheckpoint(txid);
     // So long as this is the newest image available,
     // advertise it as such to other checkpointers
     // from now on
@@ -1172,13 +1255,5 @@ public class FSImage implements Closeable {
 
   public synchronized long getMostRecentCheckpointTxId() {
     return storage.getMostRecentCheckpointTxId();
-  }
-
-  public long getUniqueBlockId() {
-    return blockIdGenerator.nextValue();
-  }
-
-  public IdGenerator createBlockIdGenerator(FSNamesystem fsn) {
-    return new RandomBlockIdGenerator(fsn);
   }
 }

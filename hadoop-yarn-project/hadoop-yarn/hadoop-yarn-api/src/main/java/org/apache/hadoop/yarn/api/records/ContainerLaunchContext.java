@@ -24,7 +24,10 @@ import java.util.Map;
 
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
-import org.apache.hadoop.yarn.api.ContainerManager;
+import org.apache.hadoop.yarn.api.ContainerManagementProtocol;
+import org.apache.hadoop.yarn.server.api.ApplicationInitializationContext;
+import org.apache.hadoop.yarn.server.api.AuxiliaryService;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p><code>ContainerLaunchContext</code> represents all of the information
@@ -46,77 +49,49 @@ import org.apache.hadoop.yarn.api.ContainerManager;
  *   </ul>
  * </p>
  * 
- * @see ContainerManager#startContainer(org.apache.hadoop.yarn.api.protocolrecords.StartContainerRequest)
+ * @see ContainerManagementProtocol#startContainers(org.apache.hadoop.yarn.api.protocolrecords.StartContainersRequest)
  */
 @Public
 @Stable
-public interface ContainerLaunchContext {
-  /**
-   * Get <code>ContainerId</code> of container to be launched.
-   * @return <code>ContainerId</code> of container to be launched
-   */
+public abstract class ContainerLaunchContext {
+
   @Public
   @Stable
-  ContainerId getContainerId();
+  public static ContainerLaunchContext newInstance(
+      Map<String, LocalResource> localResources,
+      Map<String, String> environment, List<String> commands,
+      Map<String, ByteBuffer> serviceData,  ByteBuffer tokens,
+      Map<ApplicationAccessType, String> acls) {
+    ContainerLaunchContext container =
+        Records.newRecord(ContainerLaunchContext.class);
+    container.setLocalResources(localResources);
+    container.setEnvironment(environment);
+    container.setCommands(commands);
+    container.setServiceData(serviceData);
+    container.setTokens(tokens);
+    container.setApplicationACLs(acls);
+    return container;
+  }
 
   /**
-   * Set <code>ContainerId</code> of container to be launched.
-   * @param containerId et <code>ContainerId</code> of container to be launched
+   * Get all the tokens needed by this container. It may include file-system
+   * tokens, ApplicationMaster related tokens if this container is an
+   * ApplicationMaster or framework level tokens needed by this container to
+   * communicate to various services in a secure manner.
+   * 
+   * @return tokens needed by this container.
    */
   @Public
   @Stable
-  void setContainerId(ContainerId containerId);
+  public abstract ByteBuffer getTokens();
 
   /**
-   * Get the <em>user</em> to whom the container has been allocated.
-   * @return the <em>user</em> to whom the container has been allocated
+   * Set security tokens needed by this container.
+   * @param tokens security tokens 
    */
   @Public
   @Stable
-  String getUser();
-  
-  /**
-   * Set the <em>user</em> to whom the container has been allocated
-   * @param user <em>user</em> to whom the container has been allocated
-   */
-  @Public
-  @Stable
-  void setUser(String user);
-
-  /**
-   * Get the <code>Resource</code> allocated to the container by the
-   * <code>ResourceManager</code>.
-   * @return <code>Resource</code> allocated to the container by the
-   *         <code>ResourceManager</code>
-   */
-  @Public
-  @Stable
-  Resource getResource();
-
-  /**
-   * Set the <code>Resource</code> allocated to the container by the
-   * <code>ResourceManager</code>.
-   * @param resource allocated resource
-   */
-  @Public
-  @Stable
-  void setResource(Resource resource);
-
-  /**
-   * Get security tokens (if security is enabled).
-   * @return security tokens (if security is enabled)
-   */
-  @Public
-  @Stable
-  ByteBuffer getContainerTokens();
-
-  /**
-   * Set security tokens (if security is enabled).
-   * @param containerToken security tokens 
-   */
-  @Public
-  @Stable
-  void setContainerTokens(ByteBuffer containerToken);
+  public abstract void setTokens(ByteBuffer tokens);
 
   /**
    * Get <code>LocalResource</code> required by the container.
@@ -124,7 +99,7 @@ public interface ContainerLaunchContext {
    */
   @Public
   @Stable
-  Map<String, LocalResource> getLocalResources();
+  public abstract Map<String, LocalResource> getLocalResources();
   
   /**
    * Set <code>LocalResource</code> required by the container. All pre-existing
@@ -133,24 +108,43 @@ public interface ContainerLaunchContext {
    */
   @Public
   @Stable
-  void setLocalResources(Map<String, LocalResource> localResources);
+  public abstract void setLocalResources(Map<String, LocalResource> localResources);
 
   /**
-   * Get application-specific binary <em>service data</em>.
+   * <p>
+   * Get application-specific binary <em>service data</em>. This is a map keyed
+   * by the name of each {@link AuxiliaryService} that is configured on a
+   * NodeManager and value correspond to the application specific data targeted
+   * for the keyed {@link AuxiliaryService}.
+   * </p>
+   * 
+   * <p>
+   * This will be used to initialize this application on the specific
+   * {@link AuxiliaryService} running on the NodeManager by calling
+   * {@link AuxiliaryService#initializeApplication(ApplicationInitializationContext)}
+   * </p>
+   * 
    * @return application-specific binary <em>service data</em>
    */
   @Public
   @Stable
-  Map<String, ByteBuffer> getServiceData();
+  public abstract Map<String, ByteBuffer> getServiceData();
   
   /**
-   * Set application-specific binary <em>service data</em>. All pre-existing Map
-   * entries are preserved.
-   * @param serviceData application-specific binary <em>service data</em>
+   * <p>
+   * Set application-specific binary <em>service data</em>. This is a map keyed
+   * by the name of each {@link AuxiliaryService} that is configured on a
+   * NodeManager and value correspond to the application specific data targeted
+   * for the keyed {@link AuxiliaryService}. All pre-existing Map entries are
+   * preserved.
+   * </p>
+   * 
+   * @param serviceData
+   *          application-specific binary <em>service data</em>
    */
   @Public
   @Stable
-  void setServiceData(Map<String, ByteBuffer> serviceData);
+  public abstract void setServiceData(Map<String, ByteBuffer> serviceData);
 
   /**
    * Get <em>environment variables</em> for the container.
@@ -158,7 +152,7 @@ public interface ContainerLaunchContext {
    */
   @Public
   @Stable
-  Map<String, String> getEnvironment();
+  public abstract Map<String, String> getEnvironment();
     
   /**
    * Add <em>environment variables</em> for the container. All pre-existing Map
@@ -167,7 +161,7 @@ public interface ContainerLaunchContext {
    */
   @Public
   @Stable
-  void setEnvironment(Map<String, String> environment);
+  public abstract void setEnvironment(Map<String, String> environment);
 
   /**
    * Get the list of <em>commands</em> for launching the container.
@@ -175,7 +169,7 @@ public interface ContainerLaunchContext {
    */
   @Public
   @Stable
-  List<String> getCommands();
+  public abstract List<String> getCommands();
   
   /**
    * Add the list of <em>commands</em> for launching the container. All
@@ -184,7 +178,7 @@ public interface ContainerLaunchContext {
    */
   @Public
   @Stable
-  void setCommands(List<String> commands);
+  public abstract void setCommands(List<String> commands);
 
   /**
    * Get the <code>ApplicationACL</code>s for the application. 
@@ -192,7 +186,7 @@ public interface ContainerLaunchContext {
    */
   @Public
   @Stable
-  public Map<ApplicationAccessType, String> getApplicationACLs();
+  public abstract  Map<ApplicationAccessType, String> getApplicationACLs();
 
   /**
    * Set the <code>ApplicationACL</code>s for the application. All pre-existing
@@ -201,5 +195,5 @@ public interface ContainerLaunchContext {
    */
   @Public
   @Stable
-  public void setApplicationACLs(Map<ApplicationAccessType, String> acls);
+  public abstract  void setApplicationACLs(Map<ApplicationAccessType, String> acls);
 }

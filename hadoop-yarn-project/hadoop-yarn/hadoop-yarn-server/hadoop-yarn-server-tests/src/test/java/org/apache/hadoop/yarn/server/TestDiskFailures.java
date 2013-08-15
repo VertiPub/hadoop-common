@@ -27,6 +27,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.UnsupportedFileSystemException;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.util.StringUtils;
+import org.apache.hadoop.yarn.api.records.NodeState;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.MiniYARNCluster;
 import org.apache.hadoop.yarn.server.nodemanager.LocalDirsHandlerService;
@@ -133,10 +134,10 @@ public class TestDiskFailures {
     dirSvc.init(conf);
     List<String> localDirs = dirSvc.getLocalDirs();
     Assert.assertEquals(1, localDirs.size());
-    Assert.assertEquals(localDir2, localDirs.get(0));
+    Assert.assertEquals(new Path(localDir2).toString(), localDirs.get(0));
     List<String> logDirs = dirSvc.getLogDirs();
     Assert.assertEquals(1, logDirs.size());
-    Assert.assertEquals(logDir1, logDirs.get(0));
+    Assert.assertEquals(new Path(logDir1).toString(), logDirs.get(0));
   }
 
   private void testDirsFailures(boolean localORLogDirs) throws IOException {
@@ -243,7 +244,7 @@ public class TestDiskFailures {
     for (int i = 0; i < 10; i++) {
       Iterator<RMNode> iter = yarnCluster.getResourceManager().getRMContext()
                               .getRMNodes().values().iterator();
-      if (iter.next().getNodeHealthStatus().getIsNodeHealthy() == isHealthy) {
+      if ((iter.next().getState() != NodeState.UNHEALTHY) == isHealthy) {
         break;
       }
       // wait for the node health info to go to RM
@@ -256,7 +257,7 @@ public class TestDiskFailures {
     Iterator<RMNode> iter = yarnCluster.getResourceManager().getRMContext()
                             .getRMNodes().values().iterator();
     Assert.assertEquals("RM is not updated with the health status of a node",
-        isHealthy, iter.next().getNodeHealthStatus().getIsNodeHealthy());
+        isHealthy, iter.next().getState() != NodeState.UNHEALTHY);
   }
 
   /**

@@ -19,85 +19,202 @@ package org.apache.hadoop.hdfs.server.namenode;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.List;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.permission.PermissionStatus;
-import org.apache.hadoop.hdfs.protocol.Block;
+import org.apache.hadoop.hdfs.protocol.QuotaExceededException;
 import org.apache.hadoop.hdfs.server.blockmanagement.BlockCollection;
 import org.apache.hadoop.hdfs.server.blockmanagement.BlockInfo;
 import org.apache.hadoop.hdfs.server.blockmanagement.BlockInfoUnderConstruction;
+import org.apache.hadoop.hdfs.server.blockmanagement.DatanodeDescriptor;
+import org.apache.hadoop.hdfs.server.namenode.snapshot.FileWithSnapshot;
+import org.apache.hadoop.hdfs.server.namenode.snapshot.FileWithSnapshot.FileDiff;
+import org.apache.hadoop.hdfs.server.namenode.snapshot.FileWithSnapshot.FileDiffList;
+import org.apache.hadoop.hdfs.server.namenode.snapshot.FileWithSnapshot.Util;
+import org.apache.hadoop.hdfs.server.namenode.snapshot.INodeFileWithSnapshot;
+import org.apache.hadoop.hdfs.server.namenode.snapshot.Snapshot;
+
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 
 /** I-node for closed file. */
 @InterfaceAudience.Private
-class INodeFile extends INode implements BlockCollection {
-  /** Cast INode to INodeFile. */
-  public static INodeFile valueOf(INode inode, String path) throws IOException {
-    if (inode == null) {
-      throw new FileNotFoundException("File does not exist: " + path);
-    }
-    if (!(inode instanceof INodeFile)) {
-      throw new FileNotFoundException("Path is not a file: " + path);
-    }
-    return (INodeFile)inode;
+public class INodeFile extends INodeWithAdditionalFields
+    implements INodeFileAttributes, BlockCollection {
+  /** The same as valueOf(inode, path, false). */
+  public static INodeFile valueOf(INode inode, String path
+      ) throws FileNotFoundException {
+    return valueOf(inode, path, false);
   }
 
-  static final FsPermission UMASK = FsPermission.createImmutable((short)0111);
+  /** Cast INode to INodeFile. */
+  public static INodeFile valueOf(INode inode, String path, boolean acceptNull)
+      throws FileNotFoundException {
+    if (inode == null) {
+      if (acceptNull) {
+        return null;
+      } else {
+        throw new FileNotFoundException("File does not exist: " + path);
+      }
+    }
+    if (!inode.isFile()) {
+      throw new FileNotFoundException("Path is not a file: " + path);
+    }
+    return inode.asFile();
+  }
 
-  //Number of bits for Block size
-  static final short BLOCKBITS = 48;
+  /** Format: [16 bits for replication][48 bits for PreferredBlockSize] */
+  static class HeaderFormat {
+    /** Number of bits for Block size */
+    static final int BLOCKBITS = 48;
+    /** Header mask 64-bit representation */
+    static final long HEADERMASK = 0xffffL << BLOCKBITS;
+    static final long MAX_BLOCK_SIZE = ~HEADERMASK; 
+    
+    static short getReplication(long header) {
+      return (short) ((header & HEADERMASK) >> BLOCKBITS);
+    }
 
-  //Header mask 64-bit representation
-  //Format: [16 bits for replication][48 bits for PreferredBlockSize]
-  static final long HEADERMASK = 0xffffL << BLOCKBITS;
+    static long combineReplication(long header, short replication) {
+      if (replication <= 0) {
+         throw new IllegalArgumentException(
+             "Unexpected value for the replication: " + replication);
+      }
+      return ((long)replication << BLOCKBITS) | (header & MAX_BLOCK_SIZE);
+    }
+    
+    static long getPreferredBlockSize(long header) {
+      return header & MAX_BLOCK_SIZE;
+    }
 
-  private long header;
+    static long combinePreferredBlockSize(long header, long blockSize) {
+      if (blockSize < 0) {
+         throw new IllegalArgumentException("Block size < 0: " + blockSize);
+      } else if (blockSize > MAX_BLOCK_SIZE) {
+        throw new IllegalArgumentException("Block size = " + blockSize
+            + " > MAX_BLOCK_SIZE = " + MAX_BLOCK_SIZE);
+     }
+      return (header & HEADERMASK) | (blockSize & MAX_BLOCK_SIZE);
+    }
+  }
+
+  private long header = 0L;
 
   private BlockInfo[] blocks;
 
-  INodeFile(PermissionStatus permissions, BlockInfo[] blklist,
-                      short replication, long modificationTime,
-                      long atime, long preferredBlockSize) {
-    super(permissions, modificationTime, atime);
-    this.setReplication(replication);
-    this.setPreferredBlockSize(preferredBlockSize);
+  INodeFile(long id, byte[] name, PermissionStatus permissions, long mtime, long atime,
+      BlockInfo[] blklist, short replication, long preferredBlockSize) {
+    super(id, name, permissions, mtime, atime);
+    header = HeaderFormat.combineReplication(header, replication);
+    header = HeaderFormat.combinePreferredBlockSize(header, preferredBlockSize);
     this.blocks = blklist;
   }
+  
+  public INodeFile(INodeFile that) {
+    super(that);
+    this.header = that.header;
+    this.blocks = that.blocks;
+  }
 
-  /**
-   * Set the {@link FsPermission} of this {@link INodeFile}.
-   * Since this is a file,
-   * the {@link FsAction#EXECUTE} action, if any, is ignored.
-   */
+  /** @return true unconditionally. */
   @Override
-  void setPermission(FsPermission permission) {
-    super.setPermission(permission.applyUMask(UMASK));
+  public final boolean isFile() {
+    return true;
+  }
+
+  /** @return this object. */
+  @Override
+  public final INodeFile asFile() {
+    return this;
+  }
+
+  /** Is this file under construction? */
+  public boolean isUnderConstruction() {
+    return false;
+  }
+
+  /** Convert this file to an {@link INodeFileUnderConstruction}. */
+  public INodeFileUnderConstruction toUnderConstruction(
+      String clientName,
+      String clientMachine,
+      DatanodeDescriptor clientNode) {
+    Preconditions.checkState(!isUnderConstruction(),
+        "file is already an INodeFileUnderConstruction");
+    return new INodeFileUnderConstruction(this,
+        clientName, clientMachine, clientNode); 
+  }
+
+  @Override
+  public INodeFileAttributes getSnapshotINode(final Snapshot snapshot) {
+    return this;
+  }
+
+  @Override
+  public INodeFile recordModification(final Snapshot latest,
+      final INodeMap inodeMap) throws QuotaExceededException {
+    if (isInLatestSnapshot(latest)) {
+      INodeFileWithSnapshot newFile = getParent()
+          .replaceChild4INodeFileWithSnapshot(this, inodeMap)
+          .recordModification(latest, inodeMap);
+      return newFile;
+    } else {
+      return this;
+    }
   }
 
   /** @return the replication factor of the file. */
-  @Override
-  public short getBlockReplication() {
-    return (short) ((header & HEADERMASK) >> BLOCKBITS);
+  public final short getFileReplication(Snapshot snapshot) {
+    if (snapshot != null) {
+      return getSnapshotINode(snapshot).getFileReplication();
+    }
+
+    return HeaderFormat.getReplication(header);
   }
 
-  void setReplication(short replication) {
-    if(replication <= 0)
-       throw new IllegalArgumentException("Unexpected value for the replication");
-    header = ((long)replication << BLOCKBITS) | (header & ~HEADERMASK);
+  /** The same as getFileReplication(null). */
+  @Override
+  public final short getFileReplication() {
+    return getFileReplication(null);
+  }
+
+  @Override
+  public final short getBlockReplication() {
+    return this instanceof FileWithSnapshot?
+        Util.getBlockReplication((FileWithSnapshot)this)
+        : getFileReplication(null);
+  }
+
+  /** Set the replication factor of this file. */
+  public final void setFileReplication(short replication) {
+    header = HeaderFormat.combineReplication(header, replication);
+  }
+
+  /** Set the replication factor of this file. */
+  public final INodeFile setFileReplication(short replication, Snapshot latest,
+      final INodeMap inodeMap) throws QuotaExceededException {
+    final INodeFile nodeToUpdate = recordModification(latest, inodeMap);
+    nodeToUpdate.setFileReplication(replication);
+    return nodeToUpdate;
   }
 
   /** @return preferred block size (in bytes) of the file. */
   @Override
   public long getPreferredBlockSize() {
-    return header & ~HEADERMASK;
+    return HeaderFormat.getPreferredBlockSize(header);
   }
 
-  private void setPreferredBlockSize(long preferredBlkSize) {
-    if((preferredBlkSize < 0) || (preferredBlkSize > ~HEADERMASK ))
-       throw new IllegalArgumentException("Unexpected value for the block size");
-    header = (header & HEADERMASK) | (preferredBlkSize & ~HEADERMASK);
+  @Override
+  public long getHeaderLong() {
+    return header;
+  }
+
+  /** @return the diskspace required for a full block. */
+  final long getBlockDiskspace() {
+    return getPreferredBlockSize() * getBlockReplication();
   }
 
   /** @return the blocks of the file. */
@@ -106,11 +223,23 @@ class INodeFile extends INode implements BlockCollection {
     return this.blocks;
   }
 
+  void updateBlockCollection() {
+    if (blocks != null) {
+      for(BlockInfo b : blocks) {
+        b.setBlockCollection(this);
+      }
+    }
+  }
+
   /**
    * append array of blocks to this.blocks
    */
-  void appendBlocks(INodeFile [] inodes, int totalAddedBlocks) {
+  void concatBlocks(INodeFile[] inodes) {
     int size = this.blocks.length;
+    int totalAddedBlocks = 0;
+    for(INodeFile f : inodes) {
+      totalAddedBlocks += f.blocks.length;
+    }
     
     BlockInfo[] newlist = new BlockInfo[size + totalAddedBlocks];
     System.arraycopy(this.blocks, 0, newlist, 0, size);
@@ -119,11 +248,9 @@ class INodeFile extends INode implements BlockCollection {
       System.arraycopy(in.blocks, 0, newlist, size, in.blocks.length);
       size += in.blocks.length;
     }
-    
-    for(BlockInfo bi: newlist) {
-      bi.setBlockCollection(this);
-    }
+
     setBlocks(newlist);
+    updateBlockCollection();
   }
   
   /**
@@ -152,16 +279,35 @@ class INodeFile extends INode implements BlockCollection {
   }
 
   @Override
-  int collectSubtreeBlocksAndClear(List<Block> v) {
-    parent = null;
-    if(blocks != null && v != null) {
+  public Quota.Counts cleanSubtree(final Snapshot snapshot, Snapshot prior,
+      final BlocksMapUpdateInfo collectedBlocks,
+      final List<INode> removedINodes, final boolean countDiffChange)
+      throws QuotaExceededException {
+    Quota.Counts counts = Quota.Counts.newInstance();
+    if (snapshot == null && prior == null) {   
+      // this only happens when deleting the current file
+      computeQuotaUsage(counts, false);
+      destroyAndCollectBlocks(collectedBlocks, removedINodes);
+    }
+    return counts;
+  }
+
+  @Override
+  public void destroyAndCollectBlocks(BlocksMapUpdateInfo collectedBlocks,
+      final List<INode> removedINodes) {
+    if (blocks != null && collectedBlocks != null) {
       for (BlockInfo blk : blocks) {
-        v.add(blk);
+        collectedBlocks.addDeleteBlock(blk);
         blk.setBlockCollection(null);
       }
     }
     setBlocks(null);
-    return 1;
+    clear();
+    removedINodes.add(this);
+    
+    if (this instanceof FileWithSnapshot) {
+      ((FileWithSnapshot) this).getDiffs().clear();
+    }
   }
   
   @Override
@@ -170,63 +316,144 @@ class INodeFile extends INode implements BlockCollection {
     return getFullPathName();
   }
 
-
   @Override
-  long[] computeContentSummary(long[] summary) {
-    summary[0] += computeFileSize(true);
-    summary[1]++;
-    summary[3] += diskspaceConsumed();
-    return summary;
+  public final Quota.Counts computeQuotaUsage(Quota.Counts counts,
+      boolean useCache, int lastSnapshotId) {
+    long nsDelta = 1;
+    final long dsDelta;
+    if (this instanceof FileWithSnapshot) {
+      FileDiffList fileDiffList = ((FileWithSnapshot) this).getDiffs();
+      Snapshot last = fileDiffList.getLastSnapshot();
+      List<FileDiff> diffs = fileDiffList.asList();
+
+      if (lastSnapshotId == Snapshot.INVALID_ID || last == null) {
+        nsDelta += diffs.size();
+        dsDelta = diskspaceConsumed();
+      } else if (last.getId() < lastSnapshotId) {
+        dsDelta = computeFileSize(true, false) * getFileReplication();
+      } else {      
+        Snapshot s = fileDiffList.getSnapshotById(lastSnapshotId);
+        dsDelta = diskspaceConsumed(s);
+      }
+    } else {
+      dsDelta = diskspaceConsumed();
+    }
+    counts.add(Quota.NAMESPACE, nsDelta);
+    counts.add(Quota.DISKSPACE, dsDelta);
+    return counts;
   }
 
-  /** Compute file size.
-   * May or may not include BlockInfoUnderConstruction.
+  @Override
+  public final Content.Counts computeContentSummary(
+      final Content.Counts counts) {
+    computeContentSummary4Snapshot(counts);
+    computeContentSummary4Current(counts);
+    return counts;
+  }
+
+  private void computeContentSummary4Snapshot(final Content.Counts counts) {
+    // file length and diskspace only counted for the latest state of the file
+    // i.e. either the current state or the last snapshot
+    if (this instanceof FileWithSnapshot) {
+      final FileWithSnapshot withSnapshot = (FileWithSnapshot)this;
+      final FileDiffList diffs = withSnapshot.getDiffs();
+      final int n = diffs.asList().size();
+      counts.add(Content.FILE, n);
+      if (n > 0 && withSnapshot.isCurrentFileDeleted()) {
+        counts.add(Content.LENGTH, diffs.getLast().getFileSize());
+      }
+
+      if (withSnapshot.isCurrentFileDeleted()) {
+        final long lastFileSize = diffs.getLast().getFileSize();
+        counts.add(Content.DISKSPACE, lastFileSize * getBlockReplication());
+      }
+    }
+  }
+
+  private void computeContentSummary4Current(final Content.Counts counts) {
+    if (this instanceof FileWithSnapshot
+        && ((FileWithSnapshot)this).isCurrentFileDeleted()) {
+      return;
+    }
+
+    counts.add(Content.LENGTH, computeFileSize());
+    counts.add(Content.FILE, 1);
+    counts.add(Content.DISKSPACE, diskspaceConsumed());
+  }
+
+  /** The same as computeFileSize(null). */
+  public final long computeFileSize() {
+    return computeFileSize(null);
+  }
+
+  /**
+   * Compute file size of the current file if the given snapshot is null;
+   * otherwise, get the file size from the given snapshot.
    */
-  long computeFileSize(boolean includesBlockInfoUnderConstruction) {
+  public final long computeFileSize(Snapshot snapshot) {
+    if (snapshot != null && this instanceof FileWithSnapshot) {
+      final FileDiff d = ((FileWithSnapshot)this).getDiffs().getDiff(snapshot);
+      if (d != null) {
+        return d.getFileSize();
+      }
+    }
+
+    return computeFileSize(true, false);
+  }
+
+  /**
+   * Compute file size of the current file size
+   * but not including the last block if it is under construction.
+   */
+  public final long computeFileSizeNotIncludingLastUcBlock() {
+    return computeFileSize(false, false);
+  }
+
+  /**
+   * Compute file size of the current file.
+   * 
+   * @param includesLastUcBlock
+   *          If the last block is under construction, should it be included?
+   * @param usePreferredBlockSize4LastUcBlock
+   *          If the last block is under construction, should we use actual
+   *          block size or preferred block size?
+   *          Note that usePreferredBlockSize4LastUcBlock is ignored
+   *          if includesLastUcBlock == false.
+   * @return file size
+   */
+  public final long computeFileSize(boolean includesLastUcBlock,
+      boolean usePreferredBlockSize4LastUcBlock) {
     if (blocks == null || blocks.length == 0) {
       return 0;
     }
     final int last = blocks.length - 1;
     //check if the last block is BlockInfoUnderConstruction
-    long bytes = blocks[last] instanceof BlockInfoUnderConstruction
-                 && !includesBlockInfoUnderConstruction?
-                     0: blocks[last].getNumBytes();
+    long size = blocks[last].getNumBytes();
+    if (blocks[last] instanceof BlockInfoUnderConstruction) {
+       if (!includesLastUcBlock) {
+         size = 0;
+       } else if (usePreferredBlockSize4LastUcBlock) {
+         size = getPreferredBlockSize();
+       }
+    }
+    //sum other blocks
     for(int i = 0; i < last; i++) {
-      bytes += blocks[i].getNumBytes();
+      size += blocks[i].getNumBytes();
     }
-    return bytes;
-  }
-  
-
-  @Override
-  DirCounts spaceConsumedInTree(DirCounts counts) {
-    counts.nsCount += 1;
-    counts.dsCount += diskspaceConsumed();
-    return counts;
+    return size;
   }
 
-  long diskspaceConsumed() {
-    return diskspaceConsumed(blocks);
+  public final long diskspaceConsumed() {
+    // use preferred block size for the last block if it is under construction
+    return computeFileSize(true, true) * getBlockReplication();
   }
-  
-  private long diskspaceConsumed(Block[] blkArr) {
-    long size = 0;
-    if(blkArr == null) 
-      return 0;
-    
-    for (Block blk : blkArr) {
-      if (blk != null) {
-        size += blk.getNumBytes();
-      }
+
+  public final long diskspaceConsumed(Snapshot lastSnapshot) {
+    if (lastSnapshot != null) {
+      return computeFileSize(lastSnapshot) * getFileReplication(lastSnapshot);
+    } else {
+      return diskspaceConsumed();
     }
-    /* If the last block is being written to, use prefferedBlockSize
-     * rather than the actual block size.
-     */
-    if (blkArr.length > 0 && blkArr[blkArr.length-1] != null && 
-        isUnderConstruction()) {
-      size += getPreferredBlockSize() - blkArr[blkArr.length-1].getNumBytes();
-    }
-    return size * getBlockReplication();
   }
   
   /**
@@ -247,5 +474,17 @@ class INodeFile extends INode implements BlockCollection {
   @Override
   public int numBlocks() {
     return blocks == null ? 0 : blocks.length;
+  }
+
+  @VisibleForTesting
+  @Override
+  public void dumpTreeRecursively(PrintWriter out, StringBuilder prefix,
+      final Snapshot snapshot) {
+    super.dumpTreeRecursively(out, prefix, snapshot);
+    out.print(", fileSize=" + computeFileSize(snapshot));
+    // only compare the first block
+    out.print(", blocks=");
+    out.print(blocks == null || blocks.length == 0? null: blocks[0]);
+    out.println();
   }
 }

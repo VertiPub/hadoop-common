@@ -60,10 +60,10 @@ import org.apache.hadoop.mapreduce.v2.api.protocolrecords.GetDelegationTokenRequ
 import org.apache.hadoop.mapreduce.v2.jobhistory.JobHistoryUtils;
 import org.apache.hadoop.mapreduce.v2.util.MRApps;
 import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authorize.AccessControlList;
 import org.apache.hadoop.security.token.Token;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.ApplicationConstants.Environment;
 import org.apache.hadoop.yarn.api.records.ApplicationAccessType;
@@ -71,7 +71,6 @@ import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
-import org.apache.hadoop.yarn.api.records.DelegationToken;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceType;
 import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
@@ -79,18 +78,18 @@ import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.api.records.URL;
 import org.apache.hadoop.yarn.api.records.YarnApplicationState;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.security.client.RMDelegationTokenSelector;
 import org.apache.hadoop.yarn.util.ConverterUtils;
-import org.apache.hadoop.yarn.util.ProtoUtils;
 
 import com.google.common.annotations.VisibleForTesting;
 
 /**
  * This class enables the current JobClient (0.22 hadoop) to run on YARN.
  */
-@SuppressWarnings({ "rawtypes", "unchecked" })
+@SuppressWarnings("unchecked")
 public class YARNRunner implements ClientProtocol {
 
   private static final Log LOG = LogFactory.getLog(YARNRunner.class);
@@ -100,14 +99,6 @@ public class YARNRunner implements ClientProtocol {
   private ClientCache clientCache;
   private Configuration conf;
   private final FileContext defaultFileContext;
-  
-  /* usually is false unless the jobclient get delegation token is 
-   *  called. This is a hack wherein we do return a token from RM 
-   *  on getDelegationtoken but due to the restricted api on jobclient
-   *  we just add a job history DT token when submitting a job.
-   */
-  private static final boolean DEFAULT_HS_DELEGATION_TOKEN_REQUIRED = 
-      false;
   
   /**
    * Yarn runner incapsulates the client interface of
@@ -186,15 +177,38 @@ public class YARNRunner implements ClientProtocol {
   }
 
   @VisibleForTesting
+  void addHistoryToken(Credentials ts) throws IOException, InterruptedException {
+    /* check if we have a hsproxy, if not, no need */
+    MRClientProtocol hsProxy = clientCache.getInitializedHSProxy();
+    if (UserGroupInformation.isSecurityEnabled() && (hsProxy != null)) {
+      /*
+       * note that get delegation token was called. Again this is hack for oozie
+       * to make sure we add history server delegation tokens to the credentials
+       */
+      RMDelegationTokenSelector tokenSelector = new RMDelegationTokenSelector();
+      Text service = SecurityUtil.buildTokenService(resMgrDelegate
+          .getConnectAddress());
+      if (tokenSelector.selectToken(service, ts.getAllTokens()) != null) {
+        Text hsService = SecurityUtil.buildTokenService(hsProxy
+            .getConnectAddress());
+        if (ts.getToken(hsService) == null) {
+          ts.addToken(hsService, getDelegationTokenFromHS(hsProxy));
+        }
+      }
+    }
+  }
+  
+  @VisibleForTesting
   Token<?> getDelegationTokenFromHS(MRClientProtocol hsProxy)
       throws IOException, InterruptedException {
     GetDelegationTokenRequest request = recordFactory
       .newRecordInstance(GetDelegationTokenRequest.class);
     request.setRenewer(Master.getMasterPrincipal(conf));
-    DelegationToken mrDelegationToken = hsProxy.getDelegationToken(request)
-      .getDelegationToken();
-    return ProtoUtils.convertFromProtoFormat(mrDelegationToken,
-                                             hsProxy.getConnectAddress());
+    org.apache.hadoop.yarn.api.records.Token mrDelegationToken;
+    mrDelegationToken = hsProxy.getDelegationToken(request)
+        .getDelegationToken();
+    return ConverterUtils.convertFromYarn(mrDelegationToken,
+        hsProxy.getConnectAddress());
   }
 
   @Override
@@ -263,45 +277,32 @@ public class YARNRunner implements ClientProtocol {
   public JobStatus submitJob(JobID jobId, String jobSubmitDir, Credentials ts)
   throws IOException, InterruptedException {
     
-    /* check if we have a hsproxy, if not, no need */
-    MRClientProtocol hsProxy = clientCache.getInitializedHSProxy();
-    if (hsProxy != null) {
-      // JobClient will set this flag if getDelegationToken is called, if so, get
-      // the delegation tokens for the HistoryServer also.
-      if (conf.getBoolean(JobClient.HS_DELEGATION_TOKEN_REQUIRED, 
-          DEFAULT_HS_DELEGATION_TOKEN_REQUIRED)) {
-        Token hsDT = getDelegationTokenFromHS(hsProxy);
-        ts.addToken(hsDT.getService(), hsDT);
-      }
-    }
-
-    // Upload only in security mode: TODO
-    Path applicationTokensFile =
-        new Path(jobSubmitDir, MRJobConfig.APPLICATION_TOKENS_FILE);
-    try {
-      ts.writeTokenStorageFile(applicationTokensFile, conf);
-    } catch (IOException e) {
-      throw new YarnException(e);
-    }
-
+    addHistoryToken(ts);
+    
     // Construct necessary information to start the MR AM
     ApplicationSubmissionContext appContext =
       createApplicationSubmissionContext(conf, jobSubmitDir, ts);
 
     // Submit to ResourceManager
-    ApplicationId applicationId = resMgrDelegate.submitApplication(appContext);
+    try {
+      ApplicationId applicationId =
+          resMgrDelegate.submitApplication(appContext);
 
-    ApplicationReport appMaster = resMgrDelegate
-        .getApplicationReport(applicationId);
-    String diagnostics =
-        (appMaster == null ?
-            "application report is null" : appMaster.getDiagnostics());
-    if (appMaster == null || appMaster.getYarnApplicationState() == YarnApplicationState.FAILED
-        || appMaster.getYarnApplicationState() == YarnApplicationState.KILLED) {
-      throw new IOException("Failed to run job : " +
-        diagnostics);
+      ApplicationReport appMaster = resMgrDelegate
+          .getApplicationReport(applicationId);
+      String diagnostics =
+          (appMaster == null ?
+              "application report is null" : appMaster.getDiagnostics());
+      if (appMaster == null
+          || appMaster.getYarnApplicationState() == YarnApplicationState.FAILED
+          || appMaster.getYarnApplicationState() == YarnApplicationState.KILLED) {
+        throw new IOException("Failed to run job : " +
+            diagnostics);
+      }
+      return clientCache.getClient(jobId).getJobStatus(jobId);
+    } catch (YarnException e) {
+      throw new IOException(e);
     }
-    return clientCache.getClient(jobId).getJobStatus(jobId);
   }
 
   private LocalResource createApplicationResource(FileContext fs, Path p, LocalResourceType type)
@@ -371,8 +372,7 @@ public class YARNRunner implements ClientProtocol {
     // TODO gross hack
     for (String s : new String[] {
         MRJobConfig.JOB_SPLIT,
-        MRJobConfig.JOB_SPLIT_METAINFO,
-        MRJobConfig.APPLICATION_TOKENS_FILE }) {
+        MRJobConfig.JOB_SPLIT_METAINFO }) {
       localResources.put(
           MRJobConfig.JOB_SUBMIT_DIR + "/" + s,
           createApplicationResource(defaultFileContext,
@@ -461,17 +461,15 @@ public class YARNRunner implements ClientProtocol {
         MRJobConfig.DEFAULT_JOB_ACL_MODIFY_JOB));
 
     // Setup ContainerLaunchContext for AM container
-    ContainerLaunchContext amContainer = BuilderUtils
-        .newContainerLaunchContext(null, UserGroupInformation
-            .getCurrentUser().getShortUserName(), capability, localResources,
-            environment, vargsFinal, null, securityTokens, acls);
+    ContainerLaunchContext amContainer =
+        ContainerLaunchContext.newInstance(localResources, environment,
+          vargsFinal, null, securityTokens, acls);
+
 
     // Set up the ApplicationSubmissionContext
     ApplicationSubmissionContext appContext =
         recordFactory.newRecordInstance(ApplicationSubmissionContext.class);
     appContext.setApplicationId(applicationId);                // ApplicationId
-    appContext.setUser(                                        // User name
-        UserGroupInformation.getCurrentUser().getShortUserName());
     appContext.setQueue(                                       // Queue name
         jobConf.get(JobContext.QUEUE_NAME,
         YarnConfiguration.DEFAULT_QUEUE_NAME));
@@ -481,7 +479,11 @@ public class YARNRunner implements ClientProtocol {
     appContext.setCancelTokensWhenComplete(
         conf.getBoolean(MRJobConfig.JOB_CANCEL_DELEGATION_TOKEN, true));
     appContext.setAMContainerSpec(amContainer);         // AM Container
-
+    appContext.setMaxAppAttempts(
+        conf.getInt(MRJobConfig.MR_AM_MAX_ATTEMPTS,
+            MRJobConfig.DEFAULT_MR_AM_MAX_ATTEMPTS));
+    appContext.setResource(capability);
+    appContext.setApplicationType(MRJobConfig.MR_APPLICATION_TYPE);
     return appContext;
   }
 
@@ -545,7 +547,11 @@ public class YARNRunner implements ClientProtocol {
     /* check if the status is not running, if not send kill to RM */
     JobStatus status = clientCache.getClient(arg0).getJobStatus(arg0);
     if (status.getState() != JobStatus.State.RUNNING) {
-      resMgrDelegate.killApplication(TypeConverter.toYarn(arg0).getAppId());
+      try {
+        resMgrDelegate.killApplication(TypeConverter.toYarn(arg0).getAppId());
+      } catch (YarnException e) {
+        throw new IOException(e);
+      }
       return;
     }
 
@@ -569,7 +575,11 @@ public class YARNRunner implements ClientProtocol {
       LOG.debug("Error when checking for application status", io);
     }
     if (status.getState() != JobStatus.State.KILLED) {
-      resMgrDelegate.killApplication(TypeConverter.toYarn(arg0).getAppId());
+      try {
+        resMgrDelegate.killApplication(TypeConverter.toYarn(arg0).getAppId());
+      } catch (YarnException e) {
+        throw new IOException(e);
+      }
     }
   }
 

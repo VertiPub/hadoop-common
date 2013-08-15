@@ -29,6 +29,7 @@ import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.api.records.impl.pb.ApplicationSubmissionContextPBImpl;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.MockApps;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttempt;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
@@ -48,6 +49,7 @@ public class MockRMApp implements RMApp {
   String url = null;
   StringBuilder diagnostics = new StringBuilder();
   RMAppAttempt attempt;
+  int maxAppAttempts = 1;
 
   public MockRMApp(int newid, long time, RMAppState newState) {
     finish = time;
@@ -187,6 +189,15 @@ public class MockRMApp implements RMApp {
   }
 
   @Override
+  public int getMaxAppAttempts() {
+    return maxAppAttempts;
+  }
+
+  public void setNumMaxRetries(int maxAppAttempts) {
+    this.maxAppAttempts = maxAppAttempts;
+  }
+
+  @Override
   public void handle(RMAppEvent event) {
   }
 
@@ -198,6 +209,11 @@ public class MockRMApp implements RMApp {
   @Override
   public int pullRMNodeUpdates(Collection<RMNode> updatedNodes) {
     throw new UnsupportedOperationException("Not supported yet.");
+  }
+
+  @Override
+  public String getApplicationType() {
+    return YarnConfiguration.DEFAULT_APPLICATION_TYPE;
   };
 
 }

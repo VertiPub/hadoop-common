@@ -22,28 +22,40 @@ import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
 import org.apache.hadoop.yarn.api.records.YarnClusterMetrics;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p>The response sent by the <code>ResourceManager</code> to a client
  * requesting cluster metrics.<p>
  * 
  * @see YarnClusterMetrics
- * @see ClientRMProtocol#getClusterMetrics(GetClusterMetricsRequest)
+ * @see ApplicationClientProtocol#getClusterMetrics(GetClusterMetricsRequest)
  */
 @Public
 @Stable
-public interface GetClusterMetricsResponse {
+public abstract class GetClusterMetricsResponse {
+
+  @Private
+  @Unstable
+  public static GetClusterMetricsResponse
+      newInstance(YarnClusterMetrics metrics) {
+    GetClusterMetricsResponse response =
+        Records.newRecord(GetClusterMetricsResponse.class);
+    response.setClusterMetrics(metrics);
+    return response;
+  }
+
   /**
    * Get the <code>YarnClusterMetrics</code> for the cluster.
    * @return <code>YarnClusterMetrics</code> for the cluster
    */
   @Public
   @Stable
-  public YarnClusterMetrics getClusterMetrics();
+  public abstract YarnClusterMetrics getClusterMetrics();
   
   @Private
   @Unstable
-  public void setClusterMetrics(YarnClusterMetrics metrics);
+  public abstract void setClusterMetrics(YarnClusterMetrics metrics);
 }

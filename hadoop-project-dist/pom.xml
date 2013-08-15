@@ -20,12 +20,12 @@
   <parent>
     <groupId>org.apache.hadoop</groupId>
     <artifactId>hadoop-project</artifactId>
-    <version>2.0.3-SNAPSHOT</version>
+    <version>2.3.0-SNAPSHOT</version>
     <relativePath>../hadoop-project</relativePath>
   </parent>
   <groupId>org.apache.hadoop</groupId>
   <artifactId>hadoop-project-dist</artifactId>
-  <version>2.0.3-SNAPSHOT</version>
+  <version>2.3.0-SNAPSHOT</version>
   <description>Apache Hadoop Project Dist POM</description>
   <name>Apache Hadoop Project Dist POM</name>
   <packaging>pom</packaging>
@@ -40,6 +40,7 @@
 
     <hadoop.component>UNDEF</hadoop.component>
     <bundle.snappy>false</bundle.snappy>
+    <bundle.snappy.in.bin>false</bundle.snappy.in.bin>
   </properties>
   
   <dependencies>
@@ -247,13 +248,6 @@
                     </copy>
 
                     <!-- Docs -->
-                    <exec dir="${project.build.directory}/docs-src"
-                          executable="${env.FORREST_HOME}/bin/forrest"
-                          failonerror="true">
-                    </exec>
-                    <copy todir="${project.build.directory}/site">
-                      <fileset dir="${project.build.directory}/docs-src/build/site"/>
-                    </copy>
                     <copy file="${project.build.directory}/docs-src/releasenotes.html"
                           todir="${project.build.directory}/site"/>
                     <style basedir="${basedir}/src/main/resources"
@@ -342,13 +336,7 @@
                   <target>
                     <!-- Using Unix script to preserve symlinks -->
                     <echo file="${project.build.directory}/dist-copynativelibs.sh">
-
-                      which cygpath 2&gt; /dev/null
-                      if [ $? = 1 ]; then
-                        BUILD_DIR="${project.build.directory}"
-                      else
-                        BUILD_DIR=`cygpath --unix '${project.build.directory}'`
-                      fi
+                      BUILD_DIR="${project.build.directory}"
                       TAR='tar cf -'
                       UNTAR='tar xfBp -'
                       LIB_DIR="${BUILD_DIR}/native/target/usr/local/lib"
@@ -360,6 +348,19 @@
                         if [ "${bundle.snappy}" = "true" ] ; then
                           cd ${snappy.lib}
                           $$TAR *snappy* | (cd $${TARGET_DIR}/; $$UNTAR)
+                        fi
+                      fi
+                      BIN_DIR="${BUILD_DIR}/bin"
+                      if [ -d $${BIN_DIR} ] ; then
+                        TARGET_BIN_DIR="${BUILD_DIR}/${project.artifactId}-${project.version}/bin"
+                        mkdir -p $${TARGET_BIN_DIR}
+                        cd $${BIN_DIR}
+                        $$TAR * | (cd $${TARGET_BIN_DIR}/; $$UNTAR)
+                        if [ "${bundle.snappy.in.bin}" = "true" ] ; then
+                          if [ "${bundle.snappy}" = "true" ] ; then
+                            cd ${snappy.lib}
+                            $$TAR *snappy* | (cd $${TARGET_BIN_DIR}/; $$UNTAR)
+                          fi
                         fi
                       fi
                     </echo>
@@ -379,15 +380,8 @@
                   <target if="tar">
                     <!-- Using Unix script to preserve symlinks -->
                     <echo file="${project.build.directory}/dist-maketar.sh">
-
-                      which cygpath 2&gt; /dev/null
-                      if [ $? = 1 ]; then
-                        BUILD_DIR="${project.build.directory}"
-                      else
-                        BUILD_DIR=`cygpath --unix '${project.build.directory}'`
-                      fi
-                      cd ${BUILD_DIR}
-                      tar czf ${project.artifactId}-${project.version}.tar.gz ${project.artifactId}-${project.version}
+                      cd "${project.build.directory}"
+                      tar cf - ${project.artifactId}-${project.version} | gzip > ${project.artifactId}-${project.version}.tar.gz
                     </echo>
                     <exec executable="sh" dir="${project.build.directory}" failonerror="true">
                       <arg line="./dist-maketar.sh"/>

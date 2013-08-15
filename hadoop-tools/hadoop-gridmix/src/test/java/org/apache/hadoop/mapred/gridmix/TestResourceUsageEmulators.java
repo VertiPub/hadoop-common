@@ -31,14 +31,13 @@ import org.apache.hadoop.mapreduce.TaskInputOutputContext;
 import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.hadoop.mapreduce.server.tasktracker.TTConfig;
 import org.apache.hadoop.mapreduce.task.MapContextImpl;
-import org.apache.hadoop.mapreduce.util.ResourceCalculatorPlugin;
 import org.apache.hadoop.tools.rumen.ResourceUsageMetrics;
-import org.apache.hadoop.mapred.DummyResourceCalculatorPlugin;
 import org.apache.hadoop.mapred.gridmix.LoadJob.ResourceUsageMatcherRunner;
 import org.apache.hadoop.mapred.gridmix.emulators.resourceusage.CumulativeCpuUsageEmulatorPlugin;
 import org.apache.hadoop.mapred.gridmix.emulators.resourceusage.ResourceUsageEmulatorPlugin;
 import org.apache.hadoop.mapred.gridmix.emulators.resourceusage.ResourceUsageMatcher;
 import org.apache.hadoop.mapred.gridmix.emulators.resourceusage.CumulativeCpuUsageEmulatorPlugin.DefaultCpuUsageEmulator;
+import org.apache.hadoop.yarn.util.ResourceCalculatorPlugin;
 
 /**
  * Test Gridmix's resource emulator framework and supported plugins.
@@ -133,6 +132,14 @@ public class TestResourceUsageEmulators {
       return fs.exists(testPath) 
              ? fs.getFileStatus(testPath).getModificationTime() 
              : 0;
+    }
+    
+    @Override
+    public float getProgress() {
+      try {
+        return fs.exists(touchPath) ? 1.0f : 0f;
+      } catch (IOException ioe) {}
+      return 0f;
     }
   }
   
@@ -233,16 +240,6 @@ public class TestResourceUsageEmulators {
     @Override
     public long getCumulativeCpuTime() {
       return core.getCpuUsage();
-    }
-
-    /**
-     * Returns a {@link ProcResourceValues} with cumulative cpu usage  
-     * computed using {@link #getCumulativeCpuTime()}.
-     */
-    @Override
-    public ProcResourceValues getProcResourceValues() {
-      long usageValue = getCumulativeCpuTime();
-      return new ProcResourceValues(usageValue, -1, -1);
     }
   }
   
@@ -474,6 +471,11 @@ public class TestResourceUsageEmulators {
     //  test if no calls are made cpu usage emulator core
     assertEquals("Disabled cumulative CPU usage emulation plugin works!", 
                  cpuUsagePre, cpuUsagePost);
+    
+    // test with get progress
+    float progress = cpuPlugin.getProgress();
+    assertEquals("Invalid progress of disabled cumulative CPU usage emulation " 
+                 + "plugin!", 1.0f, progress, 0f);
     
     // test with valid resource usage value
     ResourceUsageMetrics metrics = createMetrics(targetCpuUsage);

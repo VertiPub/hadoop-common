@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.yarn;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 
 import junit.framework.Assert;
@@ -25,14 +26,15 @@ import junit.framework.Assert;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.ipc.Server;
 import org.apache.hadoop.net.NetUtils;
-import org.apache.hadoop.yarn.api.AMRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationMasterProtocol;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.FinishApplicationMasterRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.FinishApplicationMasterResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterResponse;
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
+import org.apache.hadoop.yarn.exceptions.YarnException;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.factories.impl.pb.RpcClientFactoryPBImpl;
 import org.apache.hadoop.yarn.factories.impl.pb.RpcServerFactoryPBImpl;
 import org.junit.Test;
@@ -53,14 +55,14 @@ public class TestRPCFactories {
   private void testPbServerFactory() {
     InetSocketAddress addr = new InetSocketAddress(0);
     Configuration conf = new Configuration();
-    AMRMProtocol instance = new AMRMProtocolTestImpl();
+    ApplicationMasterProtocol instance = new AMRMProtocolTestImpl();
     Server server = null;
     try {
       server = 
         RpcServerFactoryPBImpl.get().getServer(
-            AMRMProtocol.class, instance, addr, conf, null, 1);
+            ApplicationMasterProtocol.class, instance, addr, conf, null, 1);
       server.start();
-    } catch (YarnException e) {
+    } catch (YarnRuntimeException e) {
       e.printStackTrace();
       Assert.fail("Failed to create server");
     } finally {
@@ -75,25 +77,25 @@ public class TestRPCFactories {
     InetSocketAddress addr = new InetSocketAddress(0);
     System.err.println(addr.getHostName() + addr.getPort());
     Configuration conf = new Configuration();
-    AMRMProtocol instance = new AMRMProtocolTestImpl();
+    ApplicationMasterProtocol instance = new AMRMProtocolTestImpl();
     Server server = null;
     try {
       server = 
         RpcServerFactoryPBImpl.get().getServer(
-            AMRMProtocol.class, instance, addr, conf, null, 1);
+            ApplicationMasterProtocol.class, instance, addr, conf, null, 1);
       server.start();
       System.err.println(server.getListenerAddress());
       System.err.println(NetUtils.getConnectAddress(server));
 
-      AMRMProtocol amrmClient = null;
+      ApplicationMasterProtocol amrmClient = null;
       try {
-        amrmClient = (AMRMProtocol) RpcClientFactoryPBImpl.get().getClient(AMRMProtocol.class, 1, NetUtils.getConnectAddress(server), conf);
-      } catch (YarnException e) {
+        amrmClient = (ApplicationMasterProtocol) RpcClientFactoryPBImpl.get().getClient(ApplicationMasterProtocol.class, 1, NetUtils.getConnectAddress(server), conf);
+      } catch (YarnRuntimeException e) {
         e.printStackTrace();
         Assert.fail("Failed to create client");
       }
       
-    } catch (YarnException e) {
+    } catch (YarnRuntimeException e) {
       e.printStackTrace();
       Assert.fail("Failed to create server");
     } finally {
@@ -103,25 +105,27 @@ public class TestRPCFactories {
     }     
   }
 
-  public class AMRMProtocolTestImpl implements AMRMProtocol {
+  public class AMRMProtocolTestImpl implements ApplicationMasterProtocol {
 
     @Override
     public RegisterApplicationMasterResponse registerApplicationMaster(
-        RegisterApplicationMasterRequest request) throws YarnRemoteException {
+        RegisterApplicationMasterRequest request) throws YarnException,
+        IOException {
       // TODO Auto-generated method stub
       return null;
     }
 
     @Override
     public FinishApplicationMasterResponse finishApplicationMaster(
-        FinishApplicationMasterRequest request) throws YarnRemoteException {
+        FinishApplicationMasterRequest request) throws YarnException,
+        IOException {
       // TODO Auto-generated method stub
       return null;
     }
 
     @Override
     public AllocateResponse allocate(AllocateRequest request)
-        throws YarnRemoteException {
+        throws YarnException, IOException {
       // TODO Auto-generated method stub
       return null;
     }

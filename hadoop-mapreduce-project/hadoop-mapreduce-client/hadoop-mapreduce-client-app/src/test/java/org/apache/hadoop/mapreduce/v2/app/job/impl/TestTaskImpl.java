@@ -27,7 +27,6 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -35,9 +34,12 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.Task;
 import org.apache.hadoop.mapred.TaskUmbilicalProtocol;
-import org.apache.hadoop.mapreduce.jobhistory.JobHistoryParser.TaskInfo;
+import org.apache.hadoop.mapreduce.Counter;
+import org.apache.hadoop.mapreduce.Counters;
+import org.apache.hadoop.mapreduce.TaskCounter;
 import org.apache.hadoop.mapreduce.security.token.JobTokenIdentifier;
 import org.apache.hadoop.mapreduce.split.JobSplit.TaskSplitMetaInfo;
+import org.apache.hadoop.mapreduce.v2.api.records.Avataar;
 import org.apache.hadoop.mapreduce.v2.api.records.JobId;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskAttemptId;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskAttemptState;
@@ -46,6 +48,7 @@ import org.apache.hadoop.mapreduce.v2.api.records.TaskState;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskType;
 import org.apache.hadoop.mapreduce.v2.app.AppContext;
 import org.apache.hadoop.mapreduce.v2.app.TaskAttemptListener;
+import org.apache.hadoop.mapreduce.v2.app.job.TaskAttempt;
 import org.apache.hadoop.mapreduce.v2.app.job.TaskStateInternal;
 import org.apache.hadoop.mapreduce.v2.app.job.event.TaskEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.TaskEventType;
@@ -53,12 +56,12 @@ import org.apache.hadoop.mapreduce.v2.app.job.event.TaskTAttemptEvent;
 import org.apache.hadoop.mapreduce.v2.app.metrics.MRAppMetrics;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.token.Token;
-import org.apache.hadoop.yarn.Clock;
-import org.apache.hadoop.yarn.SystemClock;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.event.EventHandler;
-import org.apache.hadoop.yarn.server.resourcemanager.resourcetracker.InlineDispatcher;
+import org.apache.hadoop.yarn.event.InlineDispatcher;
+import org.apache.hadoop.yarn.util.Clock;
 import org.apache.hadoop.yarn.util.Records;
+import org.apache.hadoop.yarn.util.SystemClock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -75,7 +78,6 @@ public class TestTaskImpl {
   private Path remoteJobConfFile;
   private Credentials credentials;
   private Clock clock;
-  private Map<TaskId, TaskInfo> completedTasksFromPreviousRun;
   private MRAppMetrics metrics;
   private TaskImpl mockTask;
   private ApplicationId appId;
@@ -99,13 +101,12 @@ public class TestTaskImpl {
         EventHandler eventHandler, Path remoteJobConfFile, JobConf conf,
         TaskAttemptListener taskAttemptListener,
         Token<JobTokenIdentifier> jobToken,
-        Credentials credentials, Clock clock,
-        Map<TaskId, TaskInfo> completedTasksFromPreviousRun, int startCount,
+        Credentials credentials, Clock clock, int startCount,
         MRAppMetrics metrics, AppContext appContext, TaskType taskType) {
       super(jobId, taskType , partition, eventHandler,
           remoteJobConfFile, conf, taskAttemptListener,
           jobToken, credentials, clock,
-          completedTasksFromPreviousRun, startCount, metrics, appContext);
+          startCount, metrics, appContext);
       this.taskType = taskType;
     }
 
@@ -140,6 +141,7 @@ public class TestTaskImpl {
     private float progress = 0;
     private TaskAttemptState state = TaskAttemptState.NEW;
     private TaskType taskType;
+    private Counters attemptCounters = TaskAttemptImpl.EMPTY_COUNTERS;
 
     public MockTaskAttemptImpl(TaskId taskId, int id, EventHandler eventHandler,
         TaskAttemptListener taskAttemptListener, Path jobFile, int partition,
@@ -175,7 +177,15 @@ public class TestTaskImpl {
     public TaskAttemptState getState() {
       return state;
     }
-    
+
+    @Override
+    public Counters getCounters() {
+      return attemptCounters;
+    }
+
+    public void setCounters(Counters counters) {
+      attemptCounters = counters;
+    }
   }
   
   private class MockTask extends Task {
@@ -214,9 +224,7 @@ public class TestTaskImpl {
     metrics = mock(MRAppMetrics.class);  
     dataLocations = new String[1];
     
-    appId = Records.newRecord(ApplicationId.class);
-    appId.setClusterTimestamp(System.currentTimeMillis());
-    appId.setId(1);
+    appId = ApplicationId.newInstance(System.currentTimeMillis(), 1);
 
     jobId = Records.newRecord(JobId.class);
     jobId.setId(1);
@@ -233,8 +241,7 @@ public class TestTaskImpl {
     return new MockTaskImpl(jobId, partition, dispatcher.getEventHandler(),
         remoteJobConfFile, conf, taskAttemptListener, jobToken,
         credentials, clock,
-        completedTasksFromPreviousRun, startCount,
-        metrics, appContext, taskType);
+        startCount, metrics, appContext, taskType);
   }
 
   @After 
@@ -254,6 +261,7 @@ public class TestTaskImpl {
     mockTask.handle(new TaskEvent(taskId, 
         TaskEventType.T_SCHEDULE));
     assertTaskScheduledState();
+    assertTaskAttemptAvataar(Avataar.VIRGIN);
   }
   
   private void killTask(TaskId taskId) {
@@ -337,6 +345,19 @@ public class TestTaskImpl {
    */
   private void assertTaskSucceededState() {
     assertEquals(TaskState.SUCCEEDED, mockTask.getState());
+  }
+
+  /**
+   * {@link Avataar}
+   */
+  private void assertTaskAttemptAvataar(Avataar avataar) {
+    for (TaskAttempt taskAttempt : mockTask.getAttempts().values()) {
+      if (((TaskAttemptImpl) taskAttempt).getAvataar() == avataar) {
+        return;
+      }
+    }
+    fail("There is no " + (avataar == Avataar.VIRGIN ? "virgin" : "speculative")
+        + "task attempt");
   }
   
   @Test
@@ -463,7 +484,25 @@ public class TestTaskImpl {
     assert(mockTask.getProgress() == progress);
         
   }
+
   
+  @Test
+  public void testKillDuringTaskAttemptCommit() {
+    mockTask = createMockTask(TaskType.REDUCE);        
+    TaskId taskId = getNewTaskID();
+    scheduleTaskAttempt(taskId);
+    
+    launchTaskAttempt(getLastAttempt().getAttemptId());
+    updateLastAttemptState(TaskAttemptState.COMMIT_PENDING);
+    commitTaskAttempt(getLastAttempt().getAttemptId());
+
+    TaskAttemptId commitAttempt = getLastAttempt().getAttemptId();
+    updateLastAttemptState(TaskAttemptState.KILLED);
+    killRunningTaskAttempt(commitAttempt);
+
+    assertFalse(mockTask.canCommit(commitAttempt));
+  }
+
   @Test
   public void testFailureDuringTaskAttemptCommit() {
     mockTask = createMockTask(TaskType.MAP);        
@@ -516,6 +555,9 @@ public class TestTaskImpl {
     
     // The task should still be in the succeeded state
     assertTaskSucceededState();
+    
+    // The task should contain speculative a task attempt
+    assertTaskAttemptAvataar(Avataar.SPECULATIVE);
   }
   
   @Test
@@ -603,9 +645,7 @@ public class TestTaskImpl {
   public void testFailedTransitions() {
     mockTask = new MockTaskImpl(jobId, partition, dispatcher.getEventHandler(),
         remoteJobConfFile, conf, taskAttemptListener, jobToken,
-        credentials, clock,
-        completedTasksFromPreviousRun, startCount,
-        metrics, appContext, TaskType.MAP) {
+        credentials, clock, startCount, metrics, appContext, TaskType.MAP) {
           @Override
           protected int getMaxAttempts() {
             return 1;
@@ -666,5 +706,48 @@ public class TestTaskImpl {
     mockTask.handle(new TaskTAttemptEvent(taskAttempt.getAttemptId(),
         TaskEventType.T_ATTEMPT_KILLED));
     assertEquals(TaskState.FAILED, mockTask.getState());
+  }
+
+  @Test
+  public void testCountersWithSpeculation() {
+    mockTask = new MockTaskImpl(jobId, partition, dispatcher.getEventHandler(),
+        remoteJobConfFile, conf, taskAttemptListener, jobToken,
+        credentials, clock, startCount, metrics, appContext, TaskType.MAP) {
+          @Override
+          protected int getMaxAttempts() {
+            return 1;
+          }
+    };
+    TaskId taskId = getNewTaskID();
+    scheduleTaskAttempt(taskId);
+    launchTaskAttempt(getLastAttempt().getAttemptId());
+    updateLastAttemptState(TaskAttemptState.RUNNING);
+    MockTaskAttemptImpl baseAttempt = getLastAttempt();
+
+    // add a speculative attempt
+    mockTask.handle(new TaskTAttemptEvent(getLastAttempt().getAttemptId(),
+        TaskEventType.T_ADD_SPEC_ATTEMPT));
+    launchTaskAttempt(getLastAttempt().getAttemptId());
+    updateLastAttemptState(TaskAttemptState.RUNNING);
+    MockTaskAttemptImpl specAttempt = getLastAttempt();
+    assertEquals(2, taskAttempts.size());
+
+    Counters specAttemptCounters = new Counters();
+    Counter cpuCounter = specAttemptCounters.findCounter(
+        TaskCounter.CPU_MILLISECONDS);
+    cpuCounter.setValue(1000);
+    specAttempt.setCounters(specAttemptCounters);
+
+    // have the spec attempt succeed but second attempt at 1.0 progress as well
+    commitTaskAttempt(specAttempt.getAttemptId());
+    specAttempt.setProgress(1.0f);
+    specAttempt.setState(TaskAttemptState.SUCCEEDED);
+    mockTask.handle(new TaskTAttemptEvent(specAttempt.getAttemptId(),
+        TaskEventType.T_ATTEMPT_SUCCEEDED));
+    assertEquals(TaskState.SUCCEEDED, mockTask.getState());
+    baseAttempt.setProgress(1.0f);
+
+    Counters taskCounters = mockTask.getCounters();
+    assertEquals("wrong counters for task", specAttemptCounters, taskCounters);
   }
 }

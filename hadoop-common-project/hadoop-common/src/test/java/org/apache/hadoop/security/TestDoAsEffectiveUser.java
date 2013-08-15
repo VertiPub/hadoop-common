@@ -38,6 +38,7 @@ import org.apache.hadoop.security.UserGroupInformation.AuthenticationMethod;
 import org.apache.hadoop.security.authorize.ProxyUsers;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenInfo;
+import org.junit.Before;
 import org.junit.Test;
 import org.apache.hadoop.ipc.TestSaslRPC.TestTokenSecretManager;
 import org.apache.hadoop.ipc.TestSaslRPC.TestTokenIdentifier;
@@ -58,7 +59,7 @@ public class TestDoAsEffectiveUser {
       GROUP2_NAME };
   private static final String ADDRESS = "0.0.0.0";
   private TestProtocol proxy;
-  private static Configuration masterConf = new Configuration();
+  private static final Configuration masterConf = new Configuration();
   
   
   public static final Log LOG = LogFactory
@@ -70,6 +71,10 @@ public class TestDoAsEffectiveUser {
         "RULE:[2:$1@$0](.*@HADOOP.APACHE.ORG)s/@.*//" +
         "RULE:[1:$1@$0](.*@HADOOP.APACHE.ORG)s/@.*//"
         + "DEFAULT");
+  }
+
+  @Before
+  public void setMasterConf() {
     UserGroupInformation.setConfiguration(masterConf);
   }
 
@@ -127,6 +132,7 @@ public class TestDoAsEffectiveUser {
     public static final long versionID = 1L;
 
     String aMethod() throws IOException;
+    String getServerRemoteUser() throws IOException;
   }
 
   public class TestImpl implements TestProtocol {
@@ -136,6 +142,11 @@ public class TestDoAsEffectiveUser {
       return UserGroupInformation.getCurrentUser().toString();
     }
 
+    @Override
+    public String getServerRemoteUser() throws IOException {
+      return Server.getRemoteUser().toString();
+    }
+    
     @Override
     public long getProtocolVersion(String protocol, long clientVersion)
         throws IOException {
@@ -149,7 +160,23 @@ public class TestDoAsEffectiveUser {
     }
   }
 
-  @Test
+  private void checkRemoteUgi(final Server server,
+      final UserGroupInformation ugi, final Configuration conf)
+          throws Exception {
+    ugi.doAs(new PrivilegedExceptionAction<Void>() {
+      @Override
+      public Void run() throws IOException {
+        proxy = RPC.getProxy(
+            TestProtocol.class, TestProtocol.versionID,
+            NetUtils.getConnectAddress(server), conf);
+        Assert.assertEquals(ugi.toString(), proxy.aMethod());
+        Assert.assertEquals(ugi.toString(), proxy.getServerRemoteUser());
+        return null;
+      }
+    });    
+  }
+  
+  @Test(timeout=4000)
   public void testRealUserSetup() throws IOException {
     final Configuration conf = new Configuration();
     conf.setStrings(ProxyUsers
@@ -163,24 +190,13 @@ public class TestDoAsEffectiveUser {
     try {
       server.start();
 
-      final InetSocketAddress addr = NetUtils.getConnectAddress(server);
-
       UserGroupInformation realUserUgi = UserGroupInformation
           .createRemoteUser(REAL_USER_NAME);
+      checkRemoteUgi(server, realUserUgi, conf);
+      
       UserGroupInformation proxyUserUgi = UserGroupInformation.createProxyUserForTesting(
           PROXY_USER_NAME, realUserUgi, GROUP_NAMES);
-      String retVal = proxyUserUgi
-          .doAs(new PrivilegedExceptionAction<String>() {
-            @Override
-            public String run() throws IOException {
-              proxy = RPC.getProxy(TestProtocol.class,
-                  TestProtocol.versionID, addr, conf);
-              String ret = proxy.aMethod();
-              return ret;
-            }
-          });
-
-      Assert.assertEquals(PROXY_USER_NAME + " (auth:SIMPLE) via " + REAL_USER_NAME + " (auth:SIMPLE)", retVal);
+      checkRemoteUgi(server, proxyUserUgi, conf);
     } catch (Exception e) {
       e.printStackTrace();
       Assert.fail();
@@ -192,7 +208,7 @@ public class TestDoAsEffectiveUser {
     }
   }
 
-  @Test
+  @Test(timeout=4000)
   public void testRealUserAuthorizationSuccess() throws IOException {
     final Configuration conf = new Configuration();
     configureSuperUserIPAddresses(conf, REAL_USER_SHORT_NAME);
@@ -206,25 +222,13 @@ public class TestDoAsEffectiveUser {
     try {
       server.start();
 
-      final InetSocketAddress addr = NetUtils.getConnectAddress(server);
-
       UserGroupInformation realUserUgi = UserGroupInformation
           .createRemoteUser(REAL_USER_NAME);
+      checkRemoteUgi(server, realUserUgi, conf);
 
       UserGroupInformation proxyUserUgi = UserGroupInformation
           .createProxyUserForTesting(PROXY_USER_NAME, realUserUgi, GROUP_NAMES);
-      String retVal = proxyUserUgi
-          .doAs(new PrivilegedExceptionAction<String>() {
-            @Override
-            public String run() throws IOException {
-              proxy = RPC.getProxy(TestProtocol.class,
-                  TestProtocol.versionID, addr, conf);
-              String ret = proxy.aMethod();
-              return ret;
-            }
-          });
-
-      Assert.assertEquals(PROXY_USER_NAME + " (auth:SIMPLE) via " + REAL_USER_NAME + " (auth:SIMPLE)", retVal);
+      checkRemoteUgi(server, proxyUserUgi, conf);
     } catch (Exception e) {
       e.printStackTrace();
       Assert.fail();

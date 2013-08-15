@@ -24,10 +24,10 @@ import java.util.List;
 import org.apache.hadoop.net.Node;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
-import org.apache.hadoop.yarn.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.NodeState;
-import org.apache.hadoop.yarn.server.api.records.HeartbeatResponse;
+import org.apache.hadoop.yarn.server.api.protocolrecords.NodeHeartbeatResponse;
+import org.apache.hadoop.yarn.server.api.records.NodeHealthStatus;
 
 /**
  * Node managers information on available resources 
@@ -35,8 +35,6 @@ import org.apache.hadoop.yarn.server.api.records.HeartbeatResponse;
  *
  */
 public interface RMNode {
-
-  public static final String ANY = "*";
 
   /**
    * the node id of of this node.
@@ -76,10 +74,16 @@ public interface RMNode {
   public String getHttpAddress();
   
   /**
-   * the health-status for this node
-   * @return the health-status for this node.
+   * the latest health report received from this node.
+   * @return the latest health report received from this node.
    */
-  public NodeHealthStatus getNodeHealthStatus();
+  public String getHealthReport();
+  
+  /**
+   * the time of the latest health report received from this node.
+   * @return the time of the latest health report received from this node.
+   */
+  public long getLastHealthReportTime();
   
   /**
    * the total available resource.
@@ -105,5 +109,20 @@ public interface RMNode {
 
   public List<ApplicationId> getAppsToCleanup();
 
-  public HeartbeatResponse getLastHeartBeatResponse();
+  /**
+   * Update a {@link NodeHeartbeatResponse} with the list of containers and
+   * applications to clean up for this node.
+   * @param response the {@link NodeHeartbeatResponse} to update
+   */
+  public void updateNodeHeartbeatResponseForCleanup(NodeHeartbeatResponse response);
+
+  public NodeHeartbeatResponse getLastNodeHeartBeatResponse();
+  
+  /**
+   * Get and clear the list of containerUpdates accumulated across NM
+   * heartbeats.
+   * 
+   * @return containerUpdates accumulated across NM heartbeats.
+   */
+  public List<UpdatedContainerInfo> pullContainerUpdates();
 }

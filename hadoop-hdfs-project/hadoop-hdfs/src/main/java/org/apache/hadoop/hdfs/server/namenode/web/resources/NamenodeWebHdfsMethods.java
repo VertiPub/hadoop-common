@@ -70,6 +70,7 @@ import org.apache.hadoop.hdfs.web.WebHdfsFileSystem;
 import org.apache.hadoop.hdfs.web.resources.AccessTimeParam;
 import org.apache.hadoop.hdfs.web.resources.BlockSizeParam;
 import org.apache.hadoop.hdfs.web.resources.BufferSizeParam;
+import org.apache.hadoop.hdfs.web.resources.ConcatSourcesParam;
 import org.apache.hadoop.hdfs.web.resources.CreateParentParam;
 import org.apache.hadoop.hdfs.web.resources.DelegationParam;
 import org.apache.hadoop.hdfs.web.resources.DeleteOpParam;
@@ -98,7 +99,6 @@ import org.apache.hadoop.hdfs.web.resources.UserParam;
 import org.apache.hadoop.ipc.Server;
 import org.apache.hadoop.net.NodeBase;
 import org.apache.hadoop.security.Credentials;
-import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenIdentifier;
@@ -211,7 +211,6 @@ public class NamenodeWebHdfsMethods {
         namenode, ugi, renewer != null? renewer: ugi.getShortUserName());
     final Token<? extends TokenIdentifier> t = c.getAllTokens().iterator().next();
     t.setKind(WebHdfsFileSystem.TOKEN_KIND);
-    SecurityUtil.setTokenService(t, namenode.getHttpAddress());
     return t;
   }
 
@@ -483,10 +482,12 @@ public class NamenodeWebHdfsMethods {
           final DoAsParam doAsUser,
       @QueryParam(PostOpParam.NAME) @DefaultValue(PostOpParam.DEFAULT)
           final PostOpParam op,
+      @QueryParam(ConcatSourcesParam.NAME) @DefaultValue(ConcatSourcesParam.DEFAULT)
+          final ConcatSourcesParam concatSrcs,
       @QueryParam(BufferSizeParam.NAME) @DefaultValue(BufferSizeParam.DEFAULT)
           final BufferSizeParam bufferSize
       ) throws IOException, InterruptedException {
-    return post(ugi, delegation, username, doAsUser, ROOT, op, bufferSize);
+    return post(ugi, delegation, username, doAsUser, ROOT, op, concatSrcs, bufferSize);
   }
 
   /** Handle HTTP POST request. */
@@ -505,11 +506,13 @@ public class NamenodeWebHdfsMethods {
       @PathParam(UriFsPathParam.NAME) final UriFsPathParam path,
       @QueryParam(PostOpParam.NAME) @DefaultValue(PostOpParam.DEFAULT)
           final PostOpParam op,
+      @QueryParam(ConcatSourcesParam.NAME) @DefaultValue(ConcatSourcesParam.DEFAULT)
+          final ConcatSourcesParam concatSrcs,
       @QueryParam(BufferSizeParam.NAME) @DefaultValue(BufferSizeParam.DEFAULT)
           final BufferSizeParam bufferSize
       ) throws IOException, InterruptedException {
 
-    init(ugi, delegation, username, doAsUser, path, op, bufferSize);
+    init(ugi, delegation, username, doAsUser, path, op, concatSrcs, bufferSize);
 
     return ugi.doAs(new PrivilegedExceptionAction<Response>() {
       @Override
@@ -517,7 +520,7 @@ public class NamenodeWebHdfsMethods {
         REMOTE_ADDRESS.set(request.getRemoteAddr());
         try {
           return post(ugi, delegation, username, doAsUser,
-              path.getAbsolutePath(), op, bufferSize);
+              path.getAbsolutePath(), op, concatSrcs, bufferSize);
         } finally {
           REMOTE_ADDRESS.set(null);
         }
@@ -532,6 +535,7 @@ public class NamenodeWebHdfsMethods {
       final DoAsParam doAsUser,
       final String fullpath,
       final PostOpParam op,
+      final ConcatSourcesParam concatSrcs,
       final BufferSizeParam bufferSize
       ) throws IOException, URISyntaxException {
     final NameNode namenode = (NameNode)context.getAttribute("name.node");
@@ -542,6 +546,11 @@ public class NamenodeWebHdfsMethods {
       final URI uri = redirectURI(namenode, ugi, delegation, username, doAsUser,
           fullpath, op.getValue(), -1L, -1L, bufferSize);
       return Response.temporaryRedirect(uri).type(MediaType.APPLICATION_OCTET_STREAM).build();
+    }
+    case CONCAT:
+    {
+      namenode.getRpcServer().concat(fullpath, concatSrcs.getAbsolutePaths());
+      return Response.ok().build();
     }
     default:
       throw new UnsupportedOperationException(op + " is not supported");
@@ -709,9 +718,15 @@ public class NamenodeWebHdfsMethods {
   
   private static StreamingOutput getListingStream(final NamenodeProtocols np, 
       final String p) throws IOException {
-    final DirectoryListing first = getDirectoryListing(np, p,
+    // allows exceptions like FNF or ACE to prevent http response of 200 for
+    // a failure since we can't (currently) return error responses in the
+    // middle of a streaming operation
+    final DirectoryListing firstDirList = getDirectoryListing(np, p,
         HdfsFileStatus.EMPTY_NAME);
 
+    // must save ugi because the streaming object will be executed outside
+    // the remote user's ugi
+    final UserGroupInformation ugi = UserGroupInformation.getCurrentUser();
     return new StreamingOutput() {
       @Override
       public void write(final OutputStream outstream) throws IOException {
@@ -720,21 +735,32 @@ public class NamenodeWebHdfsMethods {
         out.println("{\"" + FileStatus.class.getSimpleName() + "es\":{\""
             + FileStatus.class.getSimpleName() + "\":[");
 
-        final HdfsFileStatus[] partial = first.getPartialListing();
-        if (partial.length > 0) {
-          out.print(JsonUtil.toJsonString(partial[0], false));
-        }
-        for(int i = 1; i < partial.length; i++) {
-          out.println(',');
-          out.print(JsonUtil.toJsonString(partial[i], false));
-        }
-
-        for(DirectoryListing curr = first; curr.hasMore(); ) { 
-          curr = getDirectoryListing(np, p, curr.getLastName());
-          for(HdfsFileStatus s : curr.getPartialListing()) {
-            out.println(',');
-            out.print(JsonUtil.toJsonString(s, false));
-          }
+        try {
+          // restore remote user's ugi
+          ugi.doAs(new PrivilegedExceptionAction<Void>() {
+            @Override
+            public Void run() throws IOException {
+              long n = 0;
+              for (DirectoryListing dirList = firstDirList; ;
+                   dirList = getDirectoryListing(np, p, dirList.getLastName())
+              ) {
+                // send each segment of the directory listing
+                for (HdfsFileStatus s : dirList.getPartialListing()) {
+                  if (n++ > 0) {
+                    out.println(',');
+                  }
+                  out.print(JsonUtil.toJsonString(s, false));
+                }
+                // stop if last segment
+                if (!dirList.hasMore()) {
+                  break;
+                }
+              }
+              return null;
+            }
+          });
+        } catch (InterruptedException e) {
+          throw new IOException(e);
         }
         
         out.println();

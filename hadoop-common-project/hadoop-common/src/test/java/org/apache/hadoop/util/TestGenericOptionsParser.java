@@ -21,15 +21,25 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
+import java.util.Arrays;
+import java.util.Map;
 
 import junit.framework.TestCase;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenIdentifier;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
+import org.junit.Assert;
+
+import com.google.common.collect.Maps;
 
 public class TestGenericOptionsParser extends TestCase {
   File testDir;
@@ -44,7 +54,9 @@ public class TestGenericOptionsParser extends TestCase {
     String[] args = new String[2];
     // pass a files option 
     args[0] = "-files";
-    args[1] = tmpFile.toString();
+    // Convert a file to a URI as File.toString() is not a valid URI on
+    // all platforms and GenericOptionsParser accepts only valid URIs
+    args[1] = tmpFile.toURI().toString();
     new GenericOptionsParser(conf, args);
     String files = conf.get("tmpfiles");
     assertNotNull("files is null", files);
@@ -53,7 +65,7 @@ public class TestGenericOptionsParser extends TestCase {
     
     // pass file as uri
     Configuration conf1 = new Configuration();
-    URI tmpURI = new URI(tmpFile.toString() + "#link");
+    URI tmpURI = new URI(tmpFile.toURI().toString() + "#link");
     args[0] = "-files";
     args[1] = tmpURI.toString();
     new GenericOptionsParser(conf1, args);
@@ -148,7 +160,7 @@ public class TestGenericOptionsParser extends TestCase {
     String[] args = new String[2];
     // pass a files option 
     args[0] = "-tokenCacheFile";
-    args[1] = tmpFile.toString();
+    args[1] = tmpFile.toURI().toString();
     
     // test non existing file
     Throwable th = null;
@@ -162,14 +174,112 @@ public class TestGenericOptionsParser extends TestCase {
         th instanceof FileNotFoundException);
     
     // create file
-    Path tmpPath = new Path(tmpFile.toString());
-    localFs.create(tmpPath);
+    Path tmpPath = localFs.makeQualified(new Path(tmpFile.toString()));
+    Token<?> token = new Token<AbstractDelegationTokenIdentifier>(
+        "identifier".getBytes(), "password".getBytes(),
+        new Text("token-kind"), new Text("token-service"));
+    Credentials creds = new Credentials();
+    creds.addToken(new Text("token-alias"), token);
+    creds.writeTokenStorageFile(tmpPath, conf);
+
     new GenericOptionsParser(conf, args);
     String fileName = conf.get("mapreduce.job.credentials.json");
     assertNotNull("files is null", fileName);
-    assertEquals("files option does not match",
-      localFs.makeQualified(tmpPath).toString(), fileName);
+    assertEquals("files option does not match", tmpPath.toString(), fileName);
+    
+    Credentials ugiCreds =
+        UserGroupInformation.getCurrentUser().getCredentials();
+    assertEquals(1, ugiCreds.numberOfTokens());
+    Token<?> ugiToken = ugiCreds.getToken(new Text("token-alias"));
+    assertNotNull(ugiToken);
+    assertEquals(token, ugiToken);
     
     localFs.delete(new Path(testDir.getAbsolutePath()), true);
+  }
+
+  /** Test -D parsing */
+  public void testDOptionParsing() throws Exception {
+    String[] args;
+    Map<String,String> expectedMap;
+    String[] expectedRemainingArgs;
+
+    args = new String[]{};
+    expectedRemainingArgs = new String[]{};
+    expectedMap = Maps.newHashMap();
+    assertDOptionParsing(args, expectedMap, expectedRemainingArgs);
+
+    args = new String[]{"-Dkey1=value1"};
+    expectedRemainingArgs = new String[]{};
+    expectedMap = Maps.newHashMap();
+    expectedMap.put("key1", "value1");
+    assertDOptionParsing(args, expectedMap, expectedRemainingArgs);
+
+    args = new String[]{"-fs", "hdfs://somefs/", "-Dkey1=value1", "arg1"};
+    expectedRemainingArgs = new String[]{"arg1"};
+    assertDOptionParsing(args, expectedMap, expectedRemainingArgs);
+
+    args = new String[]{"-fs", "hdfs://somefs/", "-D", "key1=value1", "arg1"};
+    assertDOptionParsing(args, expectedMap, expectedRemainingArgs);
+
+    if (Shell.WINDOWS) {
+      args = new String[]{"-fs", "hdfs://somefs/", "-D", "key1",
+        "value1", "arg1"};
+      assertDOptionParsing(args, expectedMap, expectedRemainingArgs);
+
+      args = new String[]{"-fs", "hdfs://somefs/", "-Dkey1", "value1", "arg1"};
+      assertDOptionParsing(args, expectedMap, expectedRemainingArgs);
+
+      args = new String[]{"-fs", "hdfs://somefs/", "-D", "key1", "value1",
+        "-fs", "someother", "-D", "key2", "value2", "arg1", "arg2"};
+      expectedRemainingArgs = new String[]{"arg1", "arg2"};
+      expectedMap = Maps.newHashMap();
+      expectedMap.put("key1", "value1");
+      expectedMap.put("key2", "value2");
+      assertDOptionParsing(args, expectedMap, expectedRemainingArgs);
+
+      args = new String[]{"-fs", "hdfs://somefs/", "-D", "key1", "value1",
+        "-fs", "someother", "-D", "key2", "value2"};
+      expectedRemainingArgs = new String[]{};
+      assertDOptionParsing(args, expectedMap, expectedRemainingArgs);
+
+      args = new String[]{"-fs", "hdfs://somefs/", "-D", "key1", "value1",
+        "-fs", "someother", "-D", "key2"};
+      expectedMap = Maps.newHashMap();
+      expectedMap.put("key1", "value1");
+      expectedMap.put("key2", null); // we expect key2 not set
+      assertDOptionParsing(args, expectedMap, expectedRemainingArgs);
+    }
+
+    args = new String[]{"-fs", "hdfs://somefs/", "-D", "key1=value1",
+      "-fs", "someother", "-Dkey2"};
+    expectedRemainingArgs = new String[]{};
+    expectedMap = Maps.newHashMap();
+    expectedMap.put("key1", "value1");
+    expectedMap.put("key2", null); // we expect key2 not set
+    assertDOptionParsing(args, expectedMap, expectedRemainingArgs);
+
+    args = new String[]{"-fs", "hdfs://somefs/", "-D"};
+    expectedMap = Maps.newHashMap();
+    assertDOptionParsing(args, expectedMap, expectedRemainingArgs);
+  }
+
+  private void assertDOptionParsing(String[] args,
+      Map<String,String> expectedMap, String[] expectedRemainingArgs)
+      throws Exception {
+    for (Map.Entry<String, String> entry : expectedMap.entrySet()) {
+      assertNull(conf.get(entry.getKey()));
+    }
+
+    Configuration conf = new Configuration();
+    GenericOptionsParser parser = new GenericOptionsParser(conf, args);
+    String[] remainingArgs = parser.getRemainingArgs();
+
+    for (Map.Entry<String, String> entry : expectedMap.entrySet()) {
+      assertEquals(entry.getValue(), conf.get(entry.getKey()));
+    }
+
+    Assert.assertArrayEquals(
+      Arrays.toString(remainingArgs) + Arrays.toString(expectedRemainingArgs),
+      expectedRemainingArgs, remainingArgs);
   }
 }

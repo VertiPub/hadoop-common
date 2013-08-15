@@ -31,12 +31,16 @@ import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hdfs.BlockReader;
 import org.apache.hadoop.hdfs.BlockReaderFactory;
+import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DFSTestUtil;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
+import org.apache.hadoop.hdfs.net.TcpPeerServer;
 import org.apache.hadoop.hdfs.protocol.Block;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
 import org.apache.hadoop.hdfs.protocol.ExtendedBlock;
@@ -89,10 +93,10 @@ public class TestDataNodeVolumeFailure {
   @After
   public void tearDown() throws Exception {
     if(data_fail != null) {
-      data_fail.setWritable(true);
+      FileUtil.setWritable(data_fail, true);
     }
     if(failedDir != null) {
-      failedDir.setWritable(true);
+      FileUtil.setWritable(failedDir, true);
     }
     if(cluster != null) {
       cluster.shutdown();
@@ -280,10 +284,12 @@ public class TestDataNodeVolumeFailure {
     String file = BlockReaderFactory.getFileName(targetAddr, 
         "test-blockpoolid",
         block.getBlockId());
-    BlockReaderFactory.newBlockReader(conf, s, file, block, lblock
-        .getBlockToken(), 0, -1, null);
-
-    // nothing - if it fails - it will throw and exception
+    BlockReader blockReader =
+      BlockReaderFactory.newBlockReader(new DFSClient.Conf(conf), file, block,
+        lblock.getBlockToken(), 0, -1, true, "TestDataNodeVolumeFailure",
+        TcpPeerServer.peerFromSocket(s), datanode, null, null, null, false,
+        CachingStrategy.newDefaultStrategy());
+    blockReader.close();
   }
   
   /**

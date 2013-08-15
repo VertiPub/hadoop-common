@@ -18,29 +18,49 @@
 
 package org.apache.hadoop.yarn.api.records;
 
+import org.apache.hadoop.classification.InterfaceAudience.Public;
+import org.apache.hadoop.classification.InterfaceStability.Stable;
+import org.apache.hadoop.yarn.util.Records;
+
 /**
  * The priority assigned to a ResourceRequest or Application or Container 
  * allocation 
  *
  */
+@Public
+@Stable
 public abstract class Priority implements Comparable<Priority> {
-  
+
+  public static final Priority UNDEFINED = newInstance(-1);
+
+  @Public
+  @Stable
+  public static Priority newInstance(int p) {
+    Priority priority = Records.newRecord(Priority.class);
+    priority.setPriority(p);
+    return priority;
+  }
+
   /**
    * Get the assigned priority
    * @return the assigned priority
    */
+  @Public
+  @Stable
   public abstract int getPriority();
   
   /**
    * Set the assigned priority
    * @param priority the assigned priority
    */
+  @Public
+  @Stable
   public abstract void setPriority(int priority);
   
   @Override
   public int hashCode() {
-    final int prime = 31;
-    int result = 1;
+    final int prime = 517861;
+    int result = 9511;
     result = prime * result + getPriority();
     return result;
   }

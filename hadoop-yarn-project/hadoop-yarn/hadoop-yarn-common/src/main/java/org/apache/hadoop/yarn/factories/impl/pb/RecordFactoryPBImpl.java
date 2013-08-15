@@ -23,10 +23,12 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.yarn.YarnException;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 
+@Private
 public class RecordFactoryPBImpl implements RecordFactory {
 
   private static final String PB_IMPL_PACKAGE_SUFFIX = "impl.pb";
@@ -45,7 +47,7 @@ public class RecordFactoryPBImpl implements RecordFactory {
   
   @SuppressWarnings("unchecked")
   @Override
-  public <T> T newRecordInstance(Class<T> clazz) throws YarnException {
+  public <T> T newRecordInstance(Class<T> clazz) {
     
     Constructor<?> constructor = cache.get(clazz);
     if (constructor == null) {
@@ -53,7 +55,7 @@ public class RecordFactoryPBImpl implements RecordFactory {
       try {
         pbClazz = localConf.getClassByName(getPBImplClassName(clazz));
       } catch (ClassNotFoundException e) {
-        throw new YarnException("Failed to load class: ["
+        throw new YarnRuntimeException("Failed to load class: ["
             + getPBImplClassName(clazz) + "]", e);
       }
       try {
@@ -61,18 +63,18 @@ public class RecordFactoryPBImpl implements RecordFactory {
         constructor.setAccessible(true);
         cache.putIfAbsent(clazz, constructor);
       } catch (NoSuchMethodException e) {
-        throw new YarnException("Could not find 0 argument constructor", e);
+        throw new YarnRuntimeException("Could not find 0 argument constructor", e);
       }
     }
     try {
       Object retObject = constructor.newInstance();
       return (T)retObject;
     } catch (InvocationTargetException e) {
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     } catch (IllegalAccessException e) {
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     } catch (InstantiationException e) {
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
   }
 

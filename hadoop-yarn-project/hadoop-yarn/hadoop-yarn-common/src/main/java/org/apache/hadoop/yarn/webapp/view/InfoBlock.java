@@ -18,14 +18,23 @@
 
 package org.apache.hadoop.yarn.webapp.view;
 
+import static org.apache.hadoop.yarn.webapp.view.JQueryUI.C_TH;
+import static org.apache.hadoop.yarn.webapp.view.JQueryUI._EVEN;
+import static org.apache.hadoop.yarn.webapp.view.JQueryUI._INFO;
+import static org.apache.hadoop.yarn.webapp.view.JQueryUI._INFO_WRAP;
+import static org.apache.hadoop.yarn.webapp.view.JQueryUI._ODD;
+
+import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.yarn.webapp.ResponseInfo;
 import org.apache.hadoop.yarn.webapp.hamlet.Hamlet;
-import org.apache.hadoop.yarn.webapp.hamlet.Hamlet.*;
+import org.apache.hadoop.yarn.webapp.hamlet.Hamlet.DIV;
+import org.apache.hadoop.yarn.webapp.hamlet.Hamlet.TABLE;
+import org.apache.hadoop.yarn.webapp.hamlet.Hamlet.TD;
+import org.apache.hadoop.yarn.webapp.hamlet.Hamlet.TR;
 
 import com.google.inject.Inject;
 
-import static org.apache.hadoop.yarn.webapp.view.JQueryUI.*;
-
+@InterfaceAudience.LimitedPrivate({"YARN", "MapReduce"})
 public class InfoBlock extends HtmlBlock {
   final ResponseInfo info;
 
@@ -46,7 +55,23 @@ public class InfoBlock extends HtmlBlock {
           th(item.key);
       String value = String.valueOf(item.value);
       if (item.url == null) {
-        tr.td(value);
+        if (!item.isRaw) {
+          TD<TR<TABLE<DIV<Hamlet>>>> td = tr.td();
+          if ( value.lastIndexOf('\n') > 0) {
+            String []lines = value.split("\n");
+        	DIV<TD<TR<TABLE<DIV<Hamlet>>>>> singleLineDiv;
+            for ( String line :lines) {
+              singleLineDiv = td.div();
+              singleLineDiv._r(line);
+              singleLineDiv._();
+            }
+          } else {
+            td._r(value);
+          }
+          td._();
+        } else {
+          tr.td()._r(value)._();
+        }
       } else {
         tr.
           td().

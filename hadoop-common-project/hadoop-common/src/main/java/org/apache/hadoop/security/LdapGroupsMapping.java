@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.List;
 
+import javax.naming.CommunicationException;
 import javax.naming.Context;
 import javax.naming.NamingEnumeration;
 import javax.naming.NamingException;
@@ -143,7 +144,15 @@ public class LdapGroupsMapping
    */
   public static final String GROUP_NAME_ATTR_KEY = LDAP_CONFIG_PREFIX + ".search.attr.group.name";
   public static final String GROUP_NAME_ATTR_DEFAULT = "cn";
-  
+
+  /*
+   * LDAP {@link SearchControls} attribute to set the time limit
+   * for an invoked directory search. Prevents infinite wait cases.
+   */
+  public static final String DIRECTORY_SEARCH_TIMEOUT =
+    LDAP_CONFIG_PREFIX + ".directory.search.timeout";
+  public static final int DIRECTORY_SEARCH_TIMEOUT_DEFAULT = 10000; // 10s
+
   private static final Log LOG = LogFactory.getLog(LdapGroupsMapping.class);
 
   private static final SearchControls SEARCH_CONTROLS = new SearchControls();
@@ -166,6 +175,8 @@ public class LdapGroupsMapping
   private String groupMemberAttr;
   private String groupNameAttr;
 
+  public static int RECONNECT_RETRY_COUNT = 3;
+  
   /**
    * Returns list of groups for a user.
    * 
@@ -178,34 +189,63 @@ public class LdapGroupsMapping
    */
   @Override
   public synchronized List<String> getGroups(String user) throws IOException {
-    List<String> groups = new ArrayList<String>();
-
+    List<String> emptyResults = new ArrayList<String>();
+    /*
+     * Normal garbage collection takes care of removing Context instances when they are no longer in use. 
+     * Connections used by Context instances being garbage collected will be closed automatically.
+     * So in case connection is closed and gets CommunicationException, retry some times with new new DirContext/connection. 
+     */
     try {
-      DirContext ctx = getDirContext();
-
-      // Search for the user. We'll only ever need to look at the first result
-      NamingEnumeration<SearchResult> results = ctx.search(baseDN,
-                                                           userSearchFilter,
-                                                           new Object[]{user},
-                                                           SEARCH_CONTROLS);
-      if (results.hasMoreElements()) {
-        SearchResult result = results.nextElement();
-        String userDn = result.getNameInNamespace();
-
-        NamingEnumeration<SearchResult> groupResults =
-          ctx.search(baseDN,
-                     "(&" + groupSearchFilter + "(" + groupMemberAttr + "={0}))",
-                     new Object[]{userDn},
-                     SEARCH_CONTROLS);
-        while (groupResults.hasMoreElements()) {
-          SearchResult groupResult = groupResults.nextElement();
-          Attribute groupName = groupResult.getAttributes().get(groupNameAttr);
-          groups.add(groupName.get().toString());
-        }
-      }
+      return doGetGroups(user);
+    } catch (CommunicationException e) {
+      LOG.warn("Connection is closed, will try to reconnect");
     } catch (NamingException e) {
       LOG.warn("Exception trying to get groups for user " + user, e);
-      return new ArrayList<String>();
+      return emptyResults;
+    }
+
+    int retryCount = 0;
+    while (retryCount ++ < RECONNECT_RETRY_COUNT) {
+      //reset ctx so that new DirContext can be created with new connection
+      this.ctx = null;
+      
+      try {
+        return doGetGroups(user);
+      } catch (CommunicationException e) {
+        LOG.warn("Connection being closed, reconnecting failed, retryCount = " + retryCount);
+      } catch (NamingException e) {
+        LOG.warn("Exception trying to get groups for user " + user, e);
+        return emptyResults;
+      }
+    }
+    
+    return emptyResults;
+  }
+  
+  List<String> doGetGroups(String user) throws NamingException {
+    List<String> groups = new ArrayList<String>();
+
+    DirContext ctx = getDirContext();
+
+    // Search for the user. We'll only ever need to look at the first result
+    NamingEnumeration<SearchResult> results = ctx.search(baseDN,
+        userSearchFilter,
+        new Object[]{user},
+        SEARCH_CONTROLS);
+    if (results.hasMoreElements()) {
+      SearchResult result = results.nextElement();
+      String userDn = result.getNameInNamespace();
+
+      NamingEnumeration<SearchResult> groupResults =
+          ctx.search(baseDN,
+              "(&" + groupSearchFilter + "(" + groupMemberAttr + "={0}))",
+              new Object[]{userDn},
+              SEARCH_CONTROLS);
+      while (groupResults.hasMoreElements()) {
+        SearchResult groupResult = groupResults.nextElement();
+        Attribute groupName = groupResult.getAttributes().get(groupNameAttr);
+        groups.add(groupName.get().toString());
+      }
     }
 
     return groups;
@@ -236,7 +276,7 @@ public class LdapGroupsMapping
 
     return ctx;
   }
-
+  
   /**
    * Caches groups, no need to do that for this provider
    */
@@ -293,6 +333,9 @@ public class LdapGroupsMapping
         conf.get(GROUP_MEMBERSHIP_ATTR_KEY, GROUP_MEMBERSHIP_ATTR_DEFAULT);
     groupNameAttr =
         conf.get(GROUP_NAME_ATTR_KEY, GROUP_NAME_ATTR_DEFAULT);
+
+    int dirSearchTimeout = conf.getInt(DIRECTORY_SEARCH_TIMEOUT, DIRECTORY_SEARCH_TIMEOUT_DEFAULT);
+    SEARCH_CONTROLS.setTimeLimit(dirSearchTimeout);
 
     this.conf = conf;
   }

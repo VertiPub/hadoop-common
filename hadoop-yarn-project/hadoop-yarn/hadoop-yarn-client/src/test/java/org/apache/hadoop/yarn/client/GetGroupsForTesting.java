@@ -25,9 +25,9 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.tools.GetGroupsBase;
 import org.apache.hadoop.tools.GetUserMappingsProtocol;
 import org.apache.hadoop.util.ToolRunner;
-import org.apache.hadoop.yarn.api.RMAdminProtocol;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.ipc.YarnRPC;
+import org.apache.hadoop.yarn.server.api.ResourceManagerAdministrationProtocol;
 
 public class GetGroupsForTesting extends GetGroupsBase {
   
@@ -63,8 +63,8 @@ public class GetGroupsForTesting extends GetGroupsBase {
         YarnConfiguration.DEFAULT_RM_ADMIN_PORT);
     final YarnRPC rpc = YarnRPC.create(conf);
     
-    RMAdminProtocol adminProtocol = (RMAdminProtocol) rpc.getProxy(
-        RMAdminProtocol.class, addr, getConf());
+    ResourceManagerAdministrationProtocol adminProtocol = (ResourceManagerAdministrationProtocol) rpc.getProxy(
+        ResourceManagerAdministrationProtocol.class, addr, getConf());
 
     return adminProtocol;
   }

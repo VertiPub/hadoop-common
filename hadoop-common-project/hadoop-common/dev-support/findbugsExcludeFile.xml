@@ -19,6 +19,12 @@
        <Package name="org.apache.hadoop.record.compiler.generated" />
      </Match>
      <Match>
+       <Package name="org.apache.hadoop.security.proto" />
+     </Match>
+     <Match>
+       <Package name="org.apache.hadoop.tools.proto" />
+     </Match>
+     <Match>
        <Bug pattern="EI_EXPOSE_REP" />
      </Match>
      <Match>
@@ -100,6 +106,11 @@
        <Method name="run" />
        <Bug pattern="DM_EXIT" />
      </Match>
+     <Match>
+       <Class name="org.apache.hadoop.util.ProgramDriver" />
+       <Method name="driver" />
+       <Bug pattern="DM_EXIT" />
+     </Match>
      <!--
        We need to cast objects between old and new api objects
      -->
@@ -173,18 +184,6 @@
        <Class name="org.apache.hadoop.fs.FileSystem" />
        <Method name="checkPath" />
        <Bug pattern="ES_COMPARING_STRINGS_WITH_EQ" />
-     </Match>
-
-     <Match>
-       <Class name="org.apache.hadoop.fs.kfs.KFSOutputStream" />
-       <Field name="path" />
-       <Bug pattern="URF_UNREAD_FIELD" />
-     </Match>
-
-     <Match>
-       <Class name="org.apache.hadoop.fs.kfs.KosmosFileSystem" />
-       <Method name="initialize" />
-       <Bug pattern="DM_EXIT" />
      </Match>
 
      <Match>
@@ -272,7 +271,7 @@
     </Match>
     <Match>
       <!-- protobuf generated code -->
-      <Class name="~org\.apache\.hadoop\.ipc\.protobuf\.HadoopRpcProtos.*"/>
+      <Class name="~org\.apache\.hadoop\.ipc\.protobuf\.ProtobufRpcEngineProtos.*"/>
     </Match>
     <Match>
       <!-- protobuf generated code -->
@@ -284,7 +283,7 @@
     </Match>
         <Match>
       <!-- protobuf generated code -->
-      <Class name="~org\.apache\.hadoop\.ipc\.protobuf\.RpcPayloadHeaderProtos.*"/>
+      <Class name="~org\.apache\.hadoop\.ipc\.protobuf\.RpcHeaderProtos.*"/>
     </Match>
     <Match>
       <!-- protobuf generated code -->
@@ -297,6 +296,10 @@
     <Match>
       <!-- protobuf generated code -->
       <Class name="~org\.apache\.hadoop\.security\.proto\.SecurityProtos.*"/>
+    </Match>
+    <Match>
+      <!-- protobuf generated code -->
+      <Class name="~org\.apache\.hadoop\.ipc\.protobuf\.TestProtos.*"/>
     </Match>
 
     <!--
@@ -315,5 +318,34 @@
        <Class name="org.apache.hadoop.fs.DelegationTokenRenewer" />
        <Method name="removeRenewAction" />
        <Bug pattern="BC_UNCONFIRMED_CAST" />
+     </Match>
+     
+     <!-- Inconsistent synchronization flagged by findbugs is not valid. -->
+     <Match>
+       <Class name="org.apache.hadoop.ipc.Client$Connection" />
+       <Field name="in" />
+       <Bug pattern="IS2_INCONSISTENT_SYNC" />
+     </Match>
+     <!-- 
+       The switch condition for INITIATE is expected to fallthru to RESPONSE
+       to process initial sasl response token included in the INITIATE
+     -->
+     <Match>
+       <Class name="org.apache.hadoop.ipc.Server$Connection" />
+       <Method name="processSaslMessage" />
+       <Bug pattern="SF_SWITCH_FALLTHROUGH" />
+     </Match>
+
+     <!-- Synchronization performed on util.concurrent instance. -->
+     <Match>
+       <Class name="org.apache.hadoop.service.AbstractService" />
+       <Method name="stop" />
+       <Bug code="JLM" />
+     </Match>
+
+     <Match>
+       <Class name="org.apache.hadoop.service.AbstractService" />
+       <Method name="waitForServiceToStop" />
+       <Bug code="JLM" />
      </Match>
  </FindBugsFilter>

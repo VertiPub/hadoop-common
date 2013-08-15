@@ -25,6 +25,8 @@ import java.util.Map;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.classification.InterfaceAudience.Private;
+import org.apache.hadoop.classification.InterfaceStability.Unstable;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.Container;
@@ -34,11 +36,13 @@ import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainer;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerNode;
+import org.apache.hadoop.yarn.util.resource.Resources;
 
+@Private
+@Unstable
 public class FSSchedulerNode extends SchedulerNode {
 
   private static final Log LOG = LogFactory.getLog(FSSchedulerNode.class);
@@ -46,12 +50,13 @@ public class FSSchedulerNode extends SchedulerNode {
   private static final RecordFactory recordFactory = RecordFactoryProvider
       .getRecordFactory(null);
 
-  private Resource availableResource = recordFactory.newRecordInstance(Resource.class);
+  private Resource availableResource;
   private Resource usedResource = recordFactory.newRecordInstance(Resource.class);
 
   private volatile int numContainers;
 
   private RMContainer reservedContainer;
+  private AppSchedulable reservedAppSchedulable;
   
   /* set of containers that are allocated containers */
   private final Map<ContainerId, RMContainer> launchedContainers = 
@@ -59,11 +64,9 @@ public class FSSchedulerNode extends SchedulerNode {
   
   private final RMNode rmNode;
 
-  public static final String ANY = "*";
-
   public FSSchedulerNode(RMNode node) {
     this.rmNode = node;
-    this.availableResource.setMemory(node.getTotalCapability().getMemory());
+    this.availableResource = Resources.clone(node.getTotalCapability());
   }
 
   public RMNode getRMNode() {
@@ -177,8 +180,8 @@ public class FSSchedulerNode extends SchedulerNode {
   @Override
   public String toString() {
     return "host: " + rmNode.getNodeAddress() + " #containers=" + getNumContainers() +  
-      " available=" + getAvailableResource().getMemory() + 
-      " used=" + getUsedResource().getMemory();
+      " available=" + getAvailableResource() + 
+      " used=" + getUsedResource();
   }
 
   @Override
@@ -223,6 +226,7 @@ public class FSSchedulerNode extends SchedulerNode {
           " on node " + this + " for application " + application);
     }
     this.reservedContainer = reservedContainer;
+    this.reservedAppSchedulable = application.getAppSchedulable();
   }
 
   public synchronized void unreserveResource(
@@ -239,11 +243,15 @@ public class FSSchedulerNode extends SchedulerNode {
           " on node " + this);
     }
     
-    reservedContainer = null;
+    this.reservedContainer = null;
+    this.reservedAppSchedulable = null;
   }
 
   public synchronized RMContainer getReservedContainer() {
     return reservedContainer;
   }
 
+  public synchronized AppSchedulable getReservedAppSchedulable() {
+    return reservedAppSchedulable;
+  }
 }

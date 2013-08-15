@@ -103,6 +103,7 @@ public class AppBlock extends HtmlBlock {
     info("Application Overview").
       _("User:", app.getUser()).
       _("Name:", app.getName()).
+      _("Application Type:", app.getApplicationType()).
       _("State:", app.getState()).
       _("FinalStatus:", app.getFinalStatus()).
       _("Started:", Times.format(app.getStartTime())).
@@ -134,7 +135,7 @@ public class AppBlock extends HtmlBlock {
 
     boolean odd = false;
     for (RMAppAttempt attempt : attempts) {
-      AppAttemptInfo attemptInfo = new AppAttemptInfo(attempt);
+      AppAttemptInfo attemptInfo = new AppAttemptInfo(attempt, app.getUser());
       table.tr((odd = !odd) ? _ODD : _EVEN).
         td(String.valueOf(attemptInfo.getAttemptId())).
         td(Times.format(attemptInfo.getStartTime())).

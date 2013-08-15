@@ -109,6 +109,9 @@ WebHDFS REST API
     * {{{Append to a File}<<<APPEND>>>}}
         (see  {{{../../api/org/apache/hadoop/fs/FileSystem.html}FileSystem}}.append)
 
+    * {{{Concatenate Files}<<<CONCAT>>>}}
+        (see  {{{../../api/org/apache/hadoop/fs/FileSystem.html}FileSystem}}.concat)
+
   * HTTP DELETE
 
     * {{{Delete a File/Directory}<<<DELETE>>>}}
@@ -181,6 +184,10 @@ curl -i --negotiate -u : "http://<HOST>:<PORT>/webhdfs/v1/<PATH>?op=..."
 +---------------------------------
 curl -i "http://<HOST>:<PORT>/webhdfs/v1/<PATH>?delegation=<TOKEN>&op=..."
 +---------------------------------
+
+  []
+ 
+  See also: {{{../hadoop-common/HttpAuthentication.html}Authentication for Hadoop HTTP web-consoles}}
 
 * {Proxy Users}
 
@@ -297,6 +304,28 @@ Content-Length: 0
   See also:
   {{{Buffer Size}<<<buffersize>>>}},
    {{{../../api/org/apache/hadoop/fs/FileSystem.html}FileSystem}}.append
+
+
+** {Concat File(s)}
+
+  * Submit a HTTP POST request.
+
++---------------------------------
+curl -i -X POST "http://<HOST>:<PORT>/webhdfs/v1/<PATH>?op=CONCAT&sources=<PATHS>"
++---------------------------------
+
+  The client receives a response with zero content length:
+
++---------------------------------
+HTTP/1.1 200 OK
+Content-Length: 0
++---------------------------------
+
+  []
+
+  See also:
+  {{{Sources}<<<sources>>>}},
+   {{{../../api/org/apache/hadoop/fs/FileSystem.html}FileSystem}}.concat
 
 
 ** {Open and Read a File}
@@ -946,6 +975,12 @@ Transfer-Encoding: chunked
   See {{{http://tools.ietf.org/id/draft-zyp-json-schema-03.html}draft-zyp-json-schema-03}}
   for the syntax definitions of the JSON schemas.
 
+  <<Note>> that the default value of
+  {{{http://tools.ietf.org/id/draft-zyp-json-schema-03.html#additionalProperties}<<<additionalProperties>>>}}
+  is an empty schema which allows any value for additional properties.
+  Therefore, all WebHDFS JSON responses allow any additional property.
+  However, if additional properties are included in the responses, they are
+  considered as optional properties in order to maintain compatibility.
 
 ** {Boolean JSON Schema}
 
@@ -1725,6 +1760,26 @@ var tokenProperties =
   See also:
   {{{Create and Write to a File}<<<CREATE>>>}},
   {{{Set Replication Factor}<<<SETREPLICATION>>>}}
+
+
+** {Sources}
+
+*----------------+-------------------------------------------------------------------+
+|| Name          | <<<sources>>> |
+*----------------+-------------------------------------------------------------------+
+|| Description   | A list of source paths. |
+*----------------+-------------------------------------------------------------------+
+|| Type          | String |
+*----------------+-------------------------------------------------------------------+
+|| Default Value | \<empty\> |
+*----------------+-------------------------------------------------------------------+
+|| Valid Values  | A list of comma seperated absolute FileSystem paths without scheme and authority. |
+*----------------+-------------------------------------------------------------------+
+|| Syntax        | Any string. |
+*----------------+-------------------------------------------------------------------+
+
+  See also:
+  {{{Concat File(s)}<<<CONCAT>>>}}
 
 
 ** {Token}

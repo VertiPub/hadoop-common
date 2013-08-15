@@ -67,6 +67,7 @@ import org.apache.hadoop.hdfs.server.common.Storage.StorageDirectory;
 import org.apache.hadoop.hdfs.server.namenode.NNStorage.NameNodeDirType;
 import org.apache.hadoop.hdfs.server.namenode.metrics.NameNodeMetrics;
 import org.apache.hadoop.hdfs.server.protocol.NamespaceInfo;
+import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.test.GenericTestUtils;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.util.Time;
@@ -152,8 +153,9 @@ public class TestEditLog {
 
       for (int i = 0; i < numTransactions; i++) {
         INodeFileUnderConstruction inode = new INodeFileUnderConstruction(
-                            p, replication, blockSize, 0, "", "", null);
-        editLog.logOpenFile("/filename" + (startIndex + i), inode);
+            namesystem.allocateNewInodeId(), p, replication, blockSize, 0, "",
+            "", null);
+        editLog.logOpenFile("/filename" + (startIndex + i), inode, false);
         editLog.logCloseFile("/filename" + (startIndex + i), inode);
         editLog.logSync();
       }
@@ -317,6 +319,11 @@ public class TestEditLog {
       // we should now be writing to edits_inprogress_3
       fsimage.rollEditLog();
     
+      // Remember the current lastInodeId and will reset it back to test
+      // loading editlog segments.The transactions in the following allocate new
+      // inode id to write to editlogs but doesn't create ionde in namespace
+      long originalLastInodeId = namesystem.getLastInodeId();
+      
       // Create threads and make them run transactions concurrently.
       Thread threadId[] = new Thread[NUM_THREADS];
       for (int i = 0; i < NUM_THREADS; i++) {
@@ -349,6 +356,7 @@ public class TestEditLog {
       // If there were any corruptions, it is likely that the reading in
       // of these transactions will throw an exception.
       //
+      namesystem.resetLastInodeIdWithoutChecking(originalLastInodeId);
       for (Iterator<StorageDirectory> it = 
               fsimage.getStorage().dirIterator(NameNodeDirType.EDITS); it.hasNext();) {
         FSEditLogLoader loader = new FSEditLogLoader(namesystem, 0);
@@ -627,6 +635,7 @@ public class TestEditLog {
         
         // Now restore the backup
         FileUtil.fullyDeleteContents(dfsDir);
+        dfsDir.delete();
         backupDir.renameTo(dfsDir);
         
         // Directory layout looks like:
@@ -753,19 +762,24 @@ public class TestEditLog {
       File log = new File(currentDir,
           NNStorage.getInProgressEditsFileName(3));
 
-      new EditLogFileOutputStream(log, 1024).create();
-      if (!inBothDirs) {
-        break;
+      EditLogFileOutputStream stream = new EditLogFileOutputStream(conf, log, 1024);
+      try {
+        stream.create();
+        if (!inBothDirs) {
+          break;
+        }
+        
+        NNStorage storage = new NNStorage(conf, 
+            Collections.<URI>emptyList(),
+            Lists.newArrayList(uri));
+        
+        if (updateTransactionIdFile) {
+          storage.writeTransactionIdFileToStorage(3);
+        }
+        storage.close();
+      } finally {
+        stream.close();
       }
-      
-      NNStorage storage = new NNStorage(conf, 
-          Collections.<URI>emptyList(),
-          Lists.newArrayList(uri));
-      
-      if (updateTransactionIdFile) {
-        storage.writeTransactionIdFileToStorage(3);
-      }
-      storage.close();
     }
     
     try {
@@ -854,6 +868,11 @@ public class TestEditLog {
     public boolean isInProgress() {
       return true;
     }
+
+    @Override
+    public void setMaxOpSize(int maxOpSize) {
+      reader.setMaxOpSize(maxOpSize);
+    }
   }
 
   @Test
@@ -862,14 +881,14 @@ public class TestEditLog {
     logDir.mkdirs();
     FSEditLog log = FSImageTestUtil.createStandaloneEditLog(logDir);
     try {
-      logDir.setWritable(false);
+      FileUtil.setWritable(logDir, false);
       log.openForWrite();
       fail("Did no throw exception on only having a bad dir");
     } catch (IOException ioe) {
       GenericTestUtils.assertExceptionContains(
           "too few journals successfully started", ioe);
     } finally {
-      logDir.setWritable(true);
+      FileUtil.setWritable(logDir, true);
       log.close();
     }
   }
@@ -893,14 +912,14 @@ public class TestEditLog {
       log.setMetricsForTests(mockMetrics);
 
       for (int i = 0; i < 400; i++) {
-        log.logDelete(oneKB, 1L);
+        log.logDelete(oneKB, 1L, false);
       }
       // After ~400KB, we're still within the 512KB buffer size
       Mockito.verify(mockMetrics, Mockito.times(0)).addSync(Mockito.anyLong());
       
       // After ~400KB more, we should have done an automatic sync
       for (int i = 0; i < 400; i++) {
-        log.logDelete(oneKB, 1L);
+        log.logDelete(oneKB, 1L, false);
       }
       Mockito.verify(mockMetrics, Mockito.times(1)).addSync(Mockito.anyLong());
 
@@ -1064,7 +1083,7 @@ public class TestEditLog {
     editlog.initJournalsForWrite();
     editlog.openForWrite();
     for (int i = 2; i < TXNS_PER_ROLL; i++) {
-      editlog.logGenerationStamp((long)0);
+      editlog.logGenerationStampV2((long) 0);
     }
     editlog.logSync();
     
@@ -1076,7 +1095,7 @@ public class TestEditLog {
     for (int i = 0; i < numrolls; i++) {
       editlog.rollEditLog();
       
-      editlog.logGenerationStamp((long)i);
+      editlog.logGenerationStampV2((long) i);
       editlog.logSync();
 
       while (aborts.size() > 0 
@@ -1086,7 +1105,7 @@ public class TestEditLog {
       } 
       
       for (int j = 3; j < TXNS_PER_ROLL; j++) {
-        editlog.logGenerationStamp((long)i);
+        editlog.logGenerationStampV2((long) i);
       }
       editlog.logSync();
     }
@@ -1214,7 +1233,7 @@ public class TestEditLog {
     EditLogFileOutputStream elfos = null;
     EditLogFileInputStream elfis = null;
     try {
-      elfos = new EditLogFileOutputStream(TEST_LOG_NAME, 0);
+      elfos = new EditLogFileOutputStream(new Configuration(), TEST_LOG_NAME, 0);
       elfos.create();
       elfos.writeRaw(garbage, 0, garbage.length);
       elfos.setReadyToFlush();
@@ -1322,12 +1341,15 @@ public class TestEditLog {
     FSEditLog editlog = getFSEditLog(storage);
     editlog.initJournalsForWrite();
     long startTxId = 1;
+    Collection<EditLogInputStream> streams = null;
     try {
-      readAllEdits(editlog.selectInputStreams(startTxId, 4*TXNS_PER_ROLL),
-          startTxId);
+      streams = editlog.selectInputStreams(startTxId, 4*TXNS_PER_ROLL);
+      readAllEdits(streams, startTxId);
     } catch (IOException e) {
       LOG.error("edit log failover didn't work", e);
       fail("Edit log failover didn't work");
+    } finally {
+      IOUtils.cleanup(null, streams.toArray(new EditLogInputStream[0]));
     }
   }
 
@@ -1368,12 +1390,15 @@ public class TestEditLog {
     FSEditLog editlog = getFSEditLog(storage);
     editlog.initJournalsForWrite();
     long startTxId = 1;
+    Collection<EditLogInputStream> streams = null;
     try {
-      readAllEdits(editlog.selectInputStreams(startTxId, 4*TXNS_PER_ROLL),
-          startTxId);
+      streams = editlog.selectInputStreams(startTxId, 4*TXNS_PER_ROLL);
+      readAllEdits(streams, startTxId);
     } catch (IOException e) {
       LOG.error("edit log failover didn't work", e);
       fail("Edit log failover didn't work");
+    } finally {
+      IOUtils.cleanup(null, streams.toArray(new EditLogInputStream[0]));
     }
   }
 

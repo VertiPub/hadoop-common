@@ -42,6 +42,8 @@ import org.apache.hadoop.security.authorize.AccessControlList;
 import org.apache.hadoop.yarn.api.records.QueueACL;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.apache.hadoop.yarn.server.resourcemanager.resource.ResourceWeights;
+import org.apache.hadoop.yarn.util.resource.Resources;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -143,7 +145,6 @@ public class QueueManager {
         if (leafQueue == null) {
           return null;
         }
-        leafQueue.setSchedulingMode(info.defaultSchedulingMode);
         queue = leafQueue;
       } else if (queue instanceof FSParentQueue) {
         return null;
@@ -301,8 +302,8 @@ public class QueueManager {
     Map<String, Resource> maxQueueResources = new HashMap<String, Resource>();
     Map<String, Integer> queueMaxApps = new HashMap<String, Integer>();
     Map<String, Integer> userMaxApps = new HashMap<String, Integer>();
-    Map<String, Double> queueWeights = new HashMap<String, Double>();
-    Map<String, SchedulingMode> queueModes = new HashMap<String, SchedulingMode>();
+    Map<String, ResourceWeights> queueWeights = new HashMap<String, ResourceWeights>();
+    Map<String, SchedulingPolicy> queuePolicies = new HashMap<String, SchedulingPolicy>();
     Map<String, Long> minSharePreemptionTimeouts = new HashMap<String, Long>();
     Map<String, Map<QueueACL, AccessControlList>> queueAcls =
         new HashMap<String, Map<QueueACL, AccessControlList>>();
@@ -310,7 +311,7 @@ public class QueueManager {
     int queueMaxAppsDefault = Integer.MAX_VALUE;
     long fairSharePreemptionTimeout = Long.MAX_VALUE;
     long defaultMinSharePreemptionTimeout = Long.MAX_VALUE;
-    SchedulingMode defaultSchedulingMode = SchedulingMode.FAIR;
+    SchedulingPolicy defaultSchedPolicy = SchedulingPolicy.getDefault();
 
     // Remember all queue names so we can display them on web UI, etc.
     List<String> queueNamesInAllocFile = new ArrayList<String>();
@@ -339,7 +340,7 @@ public class QueueManager {
       if ("queue".equals(element.getTagName()) ||
     	  "pool".equals(element.getTagName())) {
         loadQueue("root", element, minQueueResources, maxQueueResources, queueMaxApps,
-            userMaxApps, queueWeights, queueModes, minSharePreemptionTimeouts,
+            userMaxApps, queueWeights, queuePolicies, minSharePreemptionTimeouts,
             queueAcls, queueNamesInAllocFile);
       } else if ("user".equals(element.getTagName())) {
         String userName = element.getAttribute("name");
@@ -370,10 +371,12 @@ public class QueueManager {
       } else if ("queueMaxAppsDefault".equals(element.getTagName())) {
         String text = ((Text)element.getFirstChild()).getData().trim();
         int val = Integer.parseInt(text);
-        queueMaxAppsDefault = val;}
-      else if ("defaultQueueSchedulingMode".equals(element.getTagName())) {
+        queueMaxAppsDefault = val;
+      } else if ("defaultQueueSchedulingPolicy".equals(element.getTagName())
+          || "defaultQueueSchedulingMode".equals(element.getTagName())) {
         String text = ((Text)element.getFirstChild()).getData().trim();
-        defaultSchedulingMode = parseSchedulingMode(text);
+        SchedulingPolicy.setDefault(text);
+        defaultSchedPolicy = SchedulingPolicy.getDefault();
       } else {
         LOG.warn("Bad element in allocations file: " + element.getTagName());
       }
@@ -384,8 +387,15 @@ public class QueueManager {
     synchronized (this) {
       info = new QueueManagerInfo(minQueueResources, maxQueueResources,
           queueMaxApps, userMaxApps, queueWeights, userMaxAppsDefault,
-          queueMaxAppsDefault, defaultSchedulingMode, minSharePreemptionTimeouts,
+          queueMaxAppsDefault, defaultSchedPolicy, minSharePreemptionTimeouts,
           queueAcls, fairSharePreemptionTimeout, defaultMinSharePreemptionTimeout);
+      
+      // Update metrics
+      for (FSQueue queue : queues.values()) {
+        FSQueueMetrics queueMetrics = queue.getMetrics();
+        queueMetrics.setMinShare(queue.getMinShare());
+        queueMetrics.setMaxShare(queue.getMaxShare());
+      }
       
       // Root queue should have empty ACLs.  As a queue's ACL is the union of
       // its ACL and all its parents' ACLs, setting the roots' to empty will
@@ -395,14 +405,15 @@ public class QueueManager {
       rootAcls.put(QueueACL.SUBMIT_APPLICATIONS, new AccessControlList(" "));
       rootAcls.put(QueueACL.ADMINISTER_QUEUE, new AccessControlList(" "));
       queueAcls.put(ROOT_QUEUE, rootAcls);
-
+ 
+      // Create all queus
       for (String name: queueNamesInAllocFile) {
-        FSLeafQueue queue = getLeafQueue(name);
-        if (queueModes.containsKey(name)) {
-          queue.setSchedulingMode(queueModes.get(name));
-        } else {
-          queue.setSchedulingMode(defaultSchedulingMode);
-        }
+        getLeafQueue(name);
+      }
+      
+      // Set custom policies as specified
+      for (Map.Entry<String, SchedulingPolicy> entry : queuePolicies.entrySet()) {
+        queues.get(entry.getKey()).setPolicy(entry.getValue());
       }
     }
   }
@@ -412,8 +423,9 @@ public class QueueManager {
    */
   private void loadQueue(String parentName, Element element, Map<String, Resource> minQueueResources,
       Map<String, Resource> maxQueueResources, Map<String, Integer> queueMaxApps,
-      Map<String, Integer> userMaxApps, Map<String, Double> queueWeights,
-      Map<String, SchedulingMode> queueModes, Map<String, Long> minSharePreemptionTimeouts,
+      Map<String, Integer> userMaxApps, Map<String, ResourceWeights> queueWeights,
+      Map<String, SchedulingPolicy> queuePolicies,
+      Map<String, Long> minSharePreemptionTimeouts,
       Map<String, Map<QueueACL, AccessControlList>> queueAcls, List<String> queueNamesInAllocFile) 
       throws AllocationConfigurationException {
     String queueName = parentName + "." + element.getAttribute("name");
@@ -429,12 +441,12 @@ public class QueueManager {
       Element field = (Element) fieldNode;
       if ("minResources".equals(field.getTagName())) {
         String text = ((Text)field.getFirstChild()).getData().trim();
-        int val = Integer.parseInt(text);
-        minQueueResources.put(queueName, Resources.createResource(val));
+        Resource val = FairSchedulerConfiguration.parseResourceConfigValue(text);
+        minQueueResources.put(queueName, val);
       } else if ("maxResources".equals(field.getTagName())) {
         String text = ((Text)field.getFirstChild()).getData().trim();
-        int val = Integer.parseInt(text);
-        maxQueueResources.put(queueName, Resources.createResource(val));
+        Resource val = FairSchedulerConfiguration.parseResourceConfigValue(text);
+        maxQueueResources.put(queueName, val);
       } else if ("maxRunningApps".equals(field.getTagName())) {
         String text = ((Text)field.getFirstChild()).getData().trim();
         int val = Integer.parseInt(text);
@@ -442,14 +454,17 @@ public class QueueManager {
       } else if ("weight".equals(field.getTagName())) {
         String text = ((Text)field.getFirstChild()).getData().trim();
         double val = Double.parseDouble(text);
-        queueWeights.put(queueName, val);
+        queueWeights.put(queueName, new ResourceWeights((float)val));
       } else if ("minSharePreemptionTimeout".equals(field.getTagName())) {
         String text = ((Text)field.getFirstChild()).getData().trim();
         long val = Long.parseLong(text) * 1000L;
         minSharePreemptionTimeouts.put(queueName, val);
-      } else if ("schedulingMode".equals(field.getTagName())) {
+      } else if ("schedulingPolicy".equals(field.getTagName())
+          || "schedulingMode".equals(field.getTagName())) {
         String text = ((Text)field.getFirstChild()).getData().trim();
-        queueModes.put(queueName, parseSchedulingMode(text));
+        SchedulingPolicy policy = SchedulingPolicy.parse(text);
+        policy.initialize(scheduler.getClusterCapacity());
+        queuePolicies.put(queueName, policy);
       } else if ("aclSubmitApps".equals(field.getTagName())) {
         String text = ((Text)field.getFirstChild()).getData().trim();
         acls.put(QueueACL.SUBMIT_APPLICATIONS, new AccessControlList(text));
@@ -458,8 +473,9 @@ public class QueueManager {
         acls.put(QueueACL.ADMINISTER_QUEUE, new AccessControlList(text));
       } else if ("queue".endsWith(field.getTagName()) || 
           "pool".equals(field.getTagName())) {
-        loadQueue(queueName, field, minQueueResources, maxQueueResources, queueMaxApps,
-            userMaxApps, queueWeights, queueModes, minSharePreemptionTimeouts,
+        loadQueue(queueName, field, minQueueResources, maxQueueResources,
+            queueMaxApps, userMaxApps, queueWeights, queuePolicies,
+            minSharePreemptionTimeouts,
             queueAcls, queueNamesInAllocFile);
         isLeaf = false;
       }
@@ -469,23 +485,10 @@ public class QueueManager {
     }
     queueAcls.put(queueName, acls);
     if (maxQueueResources.containsKey(queueName) && minQueueResources.containsKey(queueName)
-        && Resources.lessThan(maxQueueResources.get(queueName),
-            minQueueResources.get(queueName))) {
+        && !Resources.fitsIn(minQueueResources.get(queueName),
+            maxQueueResources.get(queueName))) {
       LOG.warn(String.format("Queue %s has max resources %d less than min resources %d",
           queueName, maxQueueResources.get(queueName), minQueueResources.get(queueName)));
-    }
-  }
-
-  private SchedulingMode parseSchedulingMode(String text)
-      throws AllocationConfigurationException {
-    text = text.toLowerCase();
-    if (text.equals("fair")) {
-      return SchedulingMode.FAIR;
-    } else if (text.equals("fifo")) {
-      return SchedulingMode.FIFO;
-    } else {
-      throw new AllocationConfigurationException(
-          "Unknown scheduling mode : " + text + "; expected 'fifo' or 'fair'");
     }
   }
 
@@ -512,17 +515,24 @@ public class QueueManager {
     if (maxQueueResource != null) {
       return maxQueueResource;
     } else {
-      return Resources.createResource(Integer.MAX_VALUE);
+      return Resources.createResource(Integer.MAX_VALUE, Integer.MAX_VALUE);
     }
   }
 
   /**
-   * Get a collection of all queues
+   * Get a collection of all leaf queues
    */
   public Collection<FSLeafQueue> getLeafQueues() {
     synchronized (queues) {
       return leafQueues;
     }
+  }
+  
+  /**
+   * Get a collection of all queues
+   */
+  public Collection<FSQueue> getQueues() {
+    return queues.values();
   }
 
   public int getUserMaxApps(String user) {
@@ -545,12 +555,12 @@ public class QueueManager {
     }
   }
   
-  public double getQueueWeight(String queue) {
-    Double weight = info.queueWeights.get(queue);
+  public ResourceWeights getQueueWeight(String queue) {
+    ResourceWeights weight = info.queueWeights.get(queue);
     if (weight != null) {
       return weight;
     } else {
-      return 1.0;
+      return ResourceWeights.NEUTRAL;
     }
   }
 
@@ -602,7 +612,7 @@ public class QueueManager {
     // Maximum amount of resources per queue
     public final Map<String, Resource> maxQueueResources;
     // Sharing weights for each queue
-    public final Map<String, Double> queueWeights;
+    public final Map<String, ResourceWeights> queueWeights;
     
     // Max concurrent running applications for each queue and for each user; in addition,
     // for users that have no max specified, we use the userMaxJobsDefault.
@@ -627,13 +637,13 @@ public class QueueManager {
     // below half its fair share for this long, it is allowed to preempt tasks.
     public final long fairSharePreemptionTimeout;
 
-    public final SchedulingMode defaultSchedulingMode;
+    public final SchedulingPolicy defaultSchedulingPolicy;
     
     public QueueManagerInfo(Map<String, Resource> minQueueResources, 
         Map<String, Resource> maxQueueResources, 
         Map<String, Integer> queueMaxApps, Map<String, Integer> userMaxApps,
-        Map<String, Double> queueWeights, int userMaxAppsDefault,
-        int queueMaxAppsDefault, SchedulingMode defaultSchedulingMode, 
+        Map<String, ResourceWeights> queueWeights, int userMaxAppsDefault,
+        int queueMaxAppsDefault, SchedulingPolicy defaultSchedulingPolicy, 
         Map<String, Long> minSharePreemptionTimeouts, 
         Map<String, Map<QueueACL, AccessControlList>> queueAcls,
         long fairSharePreemptionTimeout, long defaultMinSharePreemptionTimeout) {
@@ -644,7 +654,7 @@ public class QueueManager {
       this.queueWeights = queueWeights;
       this.userMaxAppsDefault = userMaxAppsDefault;
       this.queueMaxAppsDefault = queueMaxAppsDefault;
-      this.defaultSchedulingMode = defaultSchedulingMode;
+      this.defaultSchedulingPolicy = defaultSchedulingPolicy;
       this.minSharePreemptionTimeouts = minSharePreemptionTimeouts;
       this.queueAcls = queueAcls;
       this.fairSharePreemptionTimeout = fairSharePreemptionTimeout;
@@ -654,7 +664,7 @@ public class QueueManager {
     public QueueManagerInfo() {
       minQueueResources = new HashMap<String, Resource>();
       maxQueueResources = new HashMap<String, Resource>();
-      queueWeights = new HashMap<String, Double>();
+      queueWeights = new HashMap<String, ResourceWeights>();
       queueMaxApps = new HashMap<String, Integer>();
       userMaxApps = new HashMap<String, Integer>();
       userMaxAppsDefault = Integer.MAX_VALUE;
@@ -663,7 +673,7 @@ public class QueueManager {
       minSharePreemptionTimeouts = new HashMap<String, Long>();
       defaultMinSharePreemptionTimeout = Long.MAX_VALUE;
       fairSharePreemptionTimeout = Long.MAX_VALUE;
-      defaultSchedulingMode = SchedulingMode.FAIR;
+      defaultSchedulingPolicy = SchedulingPolicy.getDefault();
     }
   }
 }

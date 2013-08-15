@@ -29,6 +29,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.Shell.ExitCodeException;
 import org.apache.hadoop.util.Shell.ShellCommandExecutor;
 import org.apache.hadoop.util.StringUtils;
@@ -38,6 +39,8 @@ import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerDiagnosticsUpdateEvent;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.ContainerLocalizer;
+import org.apache.hadoop.yarn.server.nodemanager.util.DefaultLCEResourcesHandler;
+import org.apache.hadoop.yarn.server.nodemanager.util.LCEResourcesHandler;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 
 public class LinuxContainerExecutor extends ContainerExecutor {
@@ -46,12 +49,29 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       .getLog(LinuxContainerExecutor.class);
 
   private String containerExecutorExe;
+  private LCEResourcesHandler resourcesHandler;
+  private boolean containerSchedPriorityIsSet = false;
+  private int containerSchedPriorityAdjustment = 0;
+  
   
   @Override
   public void setConf(Configuration conf) {
     super.setConf(conf);
     containerExecutorExe = getContainerExecutorExecutablePath(conf);
+    
+    resourcesHandler = ReflectionUtils.newInstance(
+            conf.getClass(YarnConfiguration.NM_LINUX_CONTAINER_RESOURCES_HANDLER,
+              DefaultLCEResourcesHandler.class, LCEResourcesHandler.class), conf);
+    resourcesHandler.setConf(conf);
+    if (conf.get(YarnConfiguration.NM_CONTAINER_EXECUTOR_SCHED_PRIORITY) != null) {
+     containerSchedPriorityIsSet = true;
+     containerSchedPriorityAdjustment = conf
+         .getInt(YarnConfiguration.NM_CONTAINER_EXECUTOR_SCHED_PRIORITY, 
+         YarnConfiguration.DEFAULT_NM_CONTAINER_EXECUTOR_SCHED_PRIORITY);
+    }
   }
+
+
 
   /**
    * List of commands that the setuid script will execute.
@@ -81,7 +101,8 @@ public class LinuxContainerExecutor extends ContainerExecutor {
     UNABLE_TO_EXECUTE_CONTAINER_SCRIPT(7),
     INVALID_CONTAINER_PID(9),
     INVALID_CONTAINER_EXEC_PERMISSIONS(22),
-    INVALID_CONFIG_FILE(24);
+    INVALID_CONFIG_FILE(24),
+    WRITE_CGROUP_FAILED(27);
 
     private final int value;
     ResultCode(int value) {
@@ -103,6 +124,13 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       : conf.get(YarnConfiguration.NM_LINUX_CONTAINER_EXECUTOR_PATH, defaultPath);
   }
 
+  protected void addSchedPriorityCommand(List<String> command) {
+    if (containerSchedPriorityIsSet) {
+      command.addAll(Arrays.asList("nice", "-n",
+          Integer.toString(containerSchedPriorityAdjustment)));
+    } 
+  }
+
   @Override 
   public void init() throws IOException {        
     // Send command to executor which will just start up, 
@@ -119,11 +147,14 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       shExec.execute();
     } catch (ExitCodeException e) {
       int exitCode = shExec.getExitCode();
-      LOG.warn("Exit code from container is : " + exitCode);
+      LOG.warn("Exit code from container executor initialization is : "
+          + exitCode, e);
       logOutput(shExec.getOutput());
       throw new IOException("Linux container executor not configured properly"
           + " (error=" + exitCode + ")", e);
     }
+   
+    resourcesHandler.init(this);
   }
   
   @Override
@@ -132,14 +163,15 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       List<String> localDirs, List<String> logDirs)
       throws IOException, InterruptedException {
 
-    List<String> command = new ArrayList<String>(
-      Arrays.asList(containerExecutorExe, 
-                    user, 
-                    Integer.toString(Commands.INITIALIZE_CONTAINER.getValue()),
-                    appId,
-                    nmPrivateContainerTokensPath.toUri().getPath().toString(),
-                    StringUtils.join(",", localDirs),
-                    StringUtils.join(",", logDirs)));
+    List<String> command = new ArrayList<String>();
+    addSchedPriorityCommand(command);
+    command.addAll(Arrays.asList(containerExecutorExe, 
+                   user, 
+                   Integer.toString(Commands.INITIALIZE_CONTAINER.getValue()),
+                   appId,
+                   nmPrivateContainerTokensPath.toUri().getPath().toString(),
+                   StringUtils.join(",", localDirs),
+                   StringUtils.join(",", logDirs)));
 
     File jvm =                                  // use same jvm as parent
       new File(new File(System.getProperty("java.home"), "bin"), "java");
@@ -173,10 +205,11 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       }
     } catch (ExitCodeException e) {
       int exitCode = shExec.getExitCode();
-      LOG.warn("Exit code from container is : " + exitCode);
+      LOG.warn("Exit code from container " + locId + " startLocalizer is : "
+          + exitCode, e);
       logOutput(shExec.getOutput());
-      throw new IOException("App initialization failed (" + exitCode + 
-          ") with output: " + shExec.getOutput(), e);
+      throw new IOException("Application " + appId + " initialization failed" +
+      		" (exitCode=" + exitCode + ") with output: " + shExec.getOutput(), e);
     }
   }
 
@@ -186,15 +219,22 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       String user, String appId, Path containerWorkDir,
       List<String> localDirs, List<String> logDirs) throws IOException {
 
-    ContainerId containerId = container.getContainerID();
+    ContainerId containerId = container.getContainerId();
     String containerIdStr = ConverterUtils.toString(containerId);
+    
+    resourcesHandler.preExecute(containerId,
+            container.getResource());
+    String resourcesOptions = resourcesHandler.getResourcesOption(
+            containerId);
 
     ShellCommandExecutor shExec = null;
 
     try {
       Path pidFilePath = getPidFilePath(containerId);
       if (pidFilePath != null) {
-        List<String> command = new ArrayList<String>(Arrays.asList(
+        List<String> command = new ArrayList<String>();
+        addSchedPriorityCommand(command);
+        command.addAll(Arrays.asList(
             containerExecutorExe, user, Integer
                 .toString(Commands.LAUNCH_CONTAINER.getValue()), appId,
             containerIdStr, containerWorkDir.toString(),
@@ -202,7 +242,8 @@ public class LinuxContainerExecutor extends ContainerExecutor {
             nmPrivateTokensPath.toUri().getPath().toString(),
             pidFilePath.toString(),
             StringUtils.join(",", localDirs),
-            StringUtils.join(",", logDirs)));
+            StringUtils.join(",", logDirs),
+            resourcesOptions));
         String[] commandArray = command.toArray(new String[command.size()]);
         shExec = new ShellCommandExecutor(commandArray, null, // NM's cwd
             container.getLaunchContext().getEnvironment()); // sanitized env
@@ -217,19 +258,18 @@ public class LinuxContainerExecutor extends ContainerExecutor {
         return ExitCode.TERMINATED.getExitCode();
       }
     } catch (ExitCodeException e) {
-
       if (null == shExec) {
         return -1;
       }
-
       int exitCode = shExec.getExitCode();
-      LOG.warn("Exit code from container is : " + exitCode);
+      LOG.warn("Exit code from container " + containerId + " is : " + exitCode);
       // 143 (SIGTERM) and 137 (SIGKILL) exit codes means the container was
       // terminated/killed forcefully. In all other cases, log the
       // container-executor's output
       if (exitCode != ExitCode.FORCE_KILLED.getExitCode()
           && exitCode != ExitCode.TERMINATED.getExitCode()) {
-        LOG.warn("Exception from container-launch : ", e);
+        LOG.warn("Exception from container-launch with container ID: "
+            + containerId + " and exit code: " + exitCode , e);
         logOutput(shExec.getOutput());
         String diagnostics = "Exception from container-launch: \n"
             + StringUtils.stringifyException(e) + "\n" + shExec.getOutput();
@@ -241,7 +281,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       }
       return exitCode;
     } finally {
-      ; //
+      resourcesHandler.postExecute(containerId);
     }
     if (LOG.isDebugEnabled()) {
       LOG.debug("Output from LinuxContainerExecutor's launchContainer follows:");
@@ -271,9 +311,12 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       if (ret_code == ResultCode.INVALID_CONTAINER_PID.getValue()) {
         return false;
       }
+      LOG.warn("Error in signalling container " + pid + " with " + signal
+          + "; exit = " + ret_code, e);
       logOutput(shExec.getOutput());
-      throw new IOException("Problem signalling container " + pid + " with " +
-                            signal + "; exit = " + ret_code);
+      throw new IOException("Problem signalling container " + pid + " with "
+          + signal + "; output: " + shExec.getOutput() + " and exitCode: "
+          + ret_code, e);
     }
     return true;
   }
@@ -307,13 +350,34 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       }
     } catch (IOException e) {
       int exitCode = shExec.getExitCode();
-      LOG.warn("Exit code from container is : " + exitCode);
-      if (exitCode != 0) {
-        LOG.error("DeleteAsUser for " + dir.toUri().getPath()
-            + " returned with non-zero exit code" + exitCode);
-        LOG.error("Output from LinuxContainerExecutor's deleteAsUser follows:");
-        logOutput(shExec.getOutput());
-      }
+      LOG.error("DeleteAsUser for " + dir.toUri().getPath()
+          + " returned with exit code: " + exitCode, e);
+      LOG.error("Output from LinuxContainerExecutor's deleteAsUser follows:");
+      logOutput(shExec.getOutput());
     }
   }
+  
+  public void mountCgroups(List<String> cgroupKVs, String hierarchy)
+         throws IOException {
+    List<String> command = new ArrayList<String>(
+            Arrays.asList(containerExecutorExe, "--mount-cgroups", hierarchy));
+    command.addAll(cgroupKVs);
+    
+    String[] commandArray = command.toArray(new String[command.size()]);
+    ShellCommandExecutor shExec = new ShellCommandExecutor(commandArray);
+
+    if (LOG.isDebugEnabled()) {
+        LOG.debug("mountCgroups: " + Arrays.toString(commandArray));
+    }
+
+    try {
+        shExec.execute();
+    } catch (IOException e) {
+        int ret_code = shExec.getExitCode();
+        LOG.warn("Exception in LinuxContainerExecutor mountCgroups ", e);
+        logOutput(shExec.getOutput());
+        throw new IOException("Problem mounting cgroups " + cgroupKVs + 
+          "; exit code = " + ret_code + " and output: " + shExec.getOutput(), e);
+    }
+  }  
 }

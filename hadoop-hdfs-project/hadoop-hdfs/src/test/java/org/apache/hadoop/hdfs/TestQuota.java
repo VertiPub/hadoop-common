@@ -36,6 +36,7 @@ import org.apache.hadoop.hdfs.tools.DFSAdmin;
 import org.apache.hadoop.hdfs.web.WebHdfsFileSystem;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.junit.Assert;
 import org.junit.Test;
 
 /** A class for testing quota-related commands */
@@ -68,8 +69,8 @@ public class TestQuota {
       throw new DSQuotaExceededException(bytes, bytes);
     } catch(DSQuotaExceededException e) {
       
-      assertEquals("The DiskSpace quota is exceeded: quota=1.0k " +
-          "diskspace consumed=1.0k", e.getMessage());
+      assertEquals("The DiskSpace quota is exceeded: quota = 1024 B = 1 KB"
+          + " but diskspace consumed = 1024 B = 1 KB", e.getMessage());
     }
   }
   
@@ -169,15 +170,13 @@ public class TestQuota {
       fout = dfs.create(childFile1, replication);
       
       // 10.s: but writing fileLen bytes should result in an quota exception
-      hasException = false;
       try {
         fout.write(new byte[fileLen]);
         fout.close();
+        Assert.fail();
       } catch (QuotaExceededException e) {
-        hasException = true;
         IOUtils.closeStream(fout);
       }
-      assertTrue(hasException);
       
       //delete the file
       dfs.delete(childFile1, false);

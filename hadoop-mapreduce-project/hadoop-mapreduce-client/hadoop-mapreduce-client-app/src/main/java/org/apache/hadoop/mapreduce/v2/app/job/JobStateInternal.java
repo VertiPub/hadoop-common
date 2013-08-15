@@ -25,10 +25,12 @@ public enum JobStateInternal {
   RUNNING,
   COMMITTING,
   SUCCEEDED,
+  FAIL_WAIT,
   FAIL_ABORT,
   FAILED,
   KILL_WAIT,
   KILL_ABORT,
   KILLED,
-  ERROR
+  ERROR,
+  REBOOT
 }

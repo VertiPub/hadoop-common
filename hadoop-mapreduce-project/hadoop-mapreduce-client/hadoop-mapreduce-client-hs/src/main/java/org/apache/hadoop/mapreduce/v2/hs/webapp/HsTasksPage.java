@@ -22,7 +22,9 @@ import static org.apache.hadoop.mapreduce.v2.app.webapp.AMParams.TASK_TYPE;
 import static org.apache.hadoop.yarn.webapp.view.JQueryUI.ACCORDION;
 import static org.apache.hadoop.yarn.webapp.view.JQueryUI.DATATABLES;
 import static org.apache.hadoop.yarn.webapp.view.JQueryUI.DATATABLES_ID;
+import static org.apache.hadoop.yarn.webapp.view.JQueryUI.DATATABLES_SELECTOR;
 import static org.apache.hadoop.yarn.webapp.view.JQueryUI.initID;
+import static org.apache.hadoop.yarn.webapp.view.JQueryUI.initSelector;
 import static org.apache.hadoop.yarn.webapp.view.JQueryUI.postInitID;
 import static org.apache.hadoop.yarn.webapp.view.JQueryUI.tableInit;
 
@@ -42,6 +44,8 @@ public class HsTasksPage extends HsView {
   @Override protected void preHead(Page.HTML<_> html) {
     commonPreHead(html);
     set(DATATABLES_ID, "tasks");
+    set(DATATABLES_SELECTOR, ".dt-tasks" );
+    set(initSelector(DATATABLES), tasksTableInit());
     set(initID(ACCORDION, "nav"), "{autoHeight:false, active:1}");
     set(initID(DATATABLES, "tasks"), tasksTableInit());
     set(postInitID(DATATABLES, "tasks"), jobsPostTableInit());
@@ -67,33 +71,25 @@ public class HsTasksPage extends HsView {
       type = MRApps.taskType(symbol);
     }
     StringBuilder b = tableInit().
-    append(", 'aaData': tasksTableData");
-    b.append(", bDeferRender: true");
-    b.append(", bProcessing: true");
+    append(", 'aaData': tasksTableData")
+    .append(", bDeferRender: true")
+    .append(", bProcessing: true")
 
-    b.append("\n, aoColumnDefs: [\n");
-    b.append("{'sType':'numeric', 'aTargets': [ 0 ]");
-    b.append(", 'mRender': parseHadoopID }");
+    .append("\n, aoColumnDefs: [\n")
+    .append("{'sType':'numeric', 'aTargets': [ 0 ]")
+    .append(", 'mRender': parseHadoopID }")
 
-    b.append(", {'sType':'numeric', 'aTargets': [ 4");
-    if(type == TaskType.REDUCE) {
-      b.append(", 9, 10, 11, 12");
-    } else { //MAP
-      b.append(", 7");
-    }
-    b.append(" ], 'mRender': renderHadoopElapsedTime }");
+    .append(", {'sType':'numeric', 'aTargets': [ 4")
+    .append(type == TaskType.REDUCE ? ", 9, 10, 11, 12" : ", 7")
+    .append(" ], 'mRender': renderHadoopElapsedTime }")
 
-    b.append("\n, {'sType':'numeric', 'aTargets': [ 2, 3, 5");
-    if(type == TaskType.REDUCE) {
-      b.append(", 6, 7, 8");
-    } else { //MAP
-      b.append(", 6");
-    }
-    b.append(" ], 'mRender': renderHadoopDate }]");
+    .append("\n, {'sType':'numeric', 'aTargets': [ 2, 3, 5")
+    .append(type == TaskType.REDUCE ? ", 6, 7, 8" : ", 6")
+    .append(" ], 'mRender': renderHadoopDate }]")
 
     // Sort by id upon page load
-    b.append("\n, aaSorting: [[0, 'asc']]");
-    b.append("}");
+    .append("\n, aaSorting: [[0, 'asc']]")
+    .append("}");
     return b.toString();
   }
   

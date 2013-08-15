@@ -18,9 +18,13 @@
 
 package org.apache.hadoop.mapreduce.jobhistory;
 
-import static junit.framework.Assert.*;
-import static org.mockito.Matchers.*;
-import static org.mockito.Mockito.*;
+import static junit.framework.Assert.assertTrue;
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
@@ -31,6 +35,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.Counters;
+import org.apache.hadoop.mapreduce.JobID;
 import org.apache.hadoop.mapreduce.MRJobConfig;
 import org.apache.hadoop.mapreduce.TaskID;
 import org.apache.hadoop.mapreduce.TaskType;
@@ -39,11 +44,10 @@ import org.apache.hadoop.mapreduce.v2.api.records.JobId;
 import org.apache.hadoop.mapreduce.v2.app.AppContext;
 import org.apache.hadoop.mapreduce.v2.app.job.Job;
 import org.apache.hadoop.mapreduce.v2.util.MRBuilderUtils;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
-import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -53,7 +57,7 @@ public class TestJobHistoryEventHandler {
   private static final Log LOG = LogFactory
       .getLog(TestJobHistoryEventHandler.class);
 
-  @Test
+  @Test (timeout=50000)
   public void testFirstFlushOnCompletionEvent() throws Exception {
     TestParams t = new TestParams();
     Configuration conf = new Configuration();
@@ -96,7 +100,7 @@ public class TestJobHistoryEventHandler {
     }
   }
 
-  @Test
+  @Test (timeout=50000)
   public void testMaxUnflushedCompletionEvents() throws Exception {
     TestParams t = new TestParams();
     Configuration conf = new Configuration();
@@ -131,17 +135,17 @@ public class TestJobHistoryEventHandler {
 
       handleNextNEvents(jheh, 1);
       verify(mockWriter).flush();
-      
+
       handleNextNEvents(jheh, 50);
       verify(mockWriter, times(6)).flush();
-      
+
     } finally {
       jheh.stop();
       verify(mockWriter).close();
     }
   }
-  
-  @Test
+
+  @Test (timeout=50000)
   public void testUnflushedTimer() throws Exception {
     TestParams t = new TestParams();
     Configuration conf = new Configuration();
@@ -181,8 +185,8 @@ public class TestJobHistoryEventHandler {
       verify(mockWriter).close();
     }
   }
-  
-  @Test
+
+  @Test (timeout=50000)
   public void testBatchedFlushJobEndMultiplier() throws Exception {
     TestParams t = new TestParams();
     Configuration conf = new Configuration();
@@ -250,7 +254,7 @@ public class TestJobHistoryEventHandler {
       return testWorkDir.getAbsolutePath();
     } catch (Exception e) {
       LOG.warn("Could not cleanup", e);
-      throw new YarnException("could not cleanup test dir", e);
+      throw new YarnRuntimeException("could not cleanup test dir", e);
     }
   }
 
@@ -265,26 +269,22 @@ public class TestJobHistoryEventHandler {
     when(mockContext.getApplicationID()).thenReturn(appId);
     return mockContext;
   }
-  
+
 
   private class TestParams {
     String workDir = setupTestWorkDir();
-    ApplicationId appId = BuilderUtils.newApplicationId(200, 1);
+    ApplicationId appId = ApplicationId.newInstance(200, 1);
     ApplicationAttemptId appAttemptId =
-        BuilderUtils.newApplicationAttemptId(appId, 1);
-    ContainerId containerId = BuilderUtils.newContainerId(appAttemptId, 1);
+        ApplicationAttemptId.newInstance(appId, 1);
+    ContainerId containerId = ContainerId.newInstance(appAttemptId, 1);
     TaskID taskID = TaskID.forName("task_200707121733_0003_m_000005");
     JobId jobId = MRBuilderUtils.newJobId(appId, 1);
     AppContext mockAppContext = mockAppContext(appId);
   }
 
   private JobHistoryEvent getEventToEnqueue(JobId jobId) {
-    JobHistoryEvent toReturn = Mockito.mock(JobHistoryEvent.class);
-    HistoryEvent he = Mockito.mock(HistoryEvent.class);
-    Mockito.when(he.getEventType()).thenReturn(EventType.JOB_STATUS_CHANGED);
-    Mockito.when(toReturn.getHistoryEvent()).thenReturn(he);
-    Mockito.when(toReturn.getJobID()).thenReturn(jobId);
-    return toReturn;
+    HistoryEvent toReturn = new JobStatusChangedEvent(new JobID(Integer.toString(jobId.getId()), jobId.getId()), "change status");
+    return new JobHistoryEvent(jobId, toReturn);
   }
 
   @Test
@@ -344,17 +344,15 @@ public class TestJobHistoryEventHandler {
 class JHEvenHandlerForTest extends JobHistoryEventHandler {
 
   private EventWriter eventWriter;
-  volatile int handleEventCompleteCalls = 0;
-  volatile int handleEventStartedCalls = 0;
 
   public JHEvenHandlerForTest(AppContext context, int startCount) {
     super(context, startCount);
   }
 
   @Override
-  public void start() {
+  protected void serviceStart() {
   }
-  
+
   @Override
   protected EventWriter createEventWriter(Path historyFilePath)
       throws IOException {
@@ -365,7 +363,7 @@ class JHEvenHandlerForTest extends JobHistoryEventHandler {
   @Override
   protected void closeEventWriter(JobId jobId) {
   }
-  
+
   public EventWriter getEventWriter() {
     return this.eventWriter;
   }
@@ -375,13 +373,12 @@ class JHEvenHandlerForTest extends JobHistoryEventHandler {
  * Class to help with testSigTermedFunctionality
  */
 class JHEventHandlerForSigtermTest extends JobHistoryEventHandler {
-  private MetaInfo metaInfo;
   public JHEventHandlerForSigtermTest(AppContext context, int startCount) {
     super(context, startCount);
   }
 
   public void addToFileMap(JobId jobId) {
-    metaInfo = Mockito.mock(MetaInfo.class);
+    MetaInfo metaInfo = Mockito.mock(MetaInfo.class);
     Mockito.when(metaInfo.isWriterActive()).thenReturn(true);
     fileMap.put(jobId, metaInfo);
   }

@@ -22,6 +22,7 @@ import static org.junit.Assert.*;
 import java.io.File;
 import java.io.IOException;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.qjournal.QJMTestUtil;
@@ -36,10 +37,7 @@ import org.apache.hadoop.hdfs.server.common.StorageErrorReporter;
 import org.apache.hadoop.hdfs.server.protocol.NamespaceInfo;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.test.GenericTestUtils;
-import org.junit.After;
-import org.junit.Assume;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.*;
 import org.mockito.Mockito;
 
 public class TestJournal {
@@ -56,13 +54,16 @@ public class TestJournal {
   private StorageErrorReporter mockErrorReporter = Mockito.mock(
       StorageErrorReporter.class);
 
+  private Configuration conf;
   private Journal journal;
 
   
   @Before
   public void setup() throws Exception {
     FileUtil.fullyDelete(TEST_LOG_DIR);
-    journal = new Journal(TEST_LOG_DIR, JID, mockErrorReporter);
+    conf = new Configuration();
+    journal = new Journal(conf, TEST_LOG_DIR, JID,
+      mockErrorReporter);
     journal.format(FAKE_NSINFO);
   }
   
@@ -77,7 +78,7 @@ public class TestJournal {
     IOUtils.closeStream(journal);
   }
   
-  @Test
+  @Test (timeout = 10000)
   public void testEpochHandling() throws Exception {
     assertEquals(0, journal.getLastPromisedEpoch());
     NewEpochResponseProto newEpoch =
@@ -110,7 +111,7 @@ public class TestJournal {
     }
   }
   
-  @Test
+  @Test (timeout = 10000)
   public void testMaintainCommittedTxId() throws Exception {
     journal.newEpoch(FAKE_NSINFO, 1);
     journal.startLogSegment(makeRI(1), 1);
@@ -125,7 +126,7 @@ public class TestJournal {
     assertEquals(3, journal.getCommittedTxnIdForTests());    
   }
   
-  @Test
+  @Test (timeout = 10000)
   public void testRestartJournal() throws Exception {
     journal.newEpoch(FAKE_NSINFO, 1);
     journal.startLogSegment(makeRI(1), 1);
@@ -138,7 +139,7 @@ public class TestJournal {
     journal.close(); // close to unlock the storage dir
     
     // Now re-instantiate, make sure history is still there
-    journal = new Journal(TEST_LOG_DIR, JID, mockErrorReporter);
+    journal = new Journal(conf, TEST_LOG_DIR, JID, mockErrorReporter);
     
     // The storage info should be read, even if no writer has taken over.
     assertEquals(storageString,
@@ -149,7 +150,7 @@ public class TestJournal {
     assertEquals(1, newEpoch.getLastSegmentTxId());
   }
   
-  @Test
+  @Test (timeout = 10000)
   public void testFormatResetsCachedValues() throws Exception {
     journal.newEpoch(FAKE_NSINFO, 12345L);
     journal.startLogSegment(new RequestInfo(JID, 12345L, 1L, 0L), 1L);
@@ -158,6 +159,8 @@ public class TestJournal {
     assertEquals(12345L, journal.getLastWriterEpoch());
     assertTrue(journal.isFormatted());
     
+    // Close the journal in preparation for reformatting it.
+    journal.close();
     journal.format(FAKE_NSINFO_2);
     
     assertEquals(0, journal.getLastPromisedEpoch());
@@ -170,7 +173,7 @@ public class TestJournal {
    * before any transactions are written, that the next newEpoch() call
    * returns the prior segment txid as its most recent segment.
    */
-  @Test
+  @Test (timeout = 10000)
   public void testNewEpochAtBeginningOfSegment() throws Exception {
     journal.newEpoch(FAKE_NSINFO, 1);
     journal.startLogSegment(makeRI(1), 1);
@@ -182,7 +185,7 @@ public class TestJournal {
     assertEquals(1, resp.getLastSegmentTxId());
   }
   
-  @Test
+  @Test (timeout = 10000)
   public void testJournalLocking() throws Exception {
     Assume.assumeTrue(journal.getStorage().getStorageDir(0).isLockSupported());
     StorageDirectory sd = journal.getStorage().getStorageDir(0);
@@ -193,7 +196,7 @@ public class TestJournal {
 
     journal.newEpoch(FAKE_NSINFO,  1);
     try {
-      new Journal(TEST_LOG_DIR, JID, mockErrorReporter);
+      new Journal(conf, TEST_LOG_DIR, JID, mockErrorReporter);
       fail("Did not fail to create another journal in same dir");
     } catch (IOException ioe) {
       GenericTestUtils.assertExceptionContains(
@@ -204,15 +207,16 @@ public class TestJournal {
     
     // Journal should no longer be locked after the close() call.
     // Hence, should be able to create a new Journal in the same dir.
-    Journal journal2 = new Journal(TEST_LOG_DIR, JID, mockErrorReporter);
+    Journal journal2 = new Journal(conf, TEST_LOG_DIR, JID, mockErrorReporter);
     journal2.newEpoch(FAKE_NSINFO, 2);
+    journal2.close();
   }
   
   /**
    * Test finalizing a segment after some batch of edits were missed.
    * This should fail, since we validate the log before finalization.
    */
-  @Test
+  @Test (timeout = 10000)
   public void testFinalizeWhenEditsAreMissed() throws Exception {
     journal.newEpoch(FAKE_NSINFO, 1);
     journal.startLogSegment(makeRI(1), 1);
@@ -231,7 +235,7 @@ public class TestJournal {
     // Check that, even if we re-construct the journal by scanning the
     // disk, we don't allow finalizing incorrectly.
     journal.close();
-    journal = new Journal(TEST_LOG_DIR, JID, mockErrorReporter);
+    journal = new Journal(conf, TEST_LOG_DIR, JID, mockErrorReporter);
     
     try {
       journal.finalizeLogSegment(makeRI(4), 1, 6);
@@ -246,7 +250,7 @@ public class TestJournal {
    * Ensure that finalizing a segment which doesn't exist throws the
    * appropriate exception.
    */
-  @Test
+  @Test (timeout = 10000)
   public void testFinalizeMissingSegment() throws Exception {
     journal.newEpoch(FAKE_NSINFO, 1);
     try {
@@ -267,7 +271,7 @@ public class TestJournal {
    * Eventually, the connection comes back, and the NN tries to start a new
    * segment at a higher txid. This should abort the old one and succeed.
    */
-  @Test
+  @Test (timeout = 10000)
   public void testAbortOldSegmentIfFinalizeIsMissed() throws Exception {
     journal.newEpoch(FAKE_NSINFO, 1);
     
@@ -296,7 +300,7 @@ public class TestJournal {
    * Test behavior of startLogSegment() when a segment with the
    * same transaction ID already exists.
    */
-  @Test
+  @Test (timeout = 10000)
   public void testStartLogSegmentWhenAlreadyExists() throws Exception {
     journal.newEpoch(FAKE_NSINFO, 1);
     
@@ -345,7 +349,7 @@ public class TestJournal {
     return new RequestInfo(JID, 1, serial, 0);
   }
   
-  @Test
+  @Test (timeout = 10000)
   public void testNamespaceVerification() throws Exception {
     journal.newEpoch(FAKE_NSINFO, 1);
 

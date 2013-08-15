@@ -45,6 +45,7 @@ import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
 import org.apache.hadoop.hdfs.server.common.HdfsServerConstants.StartupOption;
 import org.apache.hadoop.hdfs.server.namenode.FSImageTestUtil;
 import org.apache.hadoop.util.StringUtils;
+import org.apache.log4j.Logger;
 import org.junit.Test;
 
 /**
@@ -251,8 +252,9 @@ public class TestDFSUpgradeFromImage {
 
     // Now try to start an NN from it
 
+    MiniDFSCluster cluster = null;
     try {
-      new MiniDFSCluster.Builder(conf).numDataNodes(0)
+      cluster = new MiniDFSCluster.Builder(conf).numDataNodes(0)
         .format(false)
         .manageDataDfsDirs(false)
         .manageNameDfsDirs(false)
@@ -262,6 +264,11 @@ public class TestDFSUpgradeFromImage {
     } catch (IOException ioe) {
       if (!ioe.toString().contains("Old layout version is 'too old'")) {
         throw ioe;
+      }
+    } finally {
+      // We expect startup to fail, but just in case it didn't, shutdown now.
+      if (cluster != null) {
+        cluster.shutdown();
       }
     }
   }
@@ -293,6 +300,11 @@ public class TestDFSUpgradeFromImage {
         new File(baseDir, "name2/current/VERSION"),
         "imageMD5Digest", "22222222222222222222222222222222");
     
+    // Attach our own log appender so we can verify output
+    final LogVerificationAppender appender = new LogVerificationAppender();
+    final Logger logger = Logger.getRootLogger();
+    logger.addAppender(appender);
+
     // Upgrade should now fail
     try {
       upgradeAndVerify(new MiniDFSCluster.Builder(upgradeConf).
@@ -300,9 +312,12 @@ public class TestDFSUpgradeFromImage {
       fail("Upgrade did not fail with bad MD5");
     } catch (IOException ioe) {
       String msg = StringUtils.stringifyException(ioe);
-      if (!msg.contains("is corrupt with MD5 checksum")) {
+      if (!msg.contains("Failed to load an FSImage file")) {
         throw ioe;
       }
+      int md5failures = appender.countExceptionsWithMessage(
+          " is corrupt with MD5 checksum of ");
+      assertEquals("Upgrade did not fail with bad MD5", 1, md5failures);
     }
   }
     

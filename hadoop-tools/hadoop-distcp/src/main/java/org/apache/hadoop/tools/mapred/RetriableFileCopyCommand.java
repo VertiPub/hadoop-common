@@ -124,7 +124,7 @@ public class RetriableFileCopyCommand extends RetriableCommand {
             tmpTargetPath, true, BUFFER_SIZE,
             getReplicationFactor(fileAttributes, sourceFileStatus, targetFS, tmpTargetPath),
             getBlockSize(fileAttributes, sourceFileStatus, targetFS, tmpTargetPath), context));
-    return copyBytes(sourceFileStatus, outStream, BUFFER_SIZE, true, context);
+    return copyBytes(sourceFileStatus, outStream, BUFFER_SIZE, context);
   }
 
   private void compareFileLengths(FileStatus sourceFileStatus, Path target,
@@ -140,10 +140,17 @@ public class RetriableFileCopyCommand extends RetriableCommand {
   private void compareCheckSums(FileSystem sourceFS, Path source,
                                 FileSystem targetFS, Path target)
                                 throws IOException {
-    if (!DistCpUtils.checksumsAreEqual(sourceFS, source, targetFS, target))
-      throw new IOException("Check-sum mismatch between "
-                              + source + " and " + target);
-
+    if (!DistCpUtils.checksumsAreEqual(sourceFS, source, targetFS, target)) {
+      StringBuilder errorMessage = new StringBuilder("Check-sum mismatch between ")
+          .append(source).append(" and ").append(target).append(".");
+      if (sourceFS.getFileStatus(source).getBlockSize() != targetFS.getFileStatus(target).getBlockSize()) {
+        errorMessage.append(" Source and target differ in block-size.")
+            .append(" Use -pb to preserve block-sizes during copy.")
+            .append(" Alternatively, skip checksum-checks altogether, using -skipCrc.")
+						.append(" (NOTE: By skipping checksums, one runs the risk of masking data-corruption during file-transfer.)");
+      }
+      throw new IOException(errorMessage.toString());
+    }
   }
 
   //If target file exists and unable to delete target - fail
@@ -170,8 +177,8 @@ public class RetriableFileCopyCommand extends RetriableCommand {
   }
 
   private long copyBytes(FileStatus sourceFileStatus, OutputStream outStream,
-                         int bufferSize, boolean mustCloseStream,
-                         Mapper.Context context) throws IOException {
+                         int bufferSize, Mapper.Context context)
+      throws IOException {
     Path source = sourceFileStatus.getPath();
     byte buf[] = new byte[bufferSize];
     ThrottledInputStream inStream = null;
@@ -187,8 +194,7 @@ public class RetriableFileCopyCommand extends RetriableCommand {
         bytesRead = inStream.read(buf);
       }
     } finally {
-      if (mustCloseStream)
-        IOUtils.cleanup(LOG, outStream, inStream);
+      IOUtils.cleanup(LOG, outStream, inStream);
     }
 
     return totalBytesRead;

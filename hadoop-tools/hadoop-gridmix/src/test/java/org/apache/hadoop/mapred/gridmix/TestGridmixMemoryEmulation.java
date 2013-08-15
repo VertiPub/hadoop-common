@@ -23,7 +23,6 @@ import static org.junit.Assert.*;
 import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.mapred.DummyResourceCalculatorPlugin;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.gridmix.DebugJobProducer.MockJob;
 import org.apache.hadoop.mapred.gridmix.TestHighRamJob.DummyGridmixJob;
@@ -32,8 +31,8 @@ import org.apache.hadoop.mapred.gridmix.emulators.resourceusage.TotalHeapUsageEm
 import org.apache.hadoop.mapred.gridmix.emulators.resourceusage.TotalHeapUsageEmulatorPlugin.DefaultHeapUsageEmulator;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.MRJobConfig;
-import org.apache.hadoop.mapreduce.util.ResourceCalculatorPlugin;
 import org.apache.hadoop.tools.rumen.ResourceUsageMetrics;
+import org.apache.hadoop.yarn.util.ResourceCalculatorPlugin;
 
 /**
  * Test Gridmix memory emulation.
@@ -170,6 +169,11 @@ public class TestGridmixMemoryEmulation {
     //  test if no calls are made heap usage emulator core
     assertEquals("Disabled heap usage emulation plugin works!", 
                  heapUsagePre, heapUsagePost);
+    
+    // test with get progress
+    float progress = heapPlugin.getProgress();
+    assertEquals("Invalid progress of disabled cumulative heap usage emulation "
+                 + "plugin!", 1.0f, progress, 0f);
     
     // test with wrong/invalid configuration
     Boolean failed = null;

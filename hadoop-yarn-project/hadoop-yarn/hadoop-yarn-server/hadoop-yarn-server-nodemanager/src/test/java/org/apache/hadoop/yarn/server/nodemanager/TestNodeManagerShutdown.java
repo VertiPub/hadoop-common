@@ -19,23 +19,31 @@
 package org.apache.hadoop.yarn.server.nodemanager;
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.net.InetSocketAddress;
+import java.security.PrivilegedAction;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import junit.framework.Assert;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.UnsupportedFileSystemException;
-import org.apache.hadoop.yarn.api.protocolrecords.GetContainerStatusRequest;
+import org.apache.hadoop.net.NetUtils;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.util.Shell;
+import org.apache.hadoop.yarn.api.ContainerManagementProtocol;
+import org.apache.hadoop.yarn.api.protocolrecords.GetContainerStatusesRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.StartContainerRequest;
+import org.apache.hadoop.yarn.api.protocolrecords.StartContainersRequest;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
@@ -45,13 +53,18 @@ import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceType;
 import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
-import org.apache.hadoop.yarn.api.records.Resource;
+import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.URL;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.Dispatcher;
+import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.ContainerManagerImpl;
+import org.apache.hadoop.yarn.ipc.YarnRPC;
+import org.apache.hadoop.yarn.security.NMTokenIdentifier;
+import org.apache.hadoop.yarn.server.api.records.MasterKey;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.TestContainerManager;
+import org.apache.hadoop.yarn.server.utils.BuilderUtils;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.junit.After;
 import org.junit.Before;
@@ -71,6 +84,8 @@ public class TestNodeManagerShutdown {
       .getRecordFactory(null);
   static final String user = "nobody";
   private FileContext localFS;
+  private ContainerId cId;
+  private NodeManager nm;
 
   @Before
   public void setup() throws UnsupportedFileSystemException {
@@ -79,31 +94,77 @@ public class TestNodeManagerShutdown {
     logsDir.mkdirs();
     remoteLogsDir.mkdirs();
     nmLocalDir.mkdirs();
+
+    // Construct the Container-id
+    cId = createContainerId();
   }
   
   @After
   public void tearDown() throws IOException, InterruptedException {
+    if (nm != null) {
+      nm.stop();
+    }
     localFS.delete(new Path(basedir.getPath()), true);
   }
   
   @Test
-  public void testKillContainersOnShutdown() throws IOException {
-    NodeManager nm = getNodeManager();
+  public void testKillContainersOnShutdown() throws IOException,
+      YarnException {
+    nm = new TestNodeManager();
     nm.init(createNMConfig());
     nm.start();
+    startContainer(nm, cId, localFS, tmpDir, processStartFile);
     
-    ContainerManagerImpl containerManager = nm.getContainerManager();
-    File scriptFile = createUnhaltingScriptFile();
+    final int MAX_TRIES=20;
+    int numTries = 0;
+    while (!processStartFile.exists() && numTries < MAX_TRIES) {
+      try {
+        Thread.sleep(500);
+      } catch (InterruptedException ex) {ex.printStackTrace();}
+      numTries++;
+    }
     
-    ContainerLaunchContext containerLaunchContext = 
+    nm.stop();
+    
+    // Now verify the contents of the file.  Script generates a message when it
+    // receives a sigterm so we look for that.  We cannot perform this check on
+    // Windows, because the process is not notified when killed by winutils.
+    // There is no way for the process to trap and respond.  Instead, we can
+    // verify that the job object with ID matching container ID no longer exists.
+    if (Shell.WINDOWS) {
+      Assert.assertFalse("Process is still alive!",
+        DefaultContainerExecutor.containerIsAlive(cId.toString()));
+    } else {
+      BufferedReader reader =
+          new BufferedReader(new FileReader(processStartFile));
+
+      boolean foundSigTermMessage = false;
+      while (true) {
+        String line = reader.readLine();
+        if (line == null) {
+          break;
+        }
+        if (line.contains("SIGTERM")) {
+          foundSigTermMessage = true;
+          break;
+        }
+      }
+      Assert.assertTrue("Did not find sigterm message", foundSigTermMessage);
+      reader.close();
+    }
+  }
+
+  public static void startContainer(NodeManager nm, ContainerId cId,
+      FileContext localFS, File scriptFileDir, File processStartFile) 
+          throws IOException, YarnException {
+    File scriptFile =
+        createUnhaltingScriptFile(cId, scriptFileDir, processStartFile);
+    
+    ContainerLaunchContext containerLaunchContext =
         recordFactory.newRecordInstance(ContainerLaunchContext.class);
 
-    // Construct the Container-id
-    ContainerId cId = createContainerId();
-    containerLaunchContext.setContainerId(cId);
-
-    containerLaunchContext.setUser(user);
-
+    NodeId nodeId = BuilderUtils.newNodeId("localhost", 12345);
+ 
     URL localResourceUri =
         ConverterUtils.getYarnUrlFromPath(localFS
             .makeQualified(new Path(scriptFile.getAbsolutePath())));
@@ -119,68 +180,55 @@ public class TestNodeManagerShutdown {
         new HashMap<String, LocalResource>();
     localResources.put(destinationFile, localResource);
     containerLaunchContext.setLocalResources(localResources);
-    containerLaunchContext.setUser(containerLaunchContext.getUser());
-    List<String> commands = new ArrayList<String>();
-    commands.add("/bin/bash");
-    commands.add(scriptFile.getAbsolutePath());
+    List<String> commands = Arrays.asList(Shell.getRunScriptCommand(scriptFile));
     containerLaunchContext.setCommands(commands);
-    containerLaunchContext.setResource(recordFactory
-        .newRecordInstance(Resource.class));
-    containerLaunchContext.getResource().setMemory(1024);
-    StartContainerRequest startRequest = recordFactory.newRecordInstance(StartContainerRequest.class);
-    startRequest.setContainerLaunchContext(containerLaunchContext);
-    containerManager.startContainer(startRequest);
-    
-    GetContainerStatusRequest request =
-        recordFactory.newRecordInstance(GetContainerStatusRequest.class);
-        request.setContainerId(cId);
-    ContainerStatus containerStatus =
-        containerManager.getContainerStatus(request).getStatus();
-    Assert.assertEquals(ContainerState.RUNNING, containerStatus.getState());
-    
-    final int MAX_TRIES=20;
-    int numTries = 0;
-    while (!processStartFile.exists() && numTries < MAX_TRIES) {
-      try {
-        Thread.sleep(500);
-      } catch (InterruptedException ex) {ex.printStackTrace();}
-      numTries++;
-    }
-    
-    nm.stop();
-    
-    // Now verify the contents of the file
-    // Script generates a message when it receives a sigterm
-    // so we look for that
-    BufferedReader reader =
-        new BufferedReader(new FileReader(processStartFile));
+    final InetSocketAddress containerManagerBindAddress =
+        NetUtils.createSocketAddrForHost("127.0.0.1", 12345);
+    UserGroupInformation currentUser = UserGroupInformation
+        .createRemoteUser(cId.toString());
+    org.apache.hadoop.security.token.Token<NMTokenIdentifier> nmToken =
+        ConverterUtils.convertFromYarn(
+          nm.getNMContext().getNMTokenSecretManager()
+            .createNMToken(cId.getApplicationAttemptId(), nodeId, user),
+          containerManagerBindAddress);
+    currentUser.addToken(nmToken);
 
-    boolean foundSigTermMessage = false;
-    while (true) {
-      String line = reader.readLine();
-      if (line == null) {
-        break;
-      }
-      if (line.contains("SIGTERM")) {
-        foundSigTermMessage = true;
-        break;
-      }
-    }
-    Assert.assertTrue("Did not find sigterm message", foundSigTermMessage);
-    reader.close();
+    ContainerManagementProtocol containerManager =
+        currentUser.doAs(new PrivilegedAction<ContainerManagementProtocol>() {
+          @Override
+          public ContainerManagementProtocol run() {
+            Configuration conf = new Configuration();
+            YarnRPC rpc = YarnRPC.create(conf);
+            InetSocketAddress containerManagerBindAddress =
+                NetUtils.createSocketAddrForHost("127.0.0.1", 12345);
+            return (ContainerManagementProtocol) rpc.getProxy(ContainerManagementProtocol.class,
+              containerManagerBindAddress, conf);
+          }
+        });
+    StartContainerRequest scRequest =
+        StartContainerRequest.newInstance(containerLaunchContext,
+          TestContainerManager.createContainerToken(cId, 0,
+            nodeId, user, nm.getNMContext().getContainerTokenSecretManager()));
+    List<StartContainerRequest> list = new ArrayList<StartContainerRequest>();
+    list.add(scRequest);
+    StartContainersRequest allRequests =
+        StartContainersRequest.newInstance(list);
+    containerManager.startContainers(allRequests);
+    
+    List<ContainerId> containerIds = new ArrayList<ContainerId>();
+    containerIds.add(cId);
+    GetContainerStatusesRequest request =
+        GetContainerStatusesRequest.newInstance(containerIds);
+    ContainerStatus containerStatus =
+        containerManager.getContainerStatuses(request).getContainerStatuses().get(0);
+    Assert.assertEquals(ContainerState.RUNNING, containerStatus.getState());
   }
   
-  private ContainerId createContainerId() {
-    ApplicationId appId = recordFactory.newRecordInstance(ApplicationId.class);
-    appId.setClusterTimestamp(0);
-    appId.setId(0);
-    ApplicationAttemptId appAttemptId = 
-        recordFactory.newRecordInstance(ApplicationAttemptId.class);
-    appAttemptId.setApplicationId(appId);
-    appAttemptId.setAttemptId(1);
-    ContainerId containerId = 
-        recordFactory.newRecordInstance(ContainerId.class);
-    containerId.setApplicationAttemptId(appAttemptId);
+  public static ContainerId createContainerId() {
+    ApplicationId appId = ApplicationId.newInstance(0, 0);
+    ApplicationAttemptId appAttemptId =
+        ApplicationAttemptId.newInstance(appId, 1);
+    ContainerId containerId = ContainerId.newInstance(appAttemptId, 0);
     return containerId;
   }
   
@@ -199,31 +247,43 @@ public class TestNodeManagerShutdown {
    * Creates a script to run a container that will run forever unless
    * stopped by external means.
    */
-  private File createUnhaltingScriptFile() throws IOException {
-    File scriptFile = new File(tmpDir, "scriptFile.sh");
-    BufferedWriter fileWriter = new BufferedWriter(new FileWriter(scriptFile));
-    fileWriter.write("#!/bin/bash\n\n");
-    fileWriter.write("echo \"Running testscript for delayed kill\"\n");
-    fileWriter.write("hello=\"Got SIGTERM\"\n");
-    fileWriter.write("umask 0\n");
-    fileWriter.write("trap \"echo $hello >> " + processStartFile + "\" SIGTERM\n");
-    fileWriter.write("echo \"Writing pid to start file\"\n");
-    fileWriter.write("echo $$ >> " + processStartFile + "\n");
-    fileWriter.write("while true; do\ndate >> /dev/null;\n done\n");
+  private static File createUnhaltingScriptFile(ContainerId cId,
+      File scriptFileDir, File processStartFile) throws IOException {
+    File scriptFile = new File(scriptFileDir, "scriptFile.sh");
+    PrintWriter fileWriter = new PrintWriter(scriptFile);
+    if (Shell.WINDOWS) {
+      fileWriter.println("@echo \"Running testscript for delayed kill\"");
+      fileWriter.println("@echo \"Writing pid to start file\"");
+      fileWriter.println("@echo " + cId + ">> " + processStartFile);
+      fileWriter.println("@pause");
+    } else {
+      fileWriter.write("#!/bin/bash\n\n");
+      fileWriter.write("echo \"Running testscript for delayed kill\"\n");
+      fileWriter.write("hello=\"Got SIGTERM\"\n");
+      fileWriter.write("umask 0\n");
+      fileWriter.write("trap \"echo $hello >> " + processStartFile +
+        "\" SIGTERM\n");
+      fileWriter.write("echo \"Writing pid to start file\"\n");
+      fileWriter.write("echo $$ >> " + processStartFile + "\n");
+      fileWriter.write("while true; do\ndate >> /dev/null;\n done\n");
+    }
 
     fileWriter.close();
     return scriptFile;
   }
 
-  private NodeManager getNodeManager() {
-    return new NodeManager() {
-      @Override
-      protected NodeStatusUpdater createNodeStatusUpdater(Context context,
-          Dispatcher dispatcher, NodeHealthCheckerService healthChecker) {
-        MockNodeStatusUpdater myNodeStatusUpdater = new MockNodeStatusUpdater(
-            context, dispatcher, healthChecker, metrics);
-        return myNodeStatusUpdater;
-      }
-    };
+  class TestNodeManager extends NodeManager {
+
+    @Override
+    protected NodeStatusUpdater createNodeStatusUpdater(Context context,
+        Dispatcher dispatcher, NodeHealthCheckerService healthChecker) {
+      MockNodeStatusUpdater myNodeStatusUpdater =
+          new MockNodeStatusUpdater(context, dispatcher, healthChecker, metrics);
+      return myNodeStatusUpdater;
+    }
+    
+    public void setMasterKey(MasterKey masterKey) {
+      getNMContext().getContainerTokenSecretManager().setMasterKey(masterKey);
+    }
   }
 }

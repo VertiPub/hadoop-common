@@ -6,7 +6,7 @@
    (the "License"); you may not use this file except in compliance with
    the License.  You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+       http://www.apache.org/licenses/LICENSE-2.01
 
    Unless required by applicable law or agreed to in writing, software
    distributed under the License is distributed on an "AS IS" BASIS,
@@ -33,6 +33,7 @@
       <outputDirectory>bin</outputDirectory>
       <includes>
         <include>yarn</include>
+        <include>yarn.cmd</include>
       </includes>
       <fileMode>0755</fileMode>
     </fileSet>
@@ -41,6 +42,7 @@
       <outputDirectory>libexec</outputDirectory>
       <includes>
         <include>yarn-config.sh</include>
+        <include>yarn-config.cmd</include>
       </includes>
       <fileMode>0755</fileMode>
     </fileSet>
@@ -52,6 +54,8 @@
         <include>yarn-daemons.sh</include>
         <include>start-yarn.sh</include>
         <include>stop-yarn.sh</include>
+        <include>start-yarn.cmd</include>
+        <include>stop-yarn.cmd</include>
       </includes>
       <fileMode>0755</fileMode>
     </fileSet>
@@ -60,6 +64,76 @@
       <outputDirectory>etc/hadoop</outputDirectory>
       <includes>
         <include>**/*</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-yarn/hadoop-yarn-api/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-yarn/hadoop-yarn-applications/hadoop-yarn-applications-distributedshell/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-yarn/hadoop-yarn-applications/hadoop-yarn-applications-unmanaged-am-launcher/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-yarn/hadoop-yarn-client/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-yarn/hadoop-yarn-common/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-common/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-nodemanager/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-resourcemanager/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-tests/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-web-proxy/target</directory>
+      <outputDirectory>/share/hadoop/${hadoop.component}/sources</outputDirectory>
+      <includes>
+        <include>*-sources.jar</include>
       </includes>
     </fileSet>
     <fileSet>
@@ -121,7 +195,7 @@
       </includes>
       <binaries>
         <attachmentClassifier>tests</attachmentClassifier>
-        <outputDirectory>share/hadoop/${hadoop.component}</outputDirectory>
+        <outputDirectory>share/hadoop/${hadoop.component}/test</outputDirectory>
         <includeDependencies>false</includeDependencies>
         <unpack>false</unpack>
       </binaries>

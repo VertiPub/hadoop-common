@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.mapreduce.v2.app;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -32,24 +33,22 @@ import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptContainerAssigned
 import org.apache.hadoop.mapreduce.v2.app.rm.ContainerAllocator;
 import org.apache.hadoop.mapreduce.v2.app.rm.ContainerAllocatorEvent;
 import org.apache.hadoop.mapreduce.v2.app.rm.RMContainerAllocator;
-import org.apache.hadoop.yarn.YarnException;
-import org.apache.hadoop.yarn.api.AMRMProtocol;
+import org.apache.hadoop.service.AbstractService;
+import org.apache.hadoop.yarn.api.ApplicationMasterProtocol;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.FinishApplicationMasterRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.FinishApplicationMasterResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterResponse;
-import org.apache.hadoop.yarn.api.records.AMResponse;
 import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.NodeId;
+import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.api.records.ResourceRequest;
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.service.AbstractService;
-import org.apache.hadoop.yarn.util.BuilderUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;
@@ -127,11 +126,11 @@ public class MRAppBenchmark {
         try {
           eventQueue.put(event);
         } catch (InterruptedException e) {
-          throw new YarnException(e);
+          throw new YarnRuntimeException(e);
         }
       }
       @Override
-      public void start() {
+      protected void serviceStart() throws Exception {
         thread = new Thread(new Runnable() {
           @Override
           public void run() {
@@ -140,19 +139,16 @@ public class MRAppBenchmark {
               try {
                 if (concurrentRunningTasks < maxConcurrentRunningTasks) {
                   event = eventQueue.take();
-                  ContainerId cId = 
-                      recordFactory.newRecordInstance(ContainerId.class);
-                  cId.setApplicationAttemptId(
-                      getContext().getApplicationAttemptId());
-                  cId.setId(containerCount++);
+                  ContainerId cId =
+                      ContainerId.newInstance(getContext()
+                        .getApplicationAttemptId(), containerCount++);
+
                   //System.out.println("Allocating " + containerCount);
                   
                   Container container = 
                       recordFactory.newRecordInstance(Container.class);
                   container.setId(cId);
-                  NodeId nodeId = recordFactory.newRecordInstance(NodeId.class);
-                  nodeId.setHost("dummy");
-                  nodeId.setPort(1234);
+                  NodeId nodeId = NodeId.newInstance("dummy", 1234);
                   container.setNodeId(nodeId);
                   container.setContainerToken(null);
                   container.setNodeHttpAddress("localhost:8042");
@@ -172,13 +168,15 @@ public class MRAppBenchmark {
           }
         });
         thread.start();
-        super.start();
+        super.serviceStart();
       }
 
       @Override
-      public void stop() {
-        thread.interrupt();
-        super.stop();
+      protected void serviceStop() throws Exception {
+        if (thread != null) {
+          thread.interrupt();
+        }
+        super.serviceStop();
       }
     }
   }
@@ -196,27 +194,25 @@ public class MRAppBenchmark {
           ClientService clientService, AppContext context) {
         return new RMContainerAllocator(clientService, context) {
           @Override
-          protected AMRMProtocol createSchedulerProxy() {
-            return new AMRMProtocol() {
+          protected ApplicationMasterProtocol createSchedulerProxy() {
+            return new ApplicationMasterProtocol() {
 
               @Override
               public RegisterApplicationMasterResponse
                   registerApplicationMaster(
                       RegisterApplicationMasterRequest request)
-                      throws YarnRemoteException {
+                      throws IOException {
                 RegisterApplicationMasterResponse response =
                     Records.newRecord(RegisterApplicationMasterResponse.class);
-                response.setMinimumResourceCapability(BuilderUtils
-                  .newResource(1024, 1));
-                response.setMaximumResourceCapability(BuilderUtils
-                  .newResource(10240, 1));
+                response.setMaximumResourceCapability(Resource.newInstance(
+                  10240, 1));
                 return response;
               }
 
               @Override
               public FinishApplicationMasterResponse finishApplicationMaster(
                   FinishApplicationMasterRequest request)
-                  throws YarnRemoteException {
+                  throws IOException {
                 FinishApplicationMasterResponse response =
                     Records.newRecord(FinishApplicationMasterResponse.class);
                 return response;
@@ -224,34 +220,31 @@ public class MRAppBenchmark {
 
               @Override
               public AllocateResponse allocate(AllocateRequest request)
-                  throws YarnRemoteException {
+                  throws IOException {
 
                 AllocateResponse response =
                     Records.newRecord(AllocateResponse.class);
                 List<ResourceRequest> askList = request.getAskList();
                 List<Container> containers = new ArrayList<Container>();
                 for (ResourceRequest req : askList) {
-                  if (req.getHostName() != "*") {
+                  if (!ResourceRequest.isAnyLocation(req.getResourceName())) {
                     continue;
                   }
                   int numContainers = req.getNumContainers();
                   for (int i = 0; i < numContainers; i++) {
                     ContainerId containerId =
-                        BuilderUtils.newContainerId(
-                          request.getApplicationAttemptId(),
+                        ContainerId.newInstance(
+                          getContext().getApplicationAttemptId(),
                           request.getResponseId() + i);
-                    containers.add(BuilderUtils
-                      .newContainer(containerId, BuilderUtils.newNodeId("host"
-                          + containerId.getId(), 2345),
-                        "host" + containerId.getId() + ":5678", req
-                          .getCapability(), req.getPriority(), null));
+                    containers.add(Container.newInstance(containerId,
+                      NodeId.newInstance("host" + containerId.getId(), 2345),
+                      "host" + containerId.getId() + ":5678",
+                      req.getCapability(), req.getPriority(), null));
                   }
                 }
 
-                AMResponse amResponse = Records.newRecord(AMResponse.class);
-                amResponse.setAllocatedContainers(containers);
-                amResponse.setResponseId(request.getResponseId() + 1);
-                response.setAMResponse(amResponse);
+                response.setAllocatedContainers(containers);
+                response.setResponseId(request.getResponseId() + 1);
                 response.setNumClusterNodes(350);
                 return response;
               }

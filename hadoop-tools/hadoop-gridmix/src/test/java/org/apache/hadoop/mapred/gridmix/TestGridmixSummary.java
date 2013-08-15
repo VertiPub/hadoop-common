@@ -45,7 +45,7 @@ public class TestGridmixSummary {
   /**
    * Test {@link DataStatistics}.
    */
-  @Test
+  @Test (timeout=20000)
   public void testDataStatistics() throws Exception {
     // test data-statistics getters with compression enabled
     DataStatistics stats = new DataStatistics(10, 2, true);
@@ -133,7 +133,7 @@ public class TestGridmixSummary {
   /**
    * A fake {@link JobFactory}.
    */
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings("rawtypes")
   private static class FakeJobFactory extends JobFactory {
     /**
      * A fake {@link JobStoryProducer} for {@link FakeJobFactory}.
@@ -166,8 +166,8 @@ public class TestGridmixSummary {
   /**
    * Test {@link ExecutionSummarizer}.
    */
-  @Test
-  @SuppressWarnings("unchecked")
+  @Test  (timeout=20000)
+  @SuppressWarnings({ "unchecked", "rawtypes" })
   public void testExecutionSummarizer() throws IOException {
     Configuration conf = new Configuration();
     
@@ -193,7 +193,7 @@ public class TestGridmixSummary {
     es.update(null);
     assertEquals("ExecutionSummarizer init failed", 0, 
                  es.getSimulationStartTime());
-    testExecutionSummarizer(0, 0, 0, 0, 0, 0, es);
+    testExecutionSummarizer(0, 0, 0, 0, 0, 0, 0, es);
     
     long simStartTime = System.currentTimeMillis();
     es.start(null);
@@ -203,14 +203,24 @@ public class TestGridmixSummary {
                es.getSimulationStartTime() <= System.currentTimeMillis());
     
     // test with job stats
-    JobStats stats = generateFakeJobStats(1, 10, true);
+    JobStats stats = generateFakeJobStats(1, 10, true, false);
     es.update(stats);
-    testExecutionSummarizer(1, 10, 0, 1, 1, 0, es);
+    testExecutionSummarizer(1, 10, 0, 1, 1, 0, 0, es);
     
     // test with failed job 
-    stats = generateFakeJobStats(5, 1, false);
+    stats = generateFakeJobStats(5, 1, false, false);
     es.update(stats);
-    testExecutionSummarizer(6, 11, 0, 2, 1, 1, es);
+    testExecutionSummarizer(6, 11, 0, 2, 1, 1, 0, es);
+    
+    // test with successful but lost job 
+    stats = generateFakeJobStats(1, 1, true, true);
+    es.update(stats);
+    testExecutionSummarizer(7, 12, 0, 3, 1, 1, 1, es);
+    
+    // test with failed but lost job 
+    stats = generateFakeJobStats(2, 2, false, true);
+    es.update(stats);
+    testExecutionSummarizer(9, 14, 0, 4, 1, 1, 2, es);
     
     // test finalize
     //  define a fake job factory
@@ -247,7 +257,7 @@ public class TestGridmixSummary {
                  qPath.toString(), es.getInputTraceLocation());
     // test expected data size
     assertEquals("Mismatch in expected data size", 
-                 "1.0k", es.getExpectedDataSize());
+                 "1 K", es.getExpectedDataSize());
     // test input data statistics
     assertEquals("Mismatch in input data statistics", 
                  ExecutionSummarizer.stringifyDataStatistics(dataStats), 
@@ -262,7 +272,7 @@ public class TestGridmixSummary {
     es.finalize(factory, testTraceFile.toString(), 1024*1024*1024*10L, resolver,
                 dataStats, conf);
     assertEquals("Mismatch in expected data size", 
-                 "10.0g", es.getExpectedDataSize());
+                 "10 G", es.getExpectedDataSize());
     
     // test trace signature uniqueness
     //  touch the trace file
@@ -306,7 +316,7 @@ public class TestGridmixSummary {
   // test the ExecutionSummarizer
   private static void testExecutionSummarizer(int numMaps, int numReds,
       int totalJobsInTrace, int totalJobSubmitted, int numSuccessfulJob, 
-      int numFailedJobs, ExecutionSummarizer es) {
+      int numFailedJobs, int numLostJobs, ExecutionSummarizer es) {
     assertEquals("ExecutionSummarizer test failed [num-maps]", 
                  numMaps, es.getNumMapTasksLaunched());
     assertEquals("ExecutionSummarizer test failed [num-reducers]", 
@@ -319,12 +329,14 @@ public class TestGridmixSummary {
                  numSuccessfulJob, es.getNumSuccessfulJobs());
     assertEquals("ExecutionSummarizer test failed [num-failed jobs]", 
                  numFailedJobs, es.getNumFailedJobs());
+    assertEquals("ExecutionSummarizer test failed [num-lost jobs]", 
+                 numLostJobs, es.getNumLostJobs());
   }
   
   // generate fake job stats
   @SuppressWarnings("deprecation")
   private static JobStats generateFakeJobStats(final int numMaps, 
-      final int numReds, final boolean isSuccessful) 
+      final int numReds, final boolean isSuccessful, final boolean lost) 
   throws IOException {
     // A fake job 
     Job fakeJob = new Job() {
@@ -334,7 +346,10 @@ public class TestGridmixSummary {
       };
       
       @Override
-      public boolean isSuccessful() throws IOException, InterruptedException {
+      public boolean isSuccessful() throws IOException {
+        if (lost) {
+          throw new IOException("Test failure!");
+        }
         return isSuccessful;
       };
     };
@@ -344,8 +359,7 @@ public class TestGridmixSummary {
   /**
    * Test {@link ClusterSummarizer}.
    */
-  @Test
-  @SuppressWarnings("deprecation")
+  @Test  (timeout=20000)
   public void testClusterSummarizer() throws IOException {
     ClusterSummarizer cs = new ClusterSummarizer();
     Configuration conf = new Configuration();
@@ -359,13 +373,13 @@ public class TestGridmixSummary {
     assertEquals("JT name mismatch", jt, cs.getJobTrackerInfo());
     assertEquals("NN name mismatch", nn, cs.getNamenodeInfo());
     
-    ClusterStats cstats = ClusterStats.getClusterStats();
+    ClusterStats cStats = ClusterStats.getClusterStats();
     conf.set(JTConfig.JT_IPC_ADDRESS, "local");
     conf.set(CommonConfigurationKeys.FS_DEFAULT_NAME_KEY, "local");
     JobClient jc = new JobClient(conf);
-    cstats.setClusterMetric(jc.getClusterStatus());
+    cStats.setClusterMetric(jc.getClusterStatus());
     
-    cs.update(cstats);
+    cs.update(cStats);
     
     // test
     assertEquals("Cluster summary test failed!", 1, cs.getMaxMapTasks());

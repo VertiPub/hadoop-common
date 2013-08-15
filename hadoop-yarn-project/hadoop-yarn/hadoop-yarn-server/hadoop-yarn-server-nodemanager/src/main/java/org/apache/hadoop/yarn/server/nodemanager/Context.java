@@ -20,13 +20,15 @@ package org.apache.hadoop.yarn.server.nodemanager;
 
 import java.util.concurrent.ConcurrentMap;
 
+import org.apache.hadoop.yarn.api.ContainerManagementProtocol;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
-import org.apache.hadoop.yarn.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.api.records.NodeId;
+import org.apache.hadoop.yarn.server.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.Application;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 import org.apache.hadoop.yarn.server.nodemanager.security.NMContainerTokenSecretManager;
+import org.apache.hadoop.yarn.server.nodemanager.security.NMTokenSecretManagerInNM;
 
 /**
  * Context interface for sharing information across components in the
@@ -41,11 +43,22 @@ public interface Context {
    */
   NodeId getNodeId();
 
+  /**
+   * Return the node http-address. Usable only after the Webserver is started.
+   * 
+   * @return the http-port
+   */
+  int getHttpPort();
+
   ConcurrentMap<ApplicationId, Application> getApplications();
 
   ConcurrentMap<ContainerId, Container> getContainers();
 
   NMContainerTokenSecretManager getContainerTokenSecretManager();
+  
+  NMTokenSecretManagerInNM getNMTokenSecretManager();
 
   NodeHealthStatus getNodeHealthStatus();
+
+  ContainerManagementProtocol getContainerManager();
 }

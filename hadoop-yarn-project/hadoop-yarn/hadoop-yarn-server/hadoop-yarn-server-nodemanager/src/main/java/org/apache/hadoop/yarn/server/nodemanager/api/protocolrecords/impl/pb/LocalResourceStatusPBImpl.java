@@ -18,15 +18,15 @@
 package org.apache.hadoop.yarn.server.nodemanager.api.protocolrecords.impl.pb;
 
 import org.apache.hadoop.yarn.api.records.LocalResource;
-import org.apache.hadoop.yarn.api.records.ProtoBase;
+import org.apache.hadoop.yarn.api.records.SerializedException;
 import org.apache.hadoop.yarn.api.records.URL;
 import org.apache.hadoop.yarn.api.records.impl.pb.LocalResourcePBImpl;
+import org.apache.hadoop.yarn.api.records.impl.pb.ProtoBase;
+import org.apache.hadoop.yarn.api.records.impl.pb.SerializedExceptionPBImpl;
 import org.apache.hadoop.yarn.api.records.impl.pb.URLPBImpl;
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
-import org.apache.hadoop.yarn.exceptions.impl.pb.YarnRemoteExceptionPBImpl;
 import org.apache.hadoop.yarn.proto.YarnProtos.LocalResourceProto;
+import org.apache.hadoop.yarn.proto.YarnProtos.SerializedExceptionProto;
 import org.apache.hadoop.yarn.proto.YarnProtos.URLProto;
-import org.apache.hadoop.yarn.proto.YarnProtos.YarnRemoteExceptionProto;
 import org.apache.hadoop.yarn.proto.YarnServerNodemanagerServiceProtos.LocalResourceStatusProto;
 import org.apache.hadoop.yarn.proto.YarnServerNodemanagerServiceProtos.LocalResourceStatusProtoOrBuilder;
 import org.apache.hadoop.yarn.proto.YarnServerNodemanagerServiceProtos.ResourceStatusTypeProto;
@@ -43,7 +43,7 @@ public class LocalResourceStatusPBImpl
 
   private LocalResource resource;
   private URL localPath;
-  private YarnRemoteException exception;
+  private SerializedException exception;
 
   public LocalResourceStatusPBImpl() {
     builder = LocalResourceStatusProto.newBuilder();
@@ -73,7 +73,7 @@ public class LocalResourceStatusPBImpl
       builder.setLocalPath(convertToProtoFormat(this.localPath));
     }
     if (this.exception != null &&
-        !((YarnRemoteExceptionPBImpl)this.exception).getProto()
+        !((SerializedExceptionPBImpl)this.exception).getProto()
           .equals(builder.getException())) {
       builder.setException(convertToProtoFormat(this.exception));
     }
@@ -136,7 +136,7 @@ public class LocalResourceStatusPBImpl
   }
 
   @Override
-  public YarnRemoteException getException() {
+  public SerializedException getException() {
     LocalResourceStatusProtoOrBuilder p = viaProto ? proto : builder;
     if (this.exception != null) {
       return this.exception;
@@ -182,7 +182,7 @@ public class LocalResourceStatusPBImpl
   }
 
   @Override
-  public void setException(YarnRemoteException exception) {
+  public void setException(SerializedException exception) {
     maybeInitBuilder();
     if (exception == null)
       builder.clearException();
@@ -213,12 +213,12 @@ public class LocalResourceStatusPBImpl
     return ResourceStatusType.valueOf(e.name());
   }
 
-  private YarnRemoteExceptionPBImpl convertFromProtoFormat(YarnRemoteExceptionProto p) {
-    return new YarnRemoteExceptionPBImpl(p);
+  private SerializedExceptionPBImpl convertFromProtoFormat(SerializedExceptionProto p) {
+    return new SerializedExceptionPBImpl(p);
   }
 
-  private YarnRemoteExceptionProto convertToProtoFormat(YarnRemoteException t) {
-    return ((YarnRemoteExceptionPBImpl)t).getProto();
+  private SerializedExceptionProto convertToProtoFormat(SerializedException t) {
+    return ((SerializedExceptionPBImpl)t).getProto();
   }
 
 }

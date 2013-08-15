@@ -20,6 +20,9 @@ package org.apache.hadoop.yarn.server.resourcemanager.webapp;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 
 import javax.servlet.http.HttpServletRequest;
@@ -32,8 +35,6 @@ import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.yarn.api.records.ApplicationAccessType;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
@@ -42,6 +43,7 @@ import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.NodeState;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
+import org.apache.hadoop.yarn.server.resourcemanager.RMServerUtils;
 import org.apache.hadoop.yarn.server.resourcemanager.ResourceManager;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMApp;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMAppState;
@@ -50,6 +52,7 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.ResourceScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CSQueue;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.fair.FairScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.fifo.FifoScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.AppAttemptInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.AppAttemptsInfo;
@@ -58,6 +61,7 @@ import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.AppsInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.CapacitySchedulerInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.ClusterInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.ClusterMetricsInfo;
+import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.FairSchedulerInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.FifoSchedulerInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.NodeInfo;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.NodesInfo;
@@ -75,7 +79,6 @@ import com.google.inject.Singleton;
 @Path("/ws/v1/cluster")
 public class RMWebServices {
   private static final String EMPTY = "";
-  private static final Log LOG = LogFactory.getLog(RMWebServices.class);
   private final ResourceManager rm;
   private static RecordFactory recordFactory = RecordFactoryProvider
       .getRecordFactory(null);
@@ -144,6 +147,9 @@ public class RMWebServices {
       CapacityScheduler cs = (CapacityScheduler) rs;
       CSQueue root = cs.getRootQueue();
       sinfo = new CapacitySchedulerInfo(root);
+    } else if (rs instanceof FairScheduler) {
+      FairScheduler fs = (FairScheduler) rs;
+      sinfo = new FairSchedulerInfo(fs);
     } else if (rs instanceof FifoScheduler) {
       sinfo = new FifoSchedulerInfo(this.rm);
     } else {
@@ -152,60 +158,43 @@ public class RMWebServices {
     return new SchedulerTypeInfo(sinfo);
   }
 
+  /**
+   * Returns all nodes in the cluster. If the states param is given, returns
+   * all nodes that are in the comma-separated list of states.
+   */
   @GET
   @Path("/nodes")
   @Produces({ MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML })
-  public NodesInfo getNodes(@QueryParam("state") String filterState,
-      @QueryParam("healthy") String healthState) {
+  public NodesInfo getNodes(@QueryParam("states") String states) {
     init();
     ResourceScheduler sched = this.rm.getResourceScheduler();
     if (sched == null) {
       throw new NotFoundException("Null ResourceScheduler instance");
     }
-    Collection<RMNode> rmNodes = this.rm.getRMContext().getRMNodes().values();
-    boolean isInactive = false;
-    if (filterState != null && !filterState.isEmpty()) {
-      NodeState nodeState = NodeState.valueOf(filterState.toUpperCase());
-      switch (nodeState) {
-      case DECOMMISSIONED:
-      case LOST:
-      case REBOOTED:
-        rmNodes = this.rm.getRMContext().getInactiveRMNodes().values();
-        isInactive = true;
-        break;
+    
+    EnumSet<NodeState> acceptedStates;
+    if (states == null) {
+      acceptedStates = EnumSet.allOf(NodeState.class);
+    } else {
+      acceptedStates = EnumSet.noneOf(NodeState.class);
+      for (String stateStr : states.split(",")) {
+        acceptedStates.add(NodeState.valueOf(stateStr.toUpperCase()));
       }
     }
-    NodesInfo allNodes = new NodesInfo();
-    for (RMNode ni : rmNodes) {
-      NodeInfo nodeInfo = new NodeInfo(ni, sched);
-      if (filterState != null) {
-        if (!(nodeInfo.getState().equalsIgnoreCase(filterState))) {
-          continue;
-        }
-      } else {
-        // No filter. User is asking for all nodes. Make sure you skip the
-        // unhealthy nodes.
-        if (ni.getState() == NodeState.UNHEALTHY) {
-          continue;
-        }
-      }
-      if ((healthState != null) && (!healthState.isEmpty())) {
-        LOG.info("heatlh state is : " + healthState);
-        if (!healthState.equalsIgnoreCase("true")
-            && !healthState.equalsIgnoreCase("false")) {
-          String msg = "Error: You must specify either true or false to query on health";
-          throw new BadRequestException(msg);
-        }
-        if (nodeInfo.isHealthy() != Boolean.parseBoolean(healthState)) {
-          continue;
-        }
-      }
-      if (isInactive) {
+    
+    Collection<RMNode> rmNodes = RMServerUtils.queryRMNodes(this.rm.getRMContext(),
+        acceptedStates);
+    NodesInfo nodesInfo = new NodesInfo();
+    for (RMNode rmNode : rmNodes) {
+      NodeInfo nodeInfo = new NodeInfo(rmNode, sched);
+      if (EnumSet.of(NodeState.LOST, NodeState.DECOMMISSIONED, NodeState.REBOOTED)
+          .contains(rmNode.getState())) {
         nodeInfo.setNodeHTTPAddress(EMPTY);
       }
-      allNodes.add(nodeInfo);
+      nodesInfo.add(nodeInfo);
     }
-    return allNodes;
+    
+    return nodesInfo;
   }
 
   @GET
@@ -249,11 +238,13 @@ public class RMWebServices {
       @QueryParam("startedTimeBegin") String startedBegin,
       @QueryParam("startedTimeEnd") String startedEnd,
       @QueryParam("finishedTimeBegin") String finishBegin,
-      @QueryParam("finishedTimeEnd") String finishEnd) {
+      @QueryParam("finishedTimeEnd") String finishEnd,
+      @QueryParam("applicationTypes") Set<String> applicationTypes) {
     long num = 0;
     boolean checkCount = false;
     boolean checkStart = false;
     boolean checkEnd = false;
+    boolean checkAppTypes = false;
     long countNum = 0;
 
     // set values suitable in case both of begin/end not specified
@@ -309,6 +300,27 @@ public class RMWebServices {
           "finishTimeEnd must be greater than finishTimeBegin");
     }
 
+    Set<String> appTypes = new HashSet<String>();
+    if (!applicationTypes.isEmpty()) {
+      for (String applicationType : applicationTypes) {
+        if (applicationType != null && !applicationType.trim().isEmpty()) {
+          if (applicationType.indexOf(",") == -1) {
+            appTypes.add(applicationType.trim());
+          } else {
+            String[] types = applicationType.split(",");
+            for (String type : types) {
+              if (!type.trim().isEmpty()) {
+                appTypes.add(type.trim());
+              }
+            }
+          }
+        }
+      }
+    }
+    if (!appTypes.isEmpty()) {
+      checkAppTypes = true;
+    }
+
     final ConcurrentMap<ApplicationId, RMApp> apps = rm.getRMContext()
         .getRMApps();
     AppsInfo allApps = new AppsInfo();
@@ -349,6 +361,10 @@ public class RMWebServices {
         if (!rmapp.getQueue().equals(queueQuery)) {
           continue;
         }
+      }
+      if (checkAppTypes
+          && !appTypes.contains(rmapp.getApplicationType())) {
+        continue;
       }
 
       if (checkStart
@@ -409,7 +425,7 @@ public class RMWebServices {
 
     AppAttemptsInfo appAttemptsInfo = new AppAttemptsInfo();
     for (RMAppAttempt attempt : app.getAppAttempts().values()) {
-      AppAttemptInfo attemptInfo = new AppAttemptInfo(attempt);
+      AppAttemptInfo attemptInfo = new AppAttemptInfo(attempt, app.getUser());
       appAttemptsInfo.add(attemptInfo);
     }
 

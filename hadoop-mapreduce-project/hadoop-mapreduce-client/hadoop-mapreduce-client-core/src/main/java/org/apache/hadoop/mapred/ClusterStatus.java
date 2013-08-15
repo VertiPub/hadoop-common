@@ -23,14 +23,13 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.io.WritableUtils;
-import org.apache.hadoop.mapreduce.ClusterMetrics;
-import org.apache.hadoop.mapreduce.TaskTrackerInfo;
 import org.apache.hadoop.mapreduce.Cluster.JobTrackerStatus;
 import org.apache.hadoop.util.StringInterner;
 
@@ -175,7 +174,7 @@ public class ClusterStatus implements Writable {
     
   }
   
-  public static final int UNINITIALIZED_MEMORY_VALUE = -1;
+  public static final long UNINITIALIZED_MEMORY_VALUE = -1;
   
   private int numActiveTrackers;
   private Collection<String> activeTrackers = new ArrayList<String>();
@@ -189,6 +188,7 @@ public class ClusterStatus implements Writable {
   private JobTrackerStatus status;
   private Collection<BlackListInfo> blacklistedTrackersInfo =
     new ArrayList<BlackListInfo>();
+  private int grayListedTrackers;
 
   ClusterStatus() {}
   
@@ -224,9 +224,30 @@ public class ClusterStatus implements Writable {
    * @param status the {@link JobTrackerStatus} of the <code>JobTracker</code>
    * @param numDecommissionedNodes number of decommission trackers
    */
-  ClusterStatus(int trackers, int blacklists, long ttExpiryInterval, 
-                int maps, int reduces, int maxMaps, int maxReduces, 
-                JobTrackerStatus status, int numDecommissionedNodes) {
+  ClusterStatus(int trackers, int blacklists, long ttExpiryInterval, int maps,
+      int reduces, int maxMaps, int maxReduces, JobTrackerStatus status,
+      int numDecommissionedNodes) {
+    this(trackers, blacklists, ttExpiryInterval, maps, reduces, maxMaps,
+      maxReduces, status, numDecommissionedNodes, 0);
+  }
+
+  /**
+   * Construct a new cluster status.
+   * 
+   * @param trackers no. of tasktrackers in the cluster
+   * @param blacklists no of blacklisted task trackers in the cluster
+   * @param ttExpiryInterval the tasktracker expiry interval
+   * @param maps no. of currently running map-tasks in the cluster
+   * @param reduces no. of currently running reduce-tasks in the cluster
+   * @param maxMaps the maximum no. of map tasks in the cluster
+   * @param maxReduces the maximum no. of reduce tasks in the cluster
+   * @param status the {@link JobTrackerStatus} of the <code>JobTracker</code>
+   * @param numDecommissionedNodes number of decommission trackers
+   * @param numGrayListedTrackers number of graylisted trackers
+   */
+  ClusterStatus(int trackers, int blacklists, long ttExpiryInterval, int maps,
+      int reduces, int maxMaps, int maxReduces, JobTrackerStatus status,
+      int numDecommissionedNodes, int numGrayListedTrackers) {
     numActiveTrackers = trackers;
     numBlacklistedTrackers = blacklists;
     this.numExcludedNodes = numDecommissionedNodes;
@@ -236,6 +257,7 @@ public class ClusterStatus implements Writable {
     max_map_tasks = maxMaps;
     max_reduce_tasks = maxReduces;
     this.status = status;
+    this.grayListedTrackers = numGrayListedTrackers;
   }
 
   /**
@@ -316,7 +338,33 @@ public class ClusterStatus implements Writable {
     }
     return blacklistedTrackers;
   }
-  
+
+  /**
+   * Get the names of graylisted task trackers in the cluster.
+   *
+   * The gray list of trackers is no longer available on M/R 2.x. The function
+   * is kept to be compatible with M/R 1.x applications.
+   *
+   * @return an empty graylisted task trackers in the cluster.
+   */
+  @Deprecated
+  public Collection<String> getGraylistedTrackerNames() {
+    return Collections.emptySet();
+  }
+
+  /**
+   * Get the number of graylisted task trackers in the cluster.
+   *
+   * The gray list of trackers is no longer available on M/R 2.x. The function
+   * is kept to be compatible with M/R 1.x applications.
+   *
+   * @return 0 graylisted task trackers in the cluster.
+   */
+  @Deprecated
+  public int getGraylistedTrackers() {
+    return grayListedTrackers;
+  }
+
   /**
    * Get the number of blacklisted task trackers in the cluster.
    * 
@@ -413,6 +461,20 @@ public class ClusterStatus implements Writable {
     return blacklistedTrackersInfo;
   }
 
+  /**
+   * Get the current state of the <code>JobTracker</code>,
+   * as {@link JobTracker.State}
+   *
+   * {@link JobTracker.State} should no longer be used on M/R 2.x. The function
+   * is kept to be compatible with M/R 1.x applications.
+   *
+   * @return the invalid state of the <code>JobTracker</code>.
+   */
+  @Deprecated
+  public JobTracker.State getJobTrackerState() {
+    return JobTracker.State.RUNNING;
+  }
+
   public void write(DataOutput out) throws IOException {
     if (activeTrackers.size() == 0) {
       out.writeInt(numActiveTrackers);
@@ -441,6 +503,7 @@ public class ClusterStatus implements Writable {
     out.writeInt(max_map_tasks);
     out.writeInt(max_reduce_tasks);
     WritableUtils.writeEnum(out, status);
+    out.writeInt(grayListedTrackers);
   }
 
   public void readFields(DataInput in) throws IOException {
@@ -468,5 +531,6 @@ public class ClusterStatus implements Writable {
     max_map_tasks = in.readInt();
     max_reduce_tasks = in.readInt();
     status = WritableUtils.readEnum(in, JobTrackerStatus.class);
+    grayListedTrackers = in.readInt();
   }
 }

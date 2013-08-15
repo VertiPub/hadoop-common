@@ -37,10 +37,13 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.metrics2.MetricsRecordBuilder;
 import org.apache.hadoop.security.UserGroupInformation.AuthenticationMethod;
+import org.apache.hadoop.security.authentication.util.KerberosName;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenIdentifier;
 import static org.apache.hadoop.test.MetricsAsserts.*;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
+import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.HADOOP_SECURITY_AUTH_TO_LOCAL;
+import org.apache.hadoop.util.Shell;
 
 public class TestUserGroupInformation {
   final private static String USER_NAME = "user1@HADOOP.APACHE.ORG";
@@ -71,17 +74,20 @@ public class TestUserGroupInformation {
   public static void setup() {
     javax.security.auth.login.Configuration.setConfiguration(
         new DummyLoginConfiguration());
+    // doesn't matter what it is, but getGroups needs it set...
+    // use HADOOP_HOME environment variable to prevent interfering with logic
+    // that finds winutils.exe
+    System.setProperty("hadoop.home.dir", System.getenv("HADOOP_HOME"));
+    // fake the realm is kerberos is enabled
+    System.setProperty("java.security.krb5.kdc", "");
+    System.setProperty("java.security.krb5.realm", "DEFAULT.REALM");
   }
   
   @Before
   public void setupUgi() {
     conf = new Configuration();
-    conf.set(CommonConfigurationKeysPublic.HADOOP_SECURITY_AUTH_TO_LOCAL,
-        "RULE:[2:$1@$0](.*@HADOOP.APACHE.ORG)s/@.*//" +
-        "RULE:[1:$1@$0](.*@HADOOP.APACHE.ORG)s/@.*//"
-        + "DEFAULT");
+    UserGroupInformation.reset();
     UserGroupInformation.setConfiguration(conf);
-    UserGroupInformation.setLoginUser(null);
   }
   
   @After
@@ -89,17 +95,17 @@ public class TestUserGroupInformation {
     UserGroupInformation.setLoginUser(null);
   }
 
-  @Test
+  @Test (timeout = 30000)
   public void testSimpleLogin() throws IOException {
     tryLoginAuthenticationMethod(AuthenticationMethod.SIMPLE, true);
   }
 
-  @Test
+  @Test (timeout = 30000)
   public void testTokenLogin() throws IOException {
     tryLoginAuthenticationMethod(AuthenticationMethod.TOKEN, false);
   }
   
-  @Test
+  @Test (timeout = 30000)
   public void testProxyLogin() throws IOException {
     tryLoginAuthenticationMethod(AuthenticationMethod.PROXY, false);
   }
@@ -128,7 +134,7 @@ public class TestUserGroupInformation {
     }
   }
   
-  @Test
+  @Test (timeout = 30000)
   public void testGetRealAuthenticationMethod() {
     UserGroupInformation ugi = UserGroupInformation.createRemoteUser("user1");
     ugi.setAuthenticationMethod(AuthenticationMethod.SIMPLE);
@@ -139,7 +145,7 @@ public class TestUserGroupInformation {
     assertEquals(AuthenticationMethod.SIMPLE, ugi.getRealAuthenticationMethod());
   }
   /** Test login method */
-  @Test
+  @Test (timeout = 30000)
   public void testLogin() throws Exception {
     // login from unix
     UserGroupInformation ugi = UserGroupInformation.getCurrentUser();
@@ -166,7 +172,7 @@ public class TestUserGroupInformation {
    * given user name - get all the groups.
    * Needs to happen before creating the test users
    */
-  @Test
+  @Test (timeout = 30000)
   public void testGetServerSideGroups() throws IOException,
                                                InterruptedException {
     // get the user name
@@ -174,19 +180,38 @@ public class TestUserGroupInformation {
     BufferedReader br = new BufferedReader
                           (new InputStreamReader(pp.getInputStream()));
     String userName = br.readLine().trim();
+    // If on windows domain, token format is DOMAIN\\user and we want to
+    // extract only the user name
+    if(Shell.WINDOWS) {
+      int sp = userName.lastIndexOf('\\');
+      if (sp != -1) {
+        userName = userName.substring(sp + 1);
+      }
+      // user names are case insensitive on Windows. Make consistent
+      userName = userName.toLowerCase();
+    }
     // get the groups
-    pp = Runtime.getRuntime().exec("id -Gn " + userName);
+    pp = Runtime.getRuntime().exec(Shell.WINDOWS ?
+      Shell.WINUTILS + " groups -F" : "id -Gn");
     br = new BufferedReader(new InputStreamReader(pp.getInputStream()));
     String line = br.readLine();
+
     System.out.println(userName + ":" + line);
    
     Set<String> groups = new LinkedHashSet<String> ();    
-    for(String s: line.split("[\\s]")) {
+    String[] tokens = line.split(Shell.TOKEN_SEPARATOR_REGEX);
+    for(String s: tokens) {
       groups.add(s);
     }
     
     final UserGroupInformation login = UserGroupInformation.getCurrentUser();
-    assertEquals(userName, login.getShortUserName());
+    String loginUserName = login.getShortUserName();
+    if(Shell.WINDOWS) {
+      // user names are case insensitive on Windows. Make consistent
+      loginUserName = loginUserName.toLowerCase();
+    }
+    assertEquals(userName, loginUserName);
+
     String[] gi = login.getGroupNames();
     assertEquals(groups.size(), gi.length);
     for(int i=0; i < gi.length; i++) {
@@ -207,33 +232,143 @@ public class TestUserGroupInformation {
   }
 
   /** test constructor */
-  @Test
+  @Test (timeout = 30000)
   public void testConstructor() throws Exception {
-    UserGroupInformation ugi = 
-      UserGroupInformation.createUserForTesting("user2/cron@HADOOP.APACHE.ORG", 
-                                                GROUP_NAMES);
-    // make sure the short and full user names are correct
-    assertEquals("user2/cron@HADOOP.APACHE.ORG", ugi.getUserName());
-    assertEquals("user2", ugi.getShortUserName());
-    ugi = UserGroupInformation.createUserForTesting(USER_NAME, GROUP_NAMES);
-    assertEquals("user1", ugi.getShortUserName());
+    // security off, so default should just return simple name
+    testConstructorSuccess("user1", "user1");
+    testConstructorSuccess("user2@DEFAULT.REALM", "user2");
+    testConstructorSuccess("user3/cron@DEFAULT.REALM", "user3");    
+    testConstructorSuccess("user4@OTHER.REALM", "user4");
+    testConstructorSuccess("user5/cron@OTHER.REALM", "user5");
+    // failure test
+    testConstructorFailures(null);
+    testConstructorFailures("");
+  }
+  
+  /** test constructor */
+  @Test (timeout = 30000)
+  public void testConstructorWithRules() throws Exception {
+    // security off, but use rules if explicitly set
+    conf.set(HADOOP_SECURITY_AUTH_TO_LOCAL,
+        "RULE:[1:$1@$0](.*@OTHER.REALM)s/(.*)@.*/other-$1/");
+    UserGroupInformation.setConfiguration(conf);
+    testConstructorSuccess("user1", "user1");
+    testConstructorSuccess("user4@OTHER.REALM", "other-user4");
+    // failure test
+    testConstructorFailures("user2@DEFAULT.REALM");
+    testConstructorFailures("user3/cron@DEFAULT.REALM");
+    testConstructorFailures("user5/cron@OTHER.REALM");
+    testConstructorFailures(null);
+    testConstructorFailures("");
+  }
+  
+  /** test constructor */
+  @Test (timeout = 30000)
+  public void testConstructorWithKerberos() throws Exception {
+    // security on, default is remove default realm
+    SecurityUtil.setAuthenticationMethod(AuthenticationMethod.KERBEROS, conf);
+    UserGroupInformation.setConfiguration(conf);
+
+    testConstructorSuccess("user1", "user1");
+    testConstructorSuccess("user2@DEFAULT.REALM", "user2");
+    testConstructorSuccess("user3/cron@DEFAULT.REALM", "user3");    
+    // failure test
+    testConstructorFailures("user4@OTHER.REALM");
+    testConstructorFailures("user5/cron@OTHER.REALM");
+    testConstructorFailures(null);
+    testConstructorFailures("");
+  }
+
+  /** test constructor */
+  @Test (timeout = 30000)
+  public void testConstructorWithKerberosRules() throws Exception {
+    // security on, explicit rules
+    SecurityUtil.setAuthenticationMethod(AuthenticationMethod.KERBEROS, conf);
+    conf.set(HADOOP_SECURITY_AUTH_TO_LOCAL,
+        "RULE:[2:$1@$0](.*@OTHER.REALM)s/(.*)@.*/other-$1/" +
+        "RULE:[1:$1@$0](.*@OTHER.REALM)s/(.*)@.*/other-$1/" +
+        "DEFAULT");
+    UserGroupInformation.setConfiguration(conf);
     
+    testConstructorSuccess("user1", "user1");
+    testConstructorSuccess("user2@DEFAULT.REALM", "user2");
+    testConstructorSuccess("user3/cron@DEFAULT.REALM", "user3");    
+    testConstructorSuccess("user4@OTHER.REALM", "other-user4");
+    testConstructorSuccess("user5/cron@OTHER.REALM", "other-user5");
     // failure test
     testConstructorFailures(null);
     testConstructorFailures("");
   }
 
+  private void testConstructorSuccess(String principal, String shortName) {
+    UserGroupInformation ugi = 
+        UserGroupInformation.createUserForTesting(principal, GROUP_NAMES);
+    // make sure the short and full user names are correct
+    assertEquals(principal, ugi.getUserName());
+    assertEquals(shortName, ugi.getShortUserName());
+  }
+  
   private void testConstructorFailures(String userName) {
-    boolean gotException = false;
     try {
       UserGroupInformation.createRemoteUser(userName);
-    } catch (Exception e) {
-      gotException = true;
+      fail("user:"+userName+" wasn't invalid");
+    } catch (IllegalArgumentException e) {
+      String expect = (userName == null || userName.isEmpty())
+          ? "Null user" : "Illegal principal name "+userName;
+      assertEquals(expect, e.getMessage());
     }
-    assertTrue(gotException);
   }
 
-  @Test
+  @Test (timeout = 30000)
+  public void testSetConfigWithRules() {
+    String[] rules = { "RULE:[1:TEST1]", "RULE:[1:TEST2]", "RULE:[1:TEST3]" };
+
+    // explicitly set a rule
+    UserGroupInformation.reset();
+    assertFalse(KerberosName.hasRulesBeenSet());
+    KerberosName.setRules(rules[0]);
+    assertTrue(KerberosName.hasRulesBeenSet());
+    assertEquals(rules[0], KerberosName.getRules());
+
+    // implicit init should honor rules already being set
+    UserGroupInformation.createUserForTesting("someone", new String[0]);
+    assertEquals(rules[0], KerberosName.getRules());
+
+    // set conf, should override
+    conf.set(HADOOP_SECURITY_AUTH_TO_LOCAL, rules[1]);
+    UserGroupInformation.setConfiguration(conf);
+    assertEquals(rules[1], KerberosName.getRules());
+
+    // set conf, should again override
+    conf.set(HADOOP_SECURITY_AUTH_TO_LOCAL, rules[2]);
+    UserGroupInformation.setConfiguration(conf);
+    assertEquals(rules[2], KerberosName.getRules());
+    
+    // implicit init should honor rules already being set
+    UserGroupInformation.createUserForTesting("someone", new String[0]);
+    assertEquals(rules[2], KerberosName.getRules());
+  }
+
+  @Test (timeout = 30000)
+  public void testEnsureInitWithRules() throws IOException {
+    String rules = "RULE:[1:RULE1]";
+
+    // trigger implicit init, rules should init
+    UserGroupInformation.reset();
+    assertFalse(KerberosName.hasRulesBeenSet());
+    UserGroupInformation.createUserForTesting("someone", new String[0]);
+    assertTrue(KerberosName.hasRulesBeenSet());
+    
+    // set a rule, trigger implicit init, rule should not change 
+    UserGroupInformation.reset();
+    KerberosName.setRules(rules);
+    assertTrue(KerberosName.hasRulesBeenSet());
+    assertEquals(rules, KerberosName.getRules());
+    UserGroupInformation.createUserForTesting("someone", new String[0]);
+    assertEquals(rules, KerberosName.getRules());
+  }
+
+  @Test (timeout = 30000)
   public void testEquals() throws Exception {
     UserGroupInformation uugi = 
       UserGroupInformation.createUserForTesting(USER_NAME, GROUP_NAMES);
@@ -251,7 +386,7 @@ public class TestUserGroupInformation {
     assertEquals(uugi.hashCode(), ugi3.hashCode());
   }
   
-  @Test
+  @Test (timeout = 30000)
   public void testEqualsWithRealUser() throws Exception {
     UserGroupInformation realUgi1 = UserGroupInformation.createUserForTesting(
         "RealUser", GROUP_NAMES);
@@ -264,7 +399,7 @@ public class TestUserGroupInformation {
     assertFalse(remoteUgi.equals(proxyUgi1));
   }
   
-  @Test
+  @Test (timeout = 30000)
   public void testGettingGroups() throws Exception {
     UserGroupInformation uugi = 
       UserGroupInformation.createUserForTesting(USER_NAME, GROUP_NAMES);
@@ -274,7 +409,7 @@ public class TestUserGroupInformation {
   }
 
   @SuppressWarnings("unchecked") // from Mockito mocks
-  @Test
+  @Test (timeout = 30000)
   public <T extends TokenIdentifier> void testAddToken() throws Exception {
     UserGroupInformation ugi = 
         UserGroupInformation.createRemoteUser("someone"); 
@@ -312,7 +447,7 @@ public class TestUserGroupInformation {
   }
 
   @SuppressWarnings("unchecked") // from Mockito mocks
-  @Test
+  @Test (timeout = 30000)
   public <T extends TokenIdentifier> void testGetCreds() throws Exception {
     UserGroupInformation ugi = 
         UserGroupInformation.createRemoteUser("someone"); 
@@ -338,7 +473,7 @@ public class TestUserGroupInformation {
   }
 
   @SuppressWarnings("unchecked") // from Mockito mocks
-  @Test
+  @Test (timeout = 30000)
   public <T extends TokenIdentifier> void testAddCreds() throws Exception {
     UserGroupInformation ugi = 
         UserGroupInformation.createRemoteUser("someone"); 
@@ -363,7 +498,7 @@ public class TestUserGroupInformation {
     assertSame(secret, ugi.getCredentials().getSecretKey(secretKey));
   }
 
-  @Test
+  @Test (timeout = 30000)
   public <T extends TokenIdentifier> void testGetCredsNotSame()
       throws Exception {
     UserGroupInformation ugi = 
@@ -391,7 +526,7 @@ public class TestUserGroupInformation {
   }
 
   @SuppressWarnings("unchecked") // from Mockito mocks
-  @Test
+  @Test (timeout = 30000)
   public <T extends TokenIdentifier> void testAddNamedToken() throws Exception {
     UserGroupInformation ugi = 
         UserGroupInformation.createRemoteUser("someone"); 
@@ -412,7 +547,7 @@ public class TestUserGroupInformation {
   }
 
   @SuppressWarnings("unchecked") // from Mockito mocks
-  @Test
+  @Test (timeout = 30000)
   public <T extends TokenIdentifier> void testUGITokens() throws Exception {
     UserGroupInformation ugi = 
       UserGroupInformation.createUserForTesting("TheDoctor", 
@@ -458,7 +593,7 @@ public class TestUserGroupInformation {
     assertTrue(otherSet.contains(t2));
   }
   
-  @Test
+  @Test (timeout = 30000)
   public void testTokenIdentifiers() throws Exception {
     UserGroupInformation ugi = UserGroupInformation.createUserForTesting(
         "TheDoctor", new String[] { "TheTARDIS" });
@@ -486,7 +621,7 @@ public class TestUserGroupInformation {
     assertEquals(2, otherSet.size());
   }
 
-  @Test
+  @Test (timeout = 30000)
   public void testTestAuthMethod() throws Exception {
     UserGroupInformation ugi = UserGroupInformation.getCurrentUser();
     // verify the reverse mappings works
@@ -498,7 +633,7 @@ public class TestUserGroupInformation {
     }
   }
   
-  @Test
+  @Test (timeout = 30000)
   public void testUGIAuthMethod() throws Exception {
     final UserGroupInformation ugi = UserGroupInformation.getCurrentUser();
     final AuthenticationMethod am = AuthenticationMethod.KERBEROS;
@@ -514,7 +649,7 @@ public class TestUserGroupInformation {
     });
   }
   
-  @Test
+  @Test (timeout = 30000)
   public void testUGIAuthMethodInRealUser() throws Exception {
     final UserGroupInformation ugi = UserGroupInformation.getCurrentUser();
     UserGroupInformation proxyUgi = UserGroupInformation.createProxyUser(
@@ -549,7 +684,7 @@ public class TestUserGroupInformation {
     Assert.assertEquals(proxyUgi3, proxyUgi4);
   }
   
-  @Test
+  @Test (timeout = 30000)
   public void testLoginObjectInSubject() throws Exception {
     UserGroupInformation loginUgi = UserGroupInformation.getLoginUser();
     UserGroupInformation anotherUgi = new UserGroupInformation(loginUgi
@@ -562,7 +697,7 @@ public class TestUserGroupInformation {
     Assert.assertTrue(login1 == login2);
   }
   
-  @Test
+  @Test (timeout = 30000)
   public void testLoginModuleCommit() throws Exception {
     UserGroupInformation loginUgi = UserGroupInformation.getLoginUser();
     User user1 = loginUgi.getSubject().getPrincipals(User.class).iterator()
@@ -596,7 +731,7 @@ public class TestUserGroupInformation {
    * with it, but that Subject was not created by Hadoop (ie it has no
    * associated User principal)
    */
-  @Test
+  @Test (timeout = 30000)
   public void testUGIUnderNonHadoopContext() throws Exception {
     Subject nonHadoopSubject = new Subject();
     Subject.doAs(nonHadoopSubject, new PrivilegedExceptionAction<Void>() {
@@ -607,5 +742,12 @@ public class TestUserGroupInformation {
           return null;
         }
       });
+  }
+  
+  @Test(timeout=1000)
+  public void testSetLoginUser() throws IOException {
+    UserGroupInformation ugi = UserGroupInformation.createRemoteUser("test-user");
+    UserGroupInformation.setLoginUser(ugi);
+    assertEquals(ugi, UserGroupInformation.getLoginUser());
   }
 }

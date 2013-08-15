@@ -19,12 +19,12 @@
 package org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.yarn.SystemClock;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.Dispatcher;
 import org.apache.hadoop.yarn.event.EventHandler;
 import org.apache.hadoop.yarn.util.AbstractLivelinessMonitor;
+import org.apache.hadoop.yarn.util.SystemClock;
 
 public class AMLivelinessMonitor extends AbstractLivelinessMonitor<ApplicationAttemptId> {
 
@@ -35,8 +35,8 @@ public class AMLivelinessMonitor extends AbstractLivelinessMonitor<ApplicationAt
     this.dispatcher = d.getEventHandler();
   }
 
-  public void init(Configuration conf) {
-    super.init(conf);
+  public void serviceInit(Configuration conf) throws Exception {
+    super.serviceInit(conf);
     int expireIntvl = conf.getInt(YarnConfiguration.RM_AM_EXPIRY_INTERVAL_MS,
             YarnConfiguration.DEFAULT_RM_AM_EXPIRY_INTERVAL_MS);
     setExpireInterval(expireIntvl);

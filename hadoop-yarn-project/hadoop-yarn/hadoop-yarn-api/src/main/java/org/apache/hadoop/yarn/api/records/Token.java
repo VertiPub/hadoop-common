@@ -23,6 +23,8 @@ import java.nio.ByteBuffer;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
+import org.apache.hadoop.classification.InterfaceStability.Unstable;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p><code>Token</code> is the security entity used by the framework
@@ -30,18 +32,31 @@ import org.apache.hadoop.classification.InterfaceStability.Stable;
  */
 @Public
 @Stable
-public interface Token {
+public abstract class Token {
+
+  @Private
+  @Unstable
+  public static Token newInstance(byte[] identifier, String kind, byte[] password,
+      String service) {
+    Token token = Records.newRecord(Token.class);
+    token.setIdentifier(ByteBuffer.wrap(identifier));
+    token.setKind(kind);
+    token.setPassword(ByteBuffer.wrap(password));
+    token.setService(service);
+    return token;
+  }
+
   /**
    * Get the token identifier.
    * @return token identifier
    */
   @Public
   @Stable
-  ByteBuffer getIdentifier();
+  public abstract ByteBuffer getIdentifier();
   
   @Private
-  @Stable
-  void setIdentifier(ByteBuffer identifier);
+  @Unstable
+  public abstract void setIdentifier(ByteBuffer identifier);
 
   /**
    * Get the token password
@@ -49,11 +64,11 @@ public interface Token {
    */
   @Public
   @Stable
-  ByteBuffer getPassword();
+  public abstract ByteBuffer getPassword();
   
   @Private
-  @Stable
-  void setPassword(ByteBuffer password);
+  @Unstable
+  public abstract void setPassword(ByteBuffer password);
 
   /**
    * Get the token kind.
@@ -61,11 +76,11 @@ public interface Token {
    */
   @Public
   @Stable
-  String getKind();
+  public abstract String getKind();
   
   @Private
-  @Stable
-  void setKind(String kind);
+  @Unstable
+  public abstract void setKind(String kind);
 
   /**
    * Get the service to which the token is allocated.
@@ -73,10 +88,10 @@ public interface Token {
    */
   @Public
   @Stable
-  String getService();
+  public abstract String getService();
 
   @Private
-  @Stable
-  void setService(String service);
+  @Unstable
+  public abstract void setService(String service);
 
 }

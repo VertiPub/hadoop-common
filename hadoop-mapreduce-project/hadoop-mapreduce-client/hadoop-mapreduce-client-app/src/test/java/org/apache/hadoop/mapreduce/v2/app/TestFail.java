@@ -44,9 +44,10 @@ import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncher;
 import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncherEvent;
 import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncherImpl;
 import org.apache.hadoop.net.NetUtils;
-import org.apache.hadoop.yarn.api.ContainerManager;
+import org.apache.hadoop.yarn.api.ContainerManagementProtocol;
 import org.apache.hadoop.yarn.api.records.ContainerId;
-import org.apache.hadoop.yarn.api.records.ContainerToken;
+import org.apache.hadoop.yarn.api.records.Token;
+import org.apache.hadoop.yarn.client.api.impl.ContainerManagementProtocolProxy.ContainerManagementProtocolProxyData;
 import org.junit.Test;
 
 /**
@@ -225,8 +226,8 @@ public class TestFail {
         }
 
         @Override
-        protected ContainerManager getCMProxy(ContainerId contianerID,
-            String containerManagerBindAddr, ContainerToken containerToken)
+        public ContainerManagementProtocolProxyData getCMProxy(
+            String containerMgrBindAddr, ContainerId containerId)
             throws IOException {
           try {
             synchronized (this) {
@@ -261,10 +262,11 @@ public class TestFail {
         public InetSocketAddress getAddress() {
           return NetUtils.createSocketAddr("localhost", 1234);
         }
-        public void init(Configuration conf) {
+
+        protected void serviceInit(Configuration conf) throws Exception {
           conf.setInt(MRJobConfig.TASK_TIMEOUT, 1*1000);//reduce timeout
           conf.setInt(MRJobConfig.TASK_TIMEOUT_CHECK_INTERVAL_MS, 1*1000);
-          super.init(conf);
+          super.serviceInit(conf);
         }
       };
     }

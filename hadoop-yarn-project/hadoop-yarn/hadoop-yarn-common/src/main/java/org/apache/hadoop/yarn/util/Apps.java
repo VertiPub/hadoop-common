@@ -18,19 +18,28 @@
 
 package org.apache.hadoop.yarn.util;
 
+import static org.apache.hadoop.yarn.util.StringHelper._split;
+import static org.apache.hadoop.yarn.util.StringHelper.join;
+import static org.apache.hadoop.yarn.util.StringHelper.sjoin;
+
+import java.io.File;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import org.apache.hadoop.classification.InterfaceAudience.Private;
+import org.apache.hadoop.classification.InterfaceAudience.Public;
+import org.apache.hadoop.classification.InterfaceStability.Unstable;
+import org.apache.hadoop.util.Shell;
 import org.apache.hadoop.util.StringInterner;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-
-import static org.apache.hadoop.yarn.util.StringHelper.*;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 
 /**
  * Yarn application related utilities
  */
+@Private
 public class Apps {
   public static final String APP = "application";
   public static final String ID = "ID";
@@ -45,10 +54,8 @@ public class Apps {
       throwParseException(sjoin(prefix, ID), s);
     }
     shouldHaveNext(prefix, s, it);
-    ApplicationId appId = RecordFactoryProvider.getRecordFactory(null).newRecordInstance(ApplicationId.class);
-    appId.setClusterTimestamp(Long.parseLong(it.next()));
-    shouldHaveNext(prefix, s, it);
-    appId.setId(Integer.parseInt(it.next()));
+    ApplicationId appId = ApplicationId.newInstance(Long.parseLong(it.next()),
+        Integer.parseInt(it.next()));
     return appId;
   }
 
@@ -59,48 +66,39 @@ public class Apps {
   }
 
   public static void throwParseException(String name, String s) {
-    throw new YarnException(join("Error parsing ", name, ": ", s));
+    throw new YarnRuntimeException(join("Error parsing ", name, ": ", s));
   }
 
   public static void setEnvFromInputString(Map<String, String> env,
       String envString) {
     if (envString != null && envString.length() > 0) {
       String childEnvs[] = envString.split(",");
+      Pattern p = Pattern.compile(Shell.getEnvironmentVariableRegex());
       for (String cEnv : childEnvs) {
         String[] parts = cEnv.split("="); // split on '='
-        String value = env.get(parts[0]);
-
-        if (value != null) {
-          // Replace $env with the child's env constructed by NM's
-          // For example: LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/tmp
-          value = parts[1].replace("$" + parts[0], value);
-        } else {
-          // example PATH=$PATH:/tmp
-          value = System.getenv(parts[0]);
-          if (value != null) {
-            // the env key is present in the tt's env
-            value = parts[1].replace("$" + parts[0], value);
-          } else {
-            // check for simple variable substitution
-            // for e.g. ROOT=$HOME
-            String envValue = System.getenv(parts[1].substring(1));
-            if (envValue != null) {
-              value = envValue;
-            } else {
-              // the env key is note present anywhere .. simply set it
-              // example X=$X:/tmp or X=/tmp
-              value = parts[1].replace("$" + parts[0], "");
-            }
-          }
+        Matcher m = p.matcher(parts[1]);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+          String var = m.group(1);
+          // replace $env with the child's env constructed by tt's
+          String replace = env.get(var);
+          // if this key is not configured by the tt for the child .. get it
+          // from the tt's env
+          if (replace == null)
+            replace = System.getenv(var);
+          // the env key is note present anywhere .. simply set it
+          if (replace == null)
+            replace = "";
+          m.appendReplacement(sb, Matcher.quoteReplacement(replace));
         }
-        addToEnvironment(env, parts[0], value);
+        m.appendTail(sb);
+        addToEnvironment(env, parts[0], sb.toString());
       }
     }
   }
 
-  private static final String SYSTEM_PATH_SEPARATOR =
-      System.getProperty("path.separator");
-
+  @Public
+  @Unstable
   public static void addToEnvironment(
       Map<String, String> environment,
       String variable, String value) {
@@ -108,7 +106,7 @@ public class Apps {
     if (val == null) {
       val = value;
     } else {
-      val = val + SYSTEM_PATH_SEPARATOR + value;
+      val = val + File.pathSeparator + value;
     }
     environment.put(StringInterner.weakIntern(variable), 
         StringInterner.weakIntern(val));

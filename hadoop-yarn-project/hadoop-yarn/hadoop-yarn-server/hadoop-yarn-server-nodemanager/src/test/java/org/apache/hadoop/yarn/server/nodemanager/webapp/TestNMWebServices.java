@@ -32,6 +32,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.util.VersionInfo;
+import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.nodemanager.Context;
 import org.apache.hadoop.yarn.server.nodemanager.LocalDirsHandlerService;
@@ -85,9 +86,9 @@ public class TestNMWebServices extends JerseyTest {
   private Injector injector = Guice.createInjector(new ServletModule() {
     @Override
     protected void configureServlets() {
-      nmContext = new NodeManager.NMContext(null);
-      nmContext.getNodeId().setHost("testhost.foo.com");
-      nmContext.getNodeId().setPort(8042);
+      nmContext = new NodeManager.NMContext(null, null);
+      NodeId nodeId = NodeId.newInstance("testhost.foo.com", 8042);
+      ((NodeManager.NMContext)nmContext).setNodeId(nodeId);
       resourceView = new ResourceView() {
         @Override
         public long getVmemAllocatedForContainers() {
@@ -99,6 +100,14 @@ public class TestNMWebServices extends JerseyTest {
         public long getPmemAllocatedForContainers() {
           // 16G in bytes
           return new Long("17179869184");
+        }
+        @Override
+        public boolean isVmemCheckEnabled() {
+          return true;
+        }
+        @Override
+        public boolean isPmemCheckEnabled() {
+          return true;
         }
       };
       Configuration conf = new Configuration();
@@ -294,6 +303,8 @@ public class TestNMWebServices extends JerseyTest {
               "totalVmemAllocatedContainersMB"),
           WebServicesTestUtils.getXmlLong(element,
               "totalPmemAllocatedContainersMB"),
+          WebServicesTestUtils.getXmlBoolean(element, "vmemCheckEnabled"),
+          WebServicesTestUtils.getXmlBoolean(element, "pmemCheckEnabled"),
           WebServicesTestUtils.getXmlLong(element, "lastNodeUpdateTime"),
           WebServicesTestUtils.getXmlBoolean(element, "nodeHealthy"),
           WebServicesTestUtils.getXmlString(element, "nodeHostName"),
@@ -310,10 +321,12 @@ public class TestNMWebServices extends JerseyTest {
   public void verifyNodeInfo(JSONObject json) throws JSONException, Exception {
     assertEquals("incorrect number of elements", 1, json.length());
     JSONObject info = json.getJSONObject("nodeInfo");
-    assertEquals("incorrect number of elements", 13, info.length());
+    assertEquals("incorrect number of elements", 15, info.length());
     verifyNodeInfoGeneric(info.getString("id"), info.getString("healthReport"),
         info.getLong("totalVmemAllocatedContainersMB"),
         info.getLong("totalPmemAllocatedContainersMB"),
+        info.getBoolean("vmemCheckEnabled"),
+        info.getBoolean("pmemCheckEnabled"),
         info.getLong("lastNodeUpdateTime"), info.getBoolean("nodeHealthy"),
         info.getString("nodeHostName"), info.getString("hadoopVersionBuiltOn"),
         info.getString("hadoopBuildVersion"), info.getString("hadoopVersion"),
@@ -325,6 +338,7 @@ public class TestNMWebServices extends JerseyTest {
 
   public void verifyNodeInfoGeneric(String id, String healthReport,
       long totalVmemAllocatedContainersMB, long totalPmemAllocatedContainersMB,
+      boolean vmemCheckEnabled, boolean pmemCheckEnabled,
       long lastNodeUpdateTime, Boolean nodeHealthy, String nodeHostName,
       String hadoopVersionBuiltOn, String hadoopBuildVersion,
       String hadoopVersion, String resourceManagerVersionBuiltOn,
@@ -337,6 +351,8 @@ public class TestNMWebServices extends JerseyTest {
         totalVmemAllocatedContainersMB);
     assertEquals("totalPmemAllocatedContainersMB incorrect", 16384,
         totalPmemAllocatedContainersMB);
+    assertEquals("vmemCheckEnabled incorrect",  true, vmemCheckEnabled);
+    assertEquals("pmemCheckEnabled incorrect",  true, pmemCheckEnabled);
     assertTrue("lastNodeUpdateTime incorrect", lastNodeUpdateTime == nmContext
         .getNodeHealthStatus().getLastHealthReportTime());
     assertTrue("nodeHealthy isn't true", nodeHealthy);
@@ -345,14 +361,14 @@ public class TestNMWebServices extends JerseyTest {
 
     WebServicesTestUtils.checkStringMatch("hadoopVersionBuiltOn",
         VersionInfo.getDate(), hadoopVersionBuiltOn);
-    WebServicesTestUtils.checkStringMatch("hadoopBuildVersion",
+    WebServicesTestUtils.checkStringEqual("hadoopBuildVersion",
         VersionInfo.getBuildVersion(), hadoopBuildVersion);
     WebServicesTestUtils.checkStringMatch("hadoopVersion",
         VersionInfo.getVersion(), hadoopVersion);
 
     WebServicesTestUtils.checkStringMatch("resourceManagerVersionBuiltOn",
         YarnVersionInfo.getDate(), resourceManagerVersionBuiltOn);
-    WebServicesTestUtils.checkStringMatch("resourceManagerBuildVersion",
+    WebServicesTestUtils.checkStringEqual("resourceManagerBuildVersion",
         YarnVersionInfo.getBuildVersion(), resourceManagerBuildVersion);
     WebServicesTestUtils.checkStringMatch("resourceManagerVersion",
         YarnVersionInfo.getVersion(), resourceManagerVersion);

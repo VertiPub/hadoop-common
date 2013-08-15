@@ -44,13 +44,13 @@ import org.apache.hadoop.mapreduce.v2.app.AppContext;
 import org.apache.hadoop.mapreduce.v2.app.job.Job;
 import org.apache.hadoop.mapreduce.v2.app.job.Task;
 import org.apache.hadoop.mapreduce.v2.app.job.TaskAttempt;
+import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptStatusUpdateEvent.TaskAttemptStatus;
 import org.apache.hadoop.mapreduce.v2.app.job.event.TaskEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.TaskEventType;
-import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptStatusUpdateEvent.TaskAttemptStatus;
-import org.apache.hadoop.yarn.Clock;
-import org.apache.hadoop.yarn.YarnException;
+import org.apache.hadoop.service.AbstractService;
 import org.apache.hadoop.yarn.event.EventHandler;
-import org.apache.hadoop.yarn.service.AbstractService;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
+import org.apache.hadoop.yarn.util.Clock;
 
 
 public class DefaultSpeculator extends AbstractService implements
@@ -91,6 +91,7 @@ public class DefaultSpeculator extends AbstractService implements
   private final Configuration conf;
   private AppContext context;
   private Thread speculationBackgroundThread = null;
+  private volatile boolean stopped = false;
   private BlockingQueue<SpeculatorEvent> eventQueue
       = new LinkedBlockingQueue<SpeculatorEvent>();
   private TaskRuntimeEstimator estimator;
@@ -128,16 +129,16 @@ public class DefaultSpeculator extends AbstractService implements
       estimator.contextualize(conf, context);
     } catch (InstantiationException ex) {
       LOG.error("Can't make a speculation runtime extimator", ex);
-      throw new YarnException(ex);
+      throw new YarnRuntimeException(ex);
     } catch (IllegalAccessException ex) {
       LOG.error("Can't make a speculation runtime extimator", ex);
-      throw new YarnException(ex);
+      throw new YarnRuntimeException(ex);
     } catch (InvocationTargetException ex) {
       LOG.error("Can't make a speculation runtime extimator", ex);
-      throw new YarnException(ex);
+      throw new YarnRuntimeException(ex);
     } catch (NoSuchMethodException ex) {
       LOG.error("Can't make a speculation runtime extimator", ex);
-      throw new YarnException(ex);
+      throw new YarnRuntimeException(ex);
     }
     
   return estimator;
@@ -165,12 +166,12 @@ public class DefaultSpeculator extends AbstractService implements
   //  looking for speculation opportunities
 
   @Override
-  public void start() {
+  protected void serviceStart() throws Exception {
     Runnable speculationBackgroundCore
         = new Runnable() {
             @Override
             public void run() {
-              while (!Thread.currentThread().isInterrupted()) {
+              while (!stopped && !Thread.currentThread().isInterrupted()) {
                 long backgroundRunStartTime = clock.getTime();
                 try {
                   int speculations = computeSpeculations();
@@ -189,8 +190,9 @@ public class DefaultSpeculator extends AbstractService implements
                   Object pollResult
                       = scanControl.poll(wait, TimeUnit.MILLISECONDS);
                 } catch (InterruptedException e) {
-                  LOG.error("Background thread returning, interrupted : " + e);
-                  e.printStackTrace(System.out);
+                  if (!stopped) {
+                    LOG.error("Background thread returning, interrupted", e);
+                  }
                   return;
                 }
               }
@@ -200,16 +202,17 @@ public class DefaultSpeculator extends AbstractService implements
         (speculationBackgroundCore, "DefaultSpeculator background processing");
     speculationBackgroundThread.start();
 
-    super.start();
+    super.serviceStart();
   }
 
   @Override
-  public void stop() {
+  protected void serviceStop()throws Exception {
+      stopped = true;
     // this could be called before background thread is established
     if (speculationBackgroundThread != null) {
       speculationBackgroundThread.interrupt();
     }
-    super.stop();
+    super.serviceStop();
   }
 
   @Override

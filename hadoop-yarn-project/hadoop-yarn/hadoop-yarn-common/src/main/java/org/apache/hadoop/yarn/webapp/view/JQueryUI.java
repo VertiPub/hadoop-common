@@ -18,15 +18,19 @@
 
 package org.apache.hadoop.yarn.webapp.view;
 
-import com.google.common.collect.Lists;
+import static org.apache.commons.lang.StringEscapeUtils.escapeJavaScript;
+import static org.apache.hadoop.yarn.util.StringHelper.djoin;
+import static org.apache.hadoop.yarn.util.StringHelper.join;
+import static org.apache.hadoop.yarn.util.StringHelper.split;
 
 import java.util.List;
 
-import static org.apache.commons.lang.StringEscapeUtils.*;
-import static org.apache.hadoop.yarn.util.StringHelper.*;
-
+import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.yarn.webapp.hamlet.HamletSpec.HTML;
 
+import com.google.common.collect.Lists;
+
+@InterfaceAudience.LimitedPrivate({"YARN", "MapReduce"})
 public class JQueryUI extends HtmlBlock {
 
   // UI params
@@ -107,12 +111,21 @@ public class JQueryUI extends HtmlBlock {
 
   protected void initDataTables(List<String> list) {
     String defaultInit = "{bJQueryUI: true, sPaginationType: 'full_numbers'}";
+    String stateSaveInit = "bStateSave : true, " +
+          "\"fnStateSave\": function (oSettings, oData) { " +
+              "sessionStorage.setItem( oSettings.sTableId, JSON.stringify(oData) ); }, " +
+          "\"fnStateLoad\": function (oSettings) { " +
+              "return JSON.parse( sessionStorage.getItem(oSettings.sTableId) );}, ";
+      
     for (String id : split($(DATATABLES_ID))) {
       if (Html.isValidId(id)) {
         String init = $(initID(DATATABLES, id));
         if (init.isEmpty()) {
           init = defaultInit;
         }
+        // for inserting stateSaveInit
+        int pos = init.indexOf('{') + 1;  
+        init = new StringBuffer(init).insert(pos, stateSaveInit).toString(); 
         list.add(join(id,"DataTable =  $('#", id, "').dataTable(", init,
                       ").fnSetFilteringDelay(188);"));
         String postInit = $(postInitID(DATATABLES, id));
@@ -126,9 +139,12 @@ public class JQueryUI extends HtmlBlock {
       String init = $(initSelector(DATATABLES));
       if (init.isEmpty()) {
         init = defaultInit;
-      }
+      }      
+      int pos = init.indexOf('{') + 1;  
+      init = new StringBuffer(init).insert(pos, stateSaveInit).toString();  
       list.add(join("  $('", escapeJavaScript(selector), "').dataTable(", init,
-               ").fnSetFilteringDelay(288);"));
+               ").fnSetFilteringDelay(288);"));      
+      
     }
   }
 

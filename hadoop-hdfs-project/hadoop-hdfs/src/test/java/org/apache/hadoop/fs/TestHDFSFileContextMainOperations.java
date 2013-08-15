@@ -19,7 +19,6 @@
 package org.apache.hadoop.fs;
 
 import static org.apache.hadoop.fs.FileContextTestHelper.exists;
-import static org.apache.hadoop.fs.FileContextTestHelper.getTestRootPath;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -46,6 +45,11 @@ public class TestHDFSFileContextMainOperations extends
   private static Path defaultWorkingDirectory;
   private static HdfsConfiguration CONF = new HdfsConfiguration();
   
+  @Override
+  protected FileContextTestHelper createFileContextHelper() {
+    return new FileContextTestHelper("/tmp/TestHDFSFileContextMainOperations");
+  }
+
   @BeforeClass
   public static void clusterSetupAtBegining() throws IOException,
       LoginException, URISyntaxException {
@@ -99,6 +103,10 @@ public class TestHDFSFileContextMainOperations extends
       return ((RemoteException) e).unwrapRemoteException();
     }
     return e;
+  }
+  
+  private Path getTestRootPath(FileContext fc, String path) {
+    return fileContextTestHelper.getTestRootPath(fc, path);
   }
   
   @Test
@@ -253,7 +261,22 @@ public class TestHDFSFileContextMainOperations extends
     Assert.assertFalse(fs.exists(src1));   // ensure src1 is already renamed
     Assert.assertTrue(fs.exists(dst1));    // ensure rename dst exists
   }
-  
+
+  @Test
+  public void testIsValidNameInvalidNames() {
+    String[] invalidNames = {
+      "/foo/../bar",
+      "/foo/./bar",
+      "/foo/:/bar",
+      "/foo:bar"
+    };
+
+    for (String invalidName: invalidNames) {
+      Assert.assertFalse(invalidName + " is not valid",
+        fc.getDefaultFileSystem().isValidName(invalidName));
+    }
+  }
+
   private void oldRename(Path src, Path dst, boolean renameSucceeds,
       boolean exception) throws Exception {
     DistributedFileSystem fs = (DistributedFileSystem) cluster.getFileSystem();

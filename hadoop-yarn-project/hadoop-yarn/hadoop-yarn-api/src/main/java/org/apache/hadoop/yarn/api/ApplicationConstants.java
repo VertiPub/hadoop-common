@@ -18,7 +18,10 @@
 
 package org.apache.hadoop.yarn.api;
 
+import org.apache.hadoop.classification.InterfaceAudience.Public;
+import org.apache.hadoop.classification.InterfaceStability.Evolving;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.util.Shell;
 
 /**
  * This is the API for the applications comprising of constants that YARN sets
@@ -26,45 +29,9 @@ import org.apache.hadoop.security.UserGroupInformation;
  * 
  * TODO: Investigate the semantics and security of each cross-boundary refs.
  */
+@Public
+@Evolving
 public interface ApplicationConstants {
-
-  // TODO: They say tokens via env isn't good.
-  public static final String APPLICATION_MASTER_TOKEN_ENV_NAME =
-    "AppMasterTokenEnv";
-
-  // TODO: They say tokens via env isn't good.
-  public static final String APPLICATION_CLIENT_SECRET_ENV_NAME =
-    "AppClientSecretEnv";
-  
-  /**
-   * The environment variable for CONTAINER_ID. Set in AppMaster environment
-   * only
-   */
-  public static final String AM_CONTAINER_ID_ENV = "AM_CONTAINER_ID";
-  
-  /**
-   * The environment variable for APPLICATION_ATTEMPT_ID. Set in AppMaster
-   * environment only
-   */
-  public static final String AM_APP_ATTEMPT_ID_ENV = "AM_APP_ATTEMPT_ID";
-
-  /**
-   * The environment variable for the NM_HOST. Set in the AppMaster environment
-   * only
-   */
-  public static final String NM_HOST_ENV = "NM_HOST";
-  
-  /**
-   * The environment variable for the NM_PORT. Set in the AppMaster environment
-   * only
-   */
-  public static final String NM_PORT_ENV = "NM_PORT";
-  
-  /**
-   * The environment variable for the NM_HTTP_PORT. Set in the AppMaster environment
-   * only
-   */
-  public static final String NM_HTTP_PORT_ENV = "NM_HTTP_PORT";
   
   /**
    * The environment variable for APP_SUBMIT_TIME. Set in AppMaster environment
@@ -72,10 +39,11 @@ public interface ApplicationConstants {
    */
   public static final String APP_SUBMIT_TIME_ENV = "APP_SUBMIT_TIME_ENV";
 
+  /**
+   * The cache file into which container token is written
+   */
   public static final String CONTAINER_TOKEN_FILE_ENV_NAME =
       UserGroupInformation.HADOOP_TOKEN_FILE_LOCATION;
-
-  public static final String LOCAL_DIR_ENV = "YARN_LOCAL_DIRS";
 
   /**
    * The environmental variable for APPLICATION_WEB_PROXY_BASE. Set in 
@@ -85,11 +53,21 @@ public interface ApplicationConstants {
   public static final String APPLICATION_WEB_PROXY_BASE_ENV = 
     "APPLICATION_WEB_PROXY_BASE";
 
+  /**
+   * The temporary environmental variable for container log directory. This
+   * should be replaced by real container log directory on container launch.
+   */
   public static final String LOG_DIR_EXPANSION_VAR = "<LOG_DIR>";
 
   public static final String STDERR = "stderr";
 
   public static final String STDOUT = "stdout";
+
+  /**
+   * The environment variable for MAX_APP_ATTEMPTS. Set in AppMaster environment
+   * only
+   */
+  public static final String MAX_APP_ATTEMPTS_ENV = "MAX_APP_ATTEMPTS";
 
   /**
    * Environment for Applications.
@@ -102,7 +80,7 @@ public interface ApplicationConstants {
      * $USER
      * Final, non-modifiable.
      */
-    USER("USER"),
+    USER(Shell.WINDOWS ? "USERNAME": "USER"),
     
     /**
      * $LOGNAME
@@ -176,7 +154,45 @@ public interface ApplicationConstants {
     /**
      * $HADOOP_YARN_HOME
      */
-    HADOOP_YARN_HOME("HADOOP_YARN_HOME");
+    HADOOP_YARN_HOME("HADOOP_YARN_HOME"),
+
+    /**
+     * $CONTAINER_ID
+     * Final, exported by NodeManager and non-modifiable by users.
+     */
+    CONTAINER_ID("CONTAINER_ID"),
+
+    /**
+     * $NM_HOST
+     * Final, exported by NodeManager and non-modifiable by users.
+     */
+    NM_HOST("NM_HOST"),
+
+    /**
+     * $NM_HTTP_PORT
+     * Final, exported by NodeManager and non-modifiable by users.
+     */
+    NM_HTTP_PORT("NM_HTTP_PORT"),
+
+    /**
+     * $NM_PORT
+     * Final, exported by NodeManager and non-modifiable by users.
+     */
+    NM_PORT("NM_PORT"),
+
+    /**
+     * $LOCAL_DIRS
+     * Final, exported by NodeManager and non-modifiable by users.
+     */
+    LOCAL_DIRS("LOCAL_DIRS"),
+
+    /**
+     * $LOG_DIRS
+     * Final, exported by NodeManager and non-modifiable by users.
+     * Comma separate list of directories that the container should use for
+     * logging.
+     */
+    LOG_DIRS("LOG_DIRS");
 
     private final String variable;
     private Environment(String variable) {
@@ -192,7 +208,11 @@ public interface ApplicationConstants {
     }
     
     public String $() {
-      return "$" + variable;
+      if (Shell.WINDOWS) {
+        return "%" + variable + "%";
+      } else {
+        return "$" + variable;
+      }
     }
   }
 }

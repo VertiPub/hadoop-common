@@ -21,6 +21,8 @@ package org.apache.hadoop.mapreduce.v2.hs;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -33,21 +35,23 @@ import org.apache.hadoop.mapreduce.MRJobConfig;
 import org.apache.hadoop.mapreduce.TypeConverter;
 import org.apache.hadoop.mapreduce.v2.api.records.JobId;
 import org.apache.hadoop.mapreduce.v2.api.records.JobState;
+import org.apache.hadoop.mapreduce.v2.app.ClusterInfo;
 import org.apache.hadoop.mapreduce.v2.app.job.Job;
 import org.apache.hadoop.mapreduce.v2.hs.HistoryFileManager.HistoryFileInfo;
 import org.apache.hadoop.mapreduce.v2.hs.webapp.dao.JobsInfo;
 import org.apache.hadoop.mapreduce.v2.jobhistory.JHAdminConfig;
+import org.apache.hadoop.service.AbstractService;
+import org.apache.hadoop.service.Service;
 import org.apache.hadoop.util.ReflectionUtils;
-import org.apache.hadoop.yarn.Clock;
-import org.apache.hadoop.yarn.ClusterInfo;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.event.EventHandler;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.service.AbstractService;
-import org.apache.hadoop.yarn.service.Service;
+import org.apache.hadoop.yarn.security.client.ClientToAMTokenSecretManager;
+import org.apache.hadoop.yarn.util.Clock;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 /**
@@ -69,13 +73,16 @@ public class JobHistory extends AbstractService implements HistoryContext {
 
   private HistoryStorage storage = null;
   private HistoryFileManager hsManager = null;
-
+  ScheduledFuture<?> futureHistoryCleaner = null;
+  
+  //History job cleaner interval
+  private long cleanerInterval;
+  
   @Override
-  public void init(Configuration conf) throws YarnException {
+  protected void serviceInit(Configuration conf) throws Exception {
     LOG.info("JobHistory Init");
     this.conf = conf;
-    this.appID = RecordFactoryProvider.getRecordFactory(conf)
-        .newRecordInstance(ApplicationId.class);
+    this.appID = ApplicationId.newInstance(0, 0);
     this.appAttemptID = RecordFactoryProvider.getRecordFactory(conf)
         .newRecordInstance(ApplicationAttemptId.class);
 
@@ -83,27 +90,36 @@ public class JobHistory extends AbstractService implements HistoryContext {
         JHAdminConfig.MR_HISTORY_MOVE_INTERVAL_MS,
         JHAdminConfig.DEFAULT_MR_HISTORY_MOVE_INTERVAL_MS);
 
-    hsManager = new HistoryFileManager();
+    hsManager = createHistoryFileManager();
     hsManager.init(conf);
     try {
       hsManager.initExisting();
     } catch (IOException e) {
-      throw new YarnException("Failed to intialize existing directories", e);
+      throw new YarnRuntimeException("Failed to intialize existing directories", e);
     }
 
-    storage = ReflectionUtils.newInstance(conf.getClass(
-        JHAdminConfig.MR_HISTORY_STORAGE, CachedHistoryStorage.class,
-        HistoryStorage.class), conf);
+    storage = createHistoryStorage();
+    
     if (storage instanceof Service) {
       ((Service) storage).init(conf);
     }
     storage.setHistoryFileManager(hsManager);
 
-    super.init(conf);
+    super.serviceInit(conf);
+  }
+
+  protected HistoryStorage createHistoryStorage() {
+    return ReflectionUtils.newInstance(conf.getClass(
+        JHAdminConfig.MR_HISTORY_STORAGE, CachedHistoryStorage.class,
+        HistoryStorage.class), conf);
+  }
+  
+  protected HistoryFileManager createHistoryFileManager() {
+    return new HistoryFileManager();
   }
 
   @Override
-  public void start() {
+  protected void serviceStart() throws Exception {
     hsManager.start();
     if (storage instanceof Service) {
       ((Service) storage).start();
@@ -117,21 +133,16 @@ public class JobHistory extends AbstractService implements HistoryContext {
         moveThreadInterval, moveThreadInterval, TimeUnit.MILLISECONDS);
 
     // Start historyCleaner
-    boolean startCleanerService = conf.getBoolean(
-        JHAdminConfig.MR_HISTORY_CLEANER_ENABLE, true);
-    if (startCleanerService) {
-      long runInterval = conf.getLong(
-          JHAdminConfig.MR_HISTORY_CLEANER_INTERVAL_MS,
-          JHAdminConfig.DEFAULT_MR_HISTORY_CLEANER_INTERVAL_MS);
-      scheduledExecutor
-          .scheduleAtFixedRate(new HistoryCleaner(),
-              30 * 1000l, runInterval, TimeUnit.MILLISECONDS);
-    }
-    super.start();
+    scheduleHistoryCleaner();
+    super.serviceStart();
   }
 
+  protected int getInitDelaySecs() {
+    return 30;
+  }
+  
   @Override
-  public void stop() {
+  protected void serviceStop() throws Exception {
     LOG.info("Stopping JobHistory");
     if (scheduledExecutor != null) {
       LOG.info("Stopping History Cleaner/Move To Done");
@@ -152,11 +163,13 @@ public class JobHistory extends AbstractService implements HistoryContext {
         scheduledExecutor.shutdownNow();
       }
     }
-    if (storage instanceof Service) {
+    if (storage != null && storage instanceof Service) {
       ((Service) storage).stop();
     }
-    hsManager.stop();
-    super.stop();
+    if (hsManager != null) {
+      hsManager.stop();
+    }
+    super.serviceStop();
   }
 
   public JobHistory() {
@@ -222,6 +235,25 @@ public class JobHistory extends AbstractService implements HistoryContext {
     return storage.getAllPartialJobs();
   }
 
+  public void refreshLoadedJobCache() {
+    if (getServiceState() == STATE.STARTED) {
+      if (storage instanceof CachedHistoryStorage) {
+        ((CachedHistoryStorage) storage).refreshLoadedJobCache();
+      } else {
+        throw new UnsupportedOperationException(storage.getClass().getName()
+            + " is expected to be an instance of "
+            + CachedHistoryStorage.class.getName());
+      }
+    } else {
+      LOG.warn("Failed to execute refreshLoadedJobCache: JobHistory service is not started");
+    }
+  }
+
+  @VisibleForTesting
+  HistoryStorage getHistoryStorage() {
+    return storage;
+  }
+  
   /**
    * Look for a set of partial jobs.
    * 
@@ -253,6 +285,43 @@ public class JobHistory extends AbstractService implements HistoryContext {
         fBegin, fEnd, jobState);
   }
 
+  public void refreshJobRetentionSettings() {
+    if (getServiceState() == STATE.STARTED) {
+      conf = createConf();
+      long maxHistoryAge = conf.getLong(JHAdminConfig.MR_HISTORY_MAX_AGE_MS,
+          JHAdminConfig.DEFAULT_MR_HISTORY_MAX_AGE);
+      hsManager.setMaxHistoryAge(maxHistoryAge);
+      if (futureHistoryCleaner != null) {
+        futureHistoryCleaner.cancel(false);
+      }
+      futureHistoryCleaner = null;
+      scheduleHistoryCleaner();
+    } else {
+      LOG.warn("Failed to execute refreshJobRetentionSettings : Job History service is not started");
+    }
+  }
+
+  private void scheduleHistoryCleaner() {
+    boolean startCleanerService = conf.getBoolean(
+        JHAdminConfig.MR_HISTORY_CLEANER_ENABLE, true);
+    if (startCleanerService) {
+      cleanerInterval = conf.getLong(
+          JHAdminConfig.MR_HISTORY_CLEANER_INTERVAL_MS,
+          JHAdminConfig.DEFAULT_MR_HISTORY_CLEANER_INTERVAL_MS);
+
+      futureHistoryCleaner = scheduledExecutor.scheduleAtFixedRate(
+          new HistoryCleaner(), getInitDelaySecs() * 1000l, cleanerInterval,
+          TimeUnit.MILLISECONDS);
+    }
+  }
+
+  protected Configuration createConf() {
+    return new Configuration();
+  }
+  
+  public long getCleanerInterval() {
+    return cleanerInterval;
+  }
   // TODO AppContext - Not Required
   private ApplicationAttemptId appAttemptID;
 
@@ -298,6 +367,18 @@ public class JobHistory extends AbstractService implements HistoryContext {
   // TODO AppContext - Not Required
   @Override
   public ClusterInfo getClusterInfo() {
+    return null;
+  }
+
+  // TODO AppContext - Not Required
+  @Override
+  public Set<String> getBlacklistedNodes() {
+    // Not Implemented
+    return null;
+  }
+  @Override
+  public ClientToAMTokenSecretManager getClientToAMTokenSecretManager() {
+    // Not implemented.
     return null;
   }
 }

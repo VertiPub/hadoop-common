@@ -23,11 +23,11 @@ import java.io.IOException;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
-import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.util.Shell;
 
 /**
  * Class that provides utility functions for checking disk problem
@@ -36,9 +36,15 @@ import org.apache.hadoop.fs.permission.FsPermission;
 @InterfaceStability.Unstable
 public class DiskChecker {
 
+  private static final long SHELL_TIMEOUT = 10 * 1000;
+
   public static class DiskErrorException extends IOException {
     public DiskErrorException(String msg) {
       super(msg);
+    }
+
+    public DiskErrorException(String msg, Throwable cause) {
+      super(msg, cause);
     }
   }
     
@@ -85,25 +91,11 @@ public class DiskChecker {
    * @throws DiskErrorException
    */
   public static void checkDir(File dir) throws DiskErrorException {
-    if (!mkdirsWithExistsCheck(dir))
+    if (!mkdirsWithExistsCheck(dir)) {
       throw new DiskErrorException("Can not create directory: "
                                    + dir.toString());
-
-    if (!dir.isDirectory())
-      throw new DiskErrorException("Not a directory: "
-                                   + dir.toString());
-
-    if (!dir.canRead())
-      throw new DiskErrorException("Directory is not readable: "
-                                   + dir.toString());
-
-    if (!dir.canWrite())
-      throw new DiskErrorException("Directory is not writable: "
-                                   + dir.toString());
-
-    if (!dir.canExecute())
-      throw new DiskErrorException("Directory is not executable: "
-	  + dir.toString());
+    }
+    checkDirAccess(dir);
   }
 
   /**
@@ -152,24 +144,49 @@ public class DiskChecker {
                               FsPermission expected)
   throws DiskErrorException, IOException {
     mkdirsWithExistsAndPermissionCheck(localFS, dir, expected);
+    checkDirAccess(localFS.pathToFile(dir));
+  }
 
-    FileStatus stat = localFS.getFileStatus(dir);
-    FsPermission actual = stat.getPermission();
-
-    if (!stat.isDirectory())
-      throw new DiskErrorException("not a directory: "+ dir.toString());
-
-    FsAction user = actual.getUserAction();
-    if (!user.implies(FsAction.READ))
-      throw new DiskErrorException("directory is not readable: "
+  /**
+   * Checks that the given file is a directory and that the current running
+   * process can read, write, and execute it.
+   * 
+   * @param dir File to check
+   * @throws DiskErrorException if dir is not a directory, not readable, not
+   *   writable, or not executable
+   */
+  private static void checkDirAccess(File dir) throws DiskErrorException {
+    if (!dir.isDirectory()) {
+      throw new DiskErrorException("Not a directory: "
                                    + dir.toString());
+    }
 
-    if (!user.implies(FsAction.WRITE))
-      throw new DiskErrorException("directory is not writable: "
-                                   + dir.toString());
+    checkAccessByFileMethods(dir);
+  }
 
-    if (!user.implies(FsAction.EXECUTE))
-      throw new DiskErrorException("directory is not listable: "
+  /**
+   * Checks that the current running process can read, write, and execute the
+   * given directory by using methods of the File object.
+   * 
+   * @param dir File to check
+   * @throws DiskErrorException if dir is not readable, not writable, or not
+   *   executable
+   */
+  private static void checkAccessByFileMethods(File dir)
+      throws DiskErrorException {
+    if (!FileUtil.canRead(dir)) {
+      throw new DiskErrorException("Directory is not readable: "
                                    + dir.toString());
+    }
+
+    if (!FileUtil.canWrite(dir)) {
+      throw new DiskErrorException("Directory is not writable: "
+                                   + dir.toString());
+    }
+
+    if (!FileUtil.canExecute(dir)) {
+      throw new DiskErrorException("Directory is not executable: "
+                                   + dir.toString());
+    }
   }
 }

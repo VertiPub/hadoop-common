@@ -29,8 +29,8 @@ import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.AsyncDispatcher;
 import org.apache.hadoop.yarn.server.resourcemanager.ResourceManager;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.ResourceScheduler;
+import org.apache.hadoop.yarn.util.resource.Resources;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -53,6 +53,7 @@ public class TestFSLeafQueue {
     String queueName = "root.queue1";
     QueueManager mockMgr = mock(QueueManager.class);
     when(mockMgr.getMaxResources(queueName)).thenReturn(maxResource);
+    when(mockMgr.getMinResources(queueName)).thenReturn(Resources.none());
 
     schedulable = new FSLeafQueue(queueName, mockMgr, scheduler, null);
   }

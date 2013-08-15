@@ -57,7 +57,12 @@ public class CommonConfigurationKeysPublic {
   /** See <a href="{@docRoot}/../core-default.html">core-default.xml</a> */
   public static final String  FS_DU_INTERVAL_KEY = "fs.du.interval";
   /** Default value for FS_DU_INTERVAL_KEY */
-  public static final long    FS_DU_INTERVAL_DEFAULT = 60000;
+  public static final long    FS_DU_INTERVAL_DEFAULT = 600000;
+  /** See <a href="{@docRoot}/../core-default.html">core-default.xml</a> */
+  public static final String  FS_CLIENT_RESOLVE_REMOTE_SYMLINKS_KEY =
+    "fs.client.resolve.remote.symlinks";
+  /** Default value for FS_CLIENT_RESOLVE_REMOTE_SYMLINKS_KEY */
+  public static final boolean FS_CLIENT_RESOLVE_REMOTE_SYMLINKS_DEFAULT = true;
 
 
   //Defaults are not specified for following keys
@@ -67,7 +72,9 @@ public class CommonConfigurationKeysPublic {
   /** See <a href="{@docRoot}/../core-default.html">core-default.xml</a> */
   public static final String  NET_TOPOLOGY_NODE_SWITCH_MAPPING_IMPL_KEY =
     "net.topology.node.switch.mapping.impl";
-  
+  /** See <a href="{@docRoot}/../core-default.html">core-default.xml</a> */
+  public static final String  NET_TOPOLOGY_IMPL_KEY =
+    "net.topology.impl";
   /** See <a href="{@docRoot}/../core-default.html">core-default.xml</a> */
   public static final String  NET_TOPOLOGY_TABLE_MAPPING_FILE_KEY =
     "net.topology.table.file.name";
@@ -217,6 +224,8 @@ public class CommonConfigurationKeysPublic {
   /** See <a href="{@docRoot}/../core-default.html">core-default.xml</a> */
   public static final String  HADOOP_RPC_SOCKET_FACTORY_CLASS_DEFAULT_KEY =
     "hadoop.rpc.socket.factory.class.default";
+  public static final String  HADOOP_RPC_SOCKET_FACTORY_CLASS_DEFAULT_DEFAULT =
+    "org.apache.hadoop.net.StandardSocketFactory";
   /** See <a href="{@docRoot}/../core-default.html">core-default.xml</a> */
   public static final String  HADOOP_SOCKS_SERVER_KEY = "hadoop.socks.server";
   /** See <a href="{@docRoot}/../core-default.html">core-default.xml</a> */

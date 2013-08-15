@@ -41,7 +41,6 @@ import org.apache.hadoop.mapreduce.v2.api.records.TaskId;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskState;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskType;
 import org.apache.hadoop.mapreduce.v2.util.MRApps;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
@@ -50,6 +49,7 @@ import org.apache.hadoop.yarn.api.records.QueueACL;
 import org.apache.hadoop.yarn.api.records.QueueState;
 import org.apache.hadoop.yarn.api.records.QueueUserACLInfo;
 import org.apache.hadoop.yarn.api.records.YarnApplicationState;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 
@@ -76,9 +76,8 @@ public class TypeConverter {
     JobId jobId = recordFactory.newRecordInstance(JobId.class);
     jobId.setId(id.getId()); //currently there is 1-1 mapping between appid and jobid
 
-    ApplicationId appId = recordFactory.newRecordInstance(ApplicationId.class);
-    appId.setId(id.getId());
-    appId.setClusterTimestamp(toClusterTimeStamp(id.getJtIdentifier()));
+    ApplicationId appId = ApplicationId.newInstance(
+        toClusterTimeStamp(id.getJtIdentifier()), id.getId());
     jobId.setAppId(appId);
     return jobId;
   }
@@ -99,7 +98,7 @@ public class TypeConverter {
     case REDUCE:
       return org.apache.hadoop.mapreduce.TaskType.REDUCE;
     default:
-      throw new YarnException("Unrecognized task type: " + taskType);
+      throw new YarnRuntimeException("Unrecognized task type: " + taskType);
     }
   }
 
@@ -111,7 +110,7 @@ public class TypeConverter {
     case REDUCE:
       return TaskType.REDUCE;
     default:
-      throw new YarnException("Unrecognized task type: " + taskType);
+      throw new YarnRuntimeException("Unrecognized task type: " + taskType);
     }
   }
 
@@ -146,7 +145,7 @@ public class TypeConverter {
     case UNASSIGNED:
       return TaskAttemptState.STARTING;
     default:
-      throw new YarnException("Unrecognized State: " + state);
+      throw new YarnRuntimeException("Unrecognized State: " + state);
     }
   }
 
@@ -165,7 +164,7 @@ public class TypeConverter {
     case CLEANUP:
       return Phase.CLEANUP;
     }
-    throw new YarnException("Unrecognized Phase: " + phase);
+    throw new YarnRuntimeException("Unrecognized Phase: " + phase);
   }
 
   public static TaskCompletionEvent[] fromYarn(
@@ -203,7 +202,7 @@ public class TypeConverter {
     case TIPFAILED:
       return TaskCompletionEvent.Status.TIPFAILED;
     }
-    throw new YarnException("Unrecognized status: " + newStatus);
+    throw new YarnRuntimeException("Unrecognized status: " + newStatus);
   }
 
   public static org.apache.hadoop.mapred.TaskAttemptID fromYarn(
@@ -329,7 +328,7 @@ public class TypeConverter {
     case ERROR:
       return org.apache.hadoop.mapred.JobStatus.FAILED;
     }
-    throw new YarnException("Unrecognized job state: " + state);
+    throw new YarnRuntimeException("Unrecognized job state: " + state);
   }
 
   public static org.apache.hadoop.mapred.TIPStatus fromYarn(
@@ -347,7 +346,7 @@ public class TypeConverter {
     case FAILED:
       return org.apache.hadoop.mapred.TIPStatus.FAILED;
     }
-    throw new YarnException("Unrecognized task state: " + state);
+    throw new YarnRuntimeException("Unrecognized task state: " + state);
   }
 
   public static TaskReport fromYarn(org.apache.hadoop.mapreduce.v2.api.records.TaskReport report) {
@@ -392,6 +391,7 @@ public class TypeConverter {
       FinalApplicationStatus finalApplicationStatus) {
     switch (yarnApplicationState) {
     case NEW:
+    case NEW_SAVING:
     case SUBMITTED:
     case ACCEPTED:
       return State.PREP;
@@ -408,7 +408,7 @@ public class TypeConverter {
     case KILLED:
       return State.KILLED;
     }
-    throw new YarnException("Unrecognized application state: " + yarnApplicationState);
+    throw new YarnRuntimeException("Unrecognized application state: " + yarnApplicationState);
   }
 
   private static final String TT_NAME_PREFIX = "tracker_";

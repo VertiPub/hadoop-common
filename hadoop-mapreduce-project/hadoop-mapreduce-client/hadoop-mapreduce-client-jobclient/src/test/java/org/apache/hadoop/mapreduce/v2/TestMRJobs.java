@@ -18,13 +18,17 @@
 
 package org.apache.hadoop.mapreduce.v2;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.StringReader;
 import java.net.URI;
 import java.security.PrivilegedExceptionAction;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.jar.JarOutputStream;
 import java.util.zip.ZipEntry;
 import org.apache.commons.io.FileUtils;
@@ -45,6 +49,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
+import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
@@ -69,6 +74,7 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenIdentifier;
 import org.apache.hadoop.util.JarFinder;
+import org.apache.hadoop.util.Shell;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -91,6 +97,16 @@ public class TestMRJobs {
     } catch (IOException io) {
       throw new RuntimeException("problem getting local fs", io);
     }
+  }
+
+  private static Path TEST_ROOT_DIR = new Path("target",
+      TestMRJobs.class.getName() + "-tmpDir").makeQualified(localFs);
+  static Path APP_JAR = new Path(TEST_ROOT_DIR, "MRAppJar.jar");
+  private static final String OUTPUT_ROOT_DIR = "/tmp/" +
+    TestMRJobs.class.getSimpleName();
+
+  @BeforeClass
+  public static void setup() throws IOException {
     try {
       dfsCluster = new MiniDFSCluster.Builder(conf).numDataNodes(2)
         .format(true).racks(null).build();
@@ -98,14 +114,6 @@ public class TestMRJobs {
     } catch (IOException io) {
       throw new RuntimeException("problem starting mini dfs cluster", io);
     }
-  }
-
-  private static Path TEST_ROOT_DIR = new Path("target",
-      TestMRJobs.class.getName() + "-tmpDir").makeQualified(localFs);
-  static Path APP_JAR = new Path(TEST_ROOT_DIR, "MRAppJar.jar");
-
-  @BeforeClass
-  public static void setup() throws IOException {
 
     if (!(new File(MiniMRYarnCluster.APPJAR)).exists()) {
       LOG.info("MRAppJar " + MiniMRYarnCluster.APPJAR
@@ -140,7 +148,7 @@ public class TestMRJobs {
     }
   }
 
-  @Test
+  @Test (timeout = 300000)
   public void testSleepJob() throws IOException, InterruptedException,
       ClassNotFoundException { 
     LOG.info("\n\n\nStarting testSleepJob().");
@@ -211,7 +219,7 @@ public class TestMRJobs {
     }
   }
 
-  @Test
+  @Test (timeout = 60000)
   public void testRandomWriter() throws IOException, InterruptedException,
       ClassNotFoundException {
     
@@ -226,8 +234,7 @@ public class TestMRJobs {
     mrCluster.getConfig().set(RandomTextWriterJob.TOTAL_BYTES, "3072");
     mrCluster.getConfig().set(RandomTextWriterJob.BYTES_PER_MAP, "1024");
     Job job = randomWriterJob.createJob(mrCluster.getConfig());
-    Path outputDir =
-        new Path(mrCluster.getTestWorkDir().getAbsolutePath(), "random-output");
+    Path outputDir = new Path(OUTPUT_ROOT_DIR, "random-output");
     FileOutputFormat.setOutputPath(job, outputDir);
     job.setSpeculativeExecution(false);
     job.addFileToClassPath(APP_JAR); // The AppMaster jar itself.
@@ -274,7 +281,7 @@ public class TestMRJobs {
             && counters.findCounter(JobCounter.SLOTS_MILLIS_MAPS).getValue() != 0);
   }
 
-  @Test
+  @Test (timeout = 60000)
   public void testFailingMapper() throws IOException, InterruptedException,
       ClassNotFoundException {
 
@@ -342,9 +349,8 @@ public class TestMRJobs {
     job.setMapperClass(FailingMapper.class);
     job.setNumReduceTasks(0);
     
-    FileOutputFormat.setOutputPath(job,
-        new Path(mrCluster.getTestWorkDir().getAbsolutePath(),
-        "failmapper-output"));
+    FileOutputFormat.setOutputPath(job, new Path(OUTPUT_ROOT_DIR,
+      "failmapper-output"));
     job.addFileToClassPath(APP_JAR); // The AppMaster jar itself.
     job.submit();
     String trackingUrl = job.getTrackingURL();
@@ -357,7 +363,7 @@ public class TestMRJobs {
     return job;
   }
 
-  //@Test
+  //@Test (timeout = 60000)
   public void testSleepJobWithSecurityOn() throws IOException,
       InterruptedException, ClassNotFoundException {
 
@@ -416,23 +422,35 @@ public class TestMRJobs {
     @Override
     public void setup(Context context) throws IOException {
       Configuration conf = context.getConfiguration();
-      Path[] files = context.getLocalCacheFiles();
-      Path[] archives = context.getLocalCacheArchives();
+      Path[] localFiles = context.getLocalCacheFiles();
+      URI[] files = context.getCacheFiles();
+      Path[] localArchives = context.getLocalCacheArchives();
+      URI[] archives = context.getCacheArchives();
 
       // Check that 4 (2 + appjar + DistrubutedCacheChecker jar) files 
       // and 2 archives are present
+      Assert.assertEquals(4, localFiles.length);
       Assert.assertEquals(4, files.length);
+      Assert.assertEquals(2, localArchives.length);
       Assert.assertEquals(2, archives.length);
 
       // Check lengths of the files
-      Assert.assertEquals(1, localFs.getFileStatus(files[1]).getLen());
-      Assert.assertTrue(localFs.getFileStatus(files[2]).getLen() > 1);
+      Map<String, Path> filesMap = pathsToMap(localFiles);
+      Assert.assertTrue(filesMap.containsKey("distributed.first.symlink"));
+      Assert.assertEquals(1, localFs.getFileStatus(
+        filesMap.get("distributed.first.symlink")).getLen());
+      Assert.assertTrue(filesMap.containsKey("distributed.second.jar"));
+      Assert.assertTrue(localFs.getFileStatus(
+        filesMap.get("distributed.second.jar")).getLen() > 1);
 
       // Check extraction of the archive
-      Assert.assertTrue(localFs.exists(new Path(archives[0],
-          "distributed.jar.inside3")));
-      Assert.assertTrue(localFs.exists(new Path(archives[1],
-          "distributed.jar.inside4")));
+      Map<String, Path> archivesMap = pathsToMap(localArchives);
+      Assert.assertTrue(archivesMap.containsKey("distributed.third.jar"));
+      Assert.assertTrue(localFs.exists(new Path(
+        archivesMap.get("distributed.third.jar"), "distributed.jar.inside3")));
+      Assert.assertTrue(archivesMap.containsKey("distributed.fourth.jar"));
+      Assert.assertTrue(localFs.exists(new Path(
+        archivesMap.get("distributed.fourth.jar"), "distributed.jar.inside4")));
 
       // Check the class loaders
       LOG.info("Java Classpath: " + System.getProperty("java.class.path"));
@@ -457,8 +475,63 @@ public class TestMRJobs {
       // Check that the symlink for the Job Jar was created in the cwd and
       // points to the extracted directory
       File jobJarDir = new File("job.jar");
-      Assert.assertTrue(FileUtils.isSymlink(jobJarDir));
-      Assert.assertTrue(jobJarDir.isDirectory());
+      if (Shell.WINDOWS) {
+        Assert.assertTrue(isWindowsSymlinkedDirectory(jobJarDir));
+      } else {
+        Assert.assertTrue(FileUtils.isSymlink(jobJarDir));
+        Assert.assertTrue(jobJarDir.isDirectory());
+      }
+    }
+
+    /**
+     * Used on Windows to determine if the specified file is a symlink that
+     * targets a directory.  On most platforms, these checks can be done using
+     * commons-io.  On Windows, the commons-io implementation is unreliable and
+     * always returns false.  Instead, this method checks the output of the dir
+     * command.  After migrating to Java 7, this method can be removed in favor
+     * of the new method java.nio.file.Files.isSymbolicLink, which is expected to
+     * work cross-platform.
+     * 
+     * @param file File to check
+     * @return boolean true if the file is a symlink that targets a directory
+     * @throws IOException thrown for any I/O error
+     */
+    private static boolean isWindowsSymlinkedDirectory(File file)
+        throws IOException {
+      String dirOut = Shell.execCommand("cmd", "/c", "dir",
+        file.getAbsoluteFile().getParent());
+      StringReader sr = new StringReader(dirOut);
+      BufferedReader br = new BufferedReader(sr);
+      try {
+        String line = br.readLine();
+        while (line != null) {
+          line = br.readLine();
+          if (line.contains(file.getName()) && line.contains("<SYMLINKD>")) {
+            return true;
+          }
+        }
+        return false;
+      } finally {
+        IOUtils.closeStream(br);
+        IOUtils.closeStream(sr);
+      }
+    }
+
+    /**
+     * Returns a mapping of the final component of each path to the corresponding
+     * Path instance.  This assumes that every given Path has a unique string in
+     * the final path component, which is true for these tests.
+     * 
+     * @param paths Path[] to map
+     * @return Map<String, Path> mapping the final component of each path to the
+     *   corresponding Path instance
+     */
+    private static Map<String, Path> pathsToMap(Path[] paths) {
+      Map<String, Path> map = new HashMap<String, Path>();
+      for (Path path: paths) {
+        map.put(path.getName(), path);
+      }
+      return map;
     }
   }
 
@@ -515,7 +588,7 @@ public class TestMRJobs {
           trackingUrl.endsWith(jobId.substring(jobId.lastIndexOf("_")) + "/"));
   }
   
-  @Test
+  @Test (timeout = 600000)
   public void testDistributedCache() throws Exception {
     // Test with a local (file:///) Job Jar
     Path localJobJarPath = makeJobJarWithLib(TEST_ROOT_DIR.toUri().toString());

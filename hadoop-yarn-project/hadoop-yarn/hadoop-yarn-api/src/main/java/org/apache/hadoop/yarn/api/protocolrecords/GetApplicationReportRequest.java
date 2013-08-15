@@ -20,9 +20,10 @@ package org.apache.hadoop.yarn.api.protocolrecords;
 
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
-import org.apache.hadoop.yarn.api.ClientRMProtocol;
+import org.apache.hadoop.yarn.api.ApplicationClientProtocol;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationReport;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p>The request sent by a client to the <code>ResourceManager</code> to 
@@ -31,21 +32,36 @@ import org.apache.hadoop.yarn.api.records.ApplicationReport;
  * <p>The request should include the {@link ApplicationId} of the 
  * application.</p>
  * 
- * @see ClientRMProtocol#getApplicationReport(GetApplicationReportRequest)
+ * @see ApplicationClientProtocol#getApplicationReport(GetApplicationReportRequest)
  * @see ApplicationReport
  */
 @Public
 @Stable
-public interface GetApplicationReportRequest {
+public abstract class GetApplicationReportRequest {
+
+  @Public
+  @Stable
+  public static GetApplicationReportRequest newInstance(
+      ApplicationId applicationId) {
+    GetApplicationReportRequest request =
+        Records.newRecord(GetApplicationReportRequest.class);
+    request.setApplicationId(applicationId);
+    return request;
+  }
+
   /**
    * Get the <code>ApplicationId</code> of the application.
    * @return <code>ApplicationId</code> of the application
    */
-  public ApplicationId getApplicationId();
+  @Public
+  @Stable
+  public abstract ApplicationId getApplicationId();
   
   /**
    * Set the <code>ApplicationId</code> of the application
    * @param applicationId <code>ApplicationId</code> of the application
    */
-  public void setApplicationId(ApplicationId applicationId);
+  @Public
+  @Stable
+  public abstract void setApplicationId(ApplicationId applicationId);
 }

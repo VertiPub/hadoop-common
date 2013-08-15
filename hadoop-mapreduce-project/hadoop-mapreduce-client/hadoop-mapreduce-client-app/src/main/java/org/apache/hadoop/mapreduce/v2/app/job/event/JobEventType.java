@@ -44,6 +44,7 @@ public enum JobEventType {
 
   //Producer:Job
   JOB_COMPLETED,
+  JOB_FAIL_WAIT_TIMEDOUT,
 
   //Producer:Any component
   JOB_DIAGNOSTIC_UPDATE,
@@ -54,6 +55,6 @@ public enum JobEventType {
   JOB_TASK_ATTEMPT_FETCH_FAILURE,
   
   //Producer:RMContainerAllocator
-  JOB_UPDATED_NODES
-  
+  JOB_UPDATED_NODES,
+  JOB_AM_REBOOT
 }

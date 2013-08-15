@@ -26,7 +26,13 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
+import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
+import org.apache.hadoop.yarn.exceptions.YarnException;
+import org.apache.hadoop.yarn.security.ContainerTokenIdentifier;
+import org.apache.hadoop.yarn.security.NMTokenIdentifier;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.ContainerManagerImpl;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.Application;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.application.ApplicationEvent;
@@ -88,10 +94,10 @@ public class DummyContainerManager extends ContainerManagerImpl {
                 .getRequestedResources().values()) {
               for (LocalResourceRequest req : rc) {
                 LOG.info("DEBUG: " + req + ":"
-                    + rsrcReqs.getContainer().getContainerID());
+                    + rsrcReqs.getContainer().getContainerId());
                 dispatcher.getEventHandler().handle(
                     new ContainerResourceLocalizedEvent(rsrcReqs.getContainer()
-                        .getContainerID(), req, new Path("file:///local"
+                        .getContainerId(), req, new Path("file:///local"
                         + req.getPath().toUri().getPath())));
               }
             }
@@ -101,7 +107,7 @@ public class DummyContainerManager extends ContainerManagerImpl {
               ((ContainerLocalizationEvent) event).getContainer();
           // TODO: delete the container dir
           this.dispatcher.getEventHandler().handle(
-              new ContainerEvent(container.getContainerID(),
+              new ContainerEvent(container.getContainerId(),
                   ContainerEventType.CONTAINER_RESOURCES_CLEANEDUP));
           break;
         case DESTROY_APPLICATION_RESOURCES:
@@ -122,6 +128,19 @@ public class DummyContainerManager extends ContainerManagerImpl {
   }
 
   @Override
+  protected UserGroupInformation getRemoteUgi() throws YarnException {
+    ApplicationId appId = ApplicationId.newInstance(0, 0);
+    ApplicationAttemptId appAttemptId =
+        ApplicationAttemptId.newInstance(appId, 1);
+    UserGroupInformation ugi =
+        UserGroupInformation.createRemoteUser(appAttemptId.toString());
+    ugi.addTokenIdentifier(new NMTokenIdentifier(appAttemptId, getContext()
+      .getNodeId(), "testuser", getContext().getNMTokenSecretManager().getCurrentKey()
+      .getKeyId()));
+    return ugi;
+  }
+
+  @Override
   @SuppressWarnings("unchecked")
   protected ContainersLauncher createContainersLauncher(Context context,
       ContainerExecutor exec) {
@@ -130,7 +149,7 @@ public class DummyContainerManager extends ContainerManagerImpl {
       @Override
       public void handle(ContainersLauncherEvent event) {
         Container container = event.getContainer();
-        ContainerId containerId = container.getContainerID();
+        ContainerId containerId = container.getContainerId();
         switch (event.getType()) {
         case LAUNCH_CONTAINER:
           dispatcher.getEventHandler().handle(
@@ -168,4 +187,22 @@ public class DummyContainerManager extends ContainerManagerImpl {
       }
     };
   }
+
+  @Override
+  public void setBlockNewContainerRequests(boolean blockNewContainerRequests) {
+    // do nothing
+  }
+  
+  @Override
+  protected void authorizeStartRequest(NMTokenIdentifier nmTokenIdentifier,
+      ContainerTokenIdentifier containerTokenIdentifier) throws YarnException {
+    // do nothing
+  }
+  
+  @Override
+  protected void authorizeGetAndStopContainerRequest(ContainerId containerId,
+      Container container, boolean stopRequest, NMTokenIdentifier identifier) throws YarnException {
+    // do nothing
+  }
+
 }

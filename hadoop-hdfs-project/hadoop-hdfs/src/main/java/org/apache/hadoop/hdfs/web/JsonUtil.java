@@ -42,6 +42,7 @@ import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.security.token.block.BlockTokenIdentifier;
 import org.apache.hadoop.hdfs.security.token.delegation.DelegationTokenIdentifier;
+import org.apache.hadoop.hdfs.server.namenode.INodeId;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenIdentifier;
@@ -219,6 +220,8 @@ public class JsonUtil {
     m.put("modificationTime", status.getModificationTime());
     m.put("blockSize", status.getBlockSize());
     m.put("replication", status.getReplication());
+    m.put("fileId", status.getFileId());
+    m.put("childrenNum", status.getChildrenNum());
     return includeType ? toJsonString(FileStatus.class, m): JSON.toString(m);
   }
 
@@ -243,9 +246,14 @@ public class JsonUtil {
     final long mTime = (Long) m.get("modificationTime");
     final long blockSize = (Long) m.get("blockSize");
     final short replication = (short) (long) (Long) m.get("replication");
+    final long fileId = m.containsKey("fileId") ? (Long) m.get("fileId")
+        : INodeId.GRANDFATHER_INODE_ID;
+    Long childrenNumLong = (Long) m.get("childrenNum");
+    final int childrenNum = (childrenNumLong == null) ? -1
+            : childrenNumLong.intValue();
     return new HdfsFileStatus(len, type == PathType.DIRECTORY, replication,
         blockSize, mTime, aTime, permission, owner, group,
-        symlink, DFSUtil.string2Bytes(localName));
+        symlink, DFSUtil.string2Bytes(localName), fileId, childrenNum);
   }
 
   /** Convert an ExtendedBlock to a Json map. */

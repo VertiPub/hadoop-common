@@ -28,6 +28,7 @@ import java.net.URI;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.util.Shell;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -46,8 +47,18 @@ public class TestHarFileSystemBasics {
 
   private static final String ROOT_PATH = System.getProperty("test.build.data",
       "build/test/data");
-  private static final Path rootPath = new Path(
-      new File(ROOT_PATH).getAbsolutePath() + "/localfs");
+  private static final Path rootPath;
+  static {
+    String root = new Path(new File(ROOT_PATH).getAbsolutePath(), "localfs")
+      .toUri().getPath();
+    // Strip drive specifier on Windows, which would make the HAR URI invalid and
+    // cause tests to fail.
+    if (Shell.WINDOWS) {
+      root = root.substring(root.indexOf(':') + 1);
+    }
+    rootPath = new Path(root);
+  }
+
   // NB: .har suffix is necessary
   private static final Path harPath = new Path(rootPath, "path1/path2/my.har");
 
@@ -71,7 +82,7 @@ public class TestHarFileSystemBasics {
     localFileSystem.createNewFile(masterIndexPath);
     assertTrue(localFileSystem.exists(masterIndexPath));
 
-    writeVersionToMasterIndexImpl(HarFileSystem.VERSION);
+    writeVersionToMasterIndexImpl(HarFileSystem.VERSION, masterIndexPath);
 
     final HarFileSystem harFileSystem = new HarFileSystem(localFileSystem);
     final URI uri = new URI("har://" + harPath.toString());
@@ -79,8 +90,25 @@ public class TestHarFileSystemBasics {
     return harFileSystem;
   }
 
-  private void writeVersionToMasterIndexImpl(int version) throws IOException {
-    final Path masterIndexPath = new Path(harPath, "_masterindex");
+  private HarFileSystem createHarFileSystem(final Configuration conf, Path aHarPath)
+      throws Exception {
+    localFileSystem.mkdirs(aHarPath);
+    final Path indexPath = new Path(aHarPath, "_index");
+    final Path masterIndexPath = new Path(aHarPath, "_masterindex");
+    localFileSystem.createNewFile(indexPath);
+    assertTrue(localFileSystem.exists(indexPath));
+    localFileSystem.createNewFile(masterIndexPath);
+    assertTrue(localFileSystem.exists(masterIndexPath));
+
+    writeVersionToMasterIndexImpl(HarFileSystem.VERSION, masterIndexPath);
+
+    final HarFileSystem harFileSystem = new HarFileSystem(localFileSystem);
+    final URI uri = new URI("har://" + aHarPath.toString());
+    harFileSystem.initialize(uri, conf);
+    return harFileSystem;
+  }
+
+  private void writeVersionToMasterIndexImpl(int version, Path masterIndexPath) throws IOException {
     // write Har version into the master index:
     final FSDataOutputStream fsdos = localFileSystem.create(masterIndexPath);
     try {
@@ -162,6 +190,29 @@ public class TestHarFileSystemBasics {
   }
 
   @Test
+  public void testPositiveLruMetadataCacheFs() throws Exception {
+    // Init 2nd har file system on the same underlying FS, so the
+    // metadata gets reused:
+    HarFileSystem hfs = new HarFileSystem(localFileSystem);
+    URI uri = new URI("har://" + harPath.toString());
+    hfs.initialize(uri, new Configuration());
+    // the metadata should be reused from cache:
+    assertTrue(hfs.getMetadata() == harFileSystem.getMetadata());
+
+    // Create more hars, until the cache is full + 1; the last creation should evict the first entry from the cache
+    for (int i = 0; i <= hfs.METADATA_CACHE_ENTRIES_DEFAULT; i++) {
+      Path p = new Path(rootPath, "path1/path2/my" + i +".har");
+      createHarFileSystem(conf, p);
+    }
+
+    // The first entry should not be in the cache anymore:
+    hfs = new HarFileSystem(localFileSystem);
+    uri = new URI("har://" + harPath.toString());
+    hfs.initialize(uri, new Configuration());
+    assertTrue(hfs.getMetadata() != harFileSystem.getMetadata());
+  }
+
+  @Test
   public void testPositiveInitWithoutUnderlyingFS() throws Exception {
     // Init HarFS with no constructor arg, so that the underlying FS object
     // is created on demand or got from cache in #initialize() method.
@@ -207,7 +258,7 @@ public class TestHarFileSystemBasics {
     // time with 1 second accuracy:
     Thread.sleep(1000);
     // write an unsupported version:
-    writeVersionToMasterIndexImpl(7777);
+    writeVersionToMasterIndexImpl(7777, new Path(harPath, "_masterindex"));
     // init the Har:
     final HarFileSystem hfs = new HarFileSystem(localFileSystem);
 

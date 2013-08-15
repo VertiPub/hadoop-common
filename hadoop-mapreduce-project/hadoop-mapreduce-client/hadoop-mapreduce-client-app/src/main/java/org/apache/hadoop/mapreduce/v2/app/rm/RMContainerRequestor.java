@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.mapreduce.v2.app.rm;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -35,18 +36,16 @@ import org.apache.hadoop.mapreduce.MRJobConfig;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskAttemptId;
 import org.apache.hadoop.mapreduce.v2.app.AppContext;
 import org.apache.hadoop.mapreduce.v2.app.client.ClientService;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateResponse;
-import org.apache.hadoop.yarn.api.records.AMResponse;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.api.records.ResourceRequest;
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
+import org.apache.hadoop.yarn.exceptions.YarnException;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
-import org.apache.hadoop.yarn.util.BuilderUtils;
 
 
 /**
@@ -55,7 +54,6 @@ import org.apache.hadoop.yarn.util.BuilderUtils;
 public abstract class RMContainerRequestor extends RMCommunicator {
   
   private static final Log LOG = LogFactory.getLog(RMContainerRequestor.class);
-  static final String ANY = "*";
 
   private int lastResponseID;
   private Resource availableResources;
@@ -72,7 +70,10 @@ public abstract class RMContainerRequestor extends RMCommunicator {
   remoteRequestsTable =
       new TreeMap<Priority, Map<String, Map<Resource, ResourceRequest>>>();
 
-  private final Set<ResourceRequest> ask = new TreeSet<ResourceRequest>();
+  // use custom comparator to make sure ResourceRequest objects differing only in 
+  // numContainers dont end up as duplicates
+  private final Set<ResourceRequest> ask = new TreeSet<ResourceRequest>(
+      new org.apache.hadoop.yarn.api.records.ResourceRequest.ResourceRequestComparator());
   private final Set<ContainerId> release = new TreeSet<ContainerId>(); 
 
   private boolean nodeBlacklistingEnabled;
@@ -123,8 +124,8 @@ public abstract class RMContainerRequestor extends RMCommunicator {
   }
 
   @Override
-  public void init(Configuration conf) {
-    super.init(conf);
+  protected void serviceInit(Configuration conf) throws Exception {
+    super.serviceInit(conf);
     nodeBlacklistingEnabled = 
       conf.getBoolean(MRJobConfig.MR_AM_JOB_NODE_BLACKLISTING_ENABLE, true);
     LOG.info("nodeBlacklistingEnabled:" + nodeBlacklistingEnabled);
@@ -136,37 +137,42 @@ public abstract class RMContainerRequestor extends RMCommunicator {
             MRJobConfig.DEFAULT_MR_AM_IGNORE_BLACKLISTING_BLACKLISTED_NODE_PERCENT);
     LOG.info("maxTaskFailuresPerNode is " + maxTaskFailuresPerNode);
     if (blacklistDisablePercent < -1 || blacklistDisablePercent > 100) {
-      throw new YarnException("Invalid blacklistDisablePercent: "
+      throw new YarnRuntimeException("Invalid blacklistDisablePercent: "
           + blacklistDisablePercent
           + ". Should be an integer between 0 and 100 or -1 to disabled");
     }
     LOG.info("blacklistDisablePercent is " + blacklistDisablePercent);
   }
 
-  protected AMResponse makeRemoteRequest() throws YarnRemoteException {
-    AllocateRequest allocateRequest = BuilderUtils.newAllocateRequest(
-        applicationAttemptId, lastResponseID, super.getApplicationProgress(),
-        new ArrayList<ResourceRequest>(ask), new ArrayList<ContainerId>(
-            release));
-    AllocateResponse allocateResponse = scheduler.allocate(allocateRequest);
-    AMResponse response = allocateResponse.getAMResponse();
-    lastResponseID = response.getResponseId();
-    availableResources = response.getAvailableResources();
+  protected AllocateResponse makeRemoteRequest() throws IOException {
+    AllocateRequest allocateRequest =
+        AllocateRequest.newInstance(lastResponseID,
+          super.getApplicationProgress(), new ArrayList<ResourceRequest>(ask),
+          new ArrayList<ContainerId>(release), null);
+    AllocateResponse allocateResponse;
+    try {
+      allocateResponse = scheduler.allocate(allocateRequest);
+    } catch (YarnException e) {
+      throw new IOException(e);
+    }
+    lastResponseID = allocateResponse.getResponseId();
+    availableResources = allocateResponse.getAvailableResources();
     lastClusterNmCount = clusterNmCount;
     clusterNmCount = allocateResponse.getNumClusterNodes();
 
     if (ask.size() > 0 || release.size() > 0) {
       LOG.info("getResources() for " + applicationId + ":" + " ask="
           + ask.size() + " release= " + release.size() + " newContainers="
-          + response.getAllocatedContainers().size() + " finishedContainers="
-          + response.getCompletedContainersStatuses().size()
+          + allocateResponse.getAllocatedContainers().size()
+          + " finishedContainers="
+          + allocateResponse.getCompletedContainersStatuses().size()
           + " resourcelimit=" + availableResources + " knownNMs="
           + clusterNmCount);
     }
 
     ask.clear();
     release.clear();
-    return response;
+    return allocateResponse;
   }
 
   // May be incorrect if there's multiple NodeManagers running on a single host.
@@ -232,10 +238,14 @@ public abstract class RMContainerRequestor extends RMCommunicator {
               // if ask already sent to RM, we can try and overwrite it if possible.
               // send a new ask to RM with numContainers
               // specified for the blacklisted host to be 0.
-              ResourceRequest zeroedRequest = BuilderUtils.newResourceRequest(req);
+              ResourceRequest zeroedRequest =
+                  ResourceRequest.newInstance(req.getPriority(),
+                    req.getResourceName(), req.getCapability(),
+                    req.getNumContainers(), req.getRelaxLocality());
+
               zeroedRequest.setNumContainers(0);
               // to be sent to RM on next heartbeat
-              ask.add(zeroedRequest);
+              addResourceRequestToAsk(zeroedRequest);
             }
           }
           // if all requests were still in ask queue
@@ -276,7 +286,7 @@ public abstract class RMContainerRequestor extends RMCommunicator {
     }
 
     // Off-switch
-    addResourceRequest(req.priority, ANY, req.capability); 
+    addResourceRequest(req.priority, ResourceRequest.ANY, req.capability);
   }
 
   protected void decContainerReq(ContainerRequest req) {
@@ -289,7 +299,7 @@ public abstract class RMContainerRequestor extends RMCommunicator {
       decResourceRequest(req.priority, rack, req.capability);
     }
    
-    decResourceRequest(req.priority, ANY, req.capability);
+    decResourceRequest(req.priority, ResourceRequest.ANY, req.capability);
   }
 
   private void addResourceRequest(Priority priority, String resourceName,
@@ -312,7 +322,7 @@ public abstract class RMContainerRequestor extends RMCommunicator {
     if (remoteRequest == null) {
       remoteRequest = recordFactory.newRecordInstance(ResourceRequest.class);
       remoteRequest.setPriority(priority);
-      remoteRequest.setHostName(resourceName);
+      remoteRequest.setResourceName(resourceName);
       remoteRequest.setCapability(capability);
       remoteRequest.setNumContainers(0);
       reqMap.put(capability, remoteRequest);
@@ -320,7 +330,7 @@ public abstract class RMContainerRequestor extends RMCommunicator {
     remoteRequest.setNumContainers(remoteRequest.getNumContainers() + 1);
 
     // Note this down for next interaction with ResourceManager
-    ask.add(remoteRequest);
+    addResourceRequestToAsk(remoteRequest);
     if (LOG.isDebugEnabled()) {
       LOG.debug("addResourceRequest:" + " applicationId="
           + applicationId.getId() + " priority=" + priority.getPriority()
@@ -353,7 +363,12 @@ public abstract class RMContainerRequestor extends RMCommunicator {
           + remoteRequest.getNumContainers() + " #asks=" + ask.size());
     }
 
-    remoteRequest.setNumContainers(remoteRequest.getNumContainers() -1);
+    if(remoteRequest.getNumContainers() > 0) {
+      // based on blacklisting comments above we can end up decrementing more 
+      // than requested. so guard for that.
+      remoteRequest.setNumContainers(remoteRequest.getNumContainers() -1);
+    }
+    
     if (remoteRequest.getNumContainers() == 0) {
       reqMap.remove(capability);
       if (reqMap.size() == 0) {
@@ -362,12 +377,11 @@ public abstract class RMContainerRequestor extends RMCommunicator {
       if (remoteRequests.size() == 0) {
         remoteRequestsTable.remove(priority);
       }
-      //remove from ask if it may have
-      ask.remove(remoteRequest);
-    } else {
-      ask.add(remoteRequest);//this will override the request if ask doesn't
-      //already have it.
     }
+
+    // send the updated resource request to RM
+    // send 0 container count requests also to cancel previous requests
+    addResourceRequestToAsk(remoteRequest);
 
     if (LOG.isDebugEnabled()) {
       LOG.info("AFTER decResourceRequest:" + " applicationId="
@@ -375,6 +389,16 @@ public abstract class RMContainerRequestor extends RMCommunicator {
           + " resourceName=" + resourceName + " numContainers="
           + remoteRequest.getNumContainers() + " #asks=" + ask.size());
     }
+  }
+  
+  private void addResourceRequestToAsk(ResourceRequest remoteRequest) {
+    // because objects inside the resource map can be deleted ask can end up 
+    // containing an object that matches new resource object but with different
+    // numContainers. So exisintg values must be replaced explicitly
+    if(ask.contains(remoteRequest)) {
+      ask.remove(remoteRequest);
+    }
+    ask.add(remoteRequest);    
   }
 
   protected void release(ContainerId containerId) {
@@ -399,5 +423,9 @@ public abstract class RMContainerRequestor extends RMCommunicator {
     ContainerRequest newReq = new ContainerRequest(orig.attemptID, orig.capability,
         hosts, orig.racks, orig.priority); 
     return newReq;
+  }
+  
+  public Set<String> getBlacklistedNodes() {
+    return blacklistedNodes;
   }
 }

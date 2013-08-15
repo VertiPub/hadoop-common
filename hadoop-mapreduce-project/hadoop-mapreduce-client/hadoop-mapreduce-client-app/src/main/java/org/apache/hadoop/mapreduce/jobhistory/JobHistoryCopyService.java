@@ -18,7 +18,6 @@
 
 package org.apache.hadoop.mapreduce.jobhistory;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 
 import org.apache.commons.logging.Log;
@@ -30,10 +29,10 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.TypeConverter;
 import org.apache.hadoop.mapreduce.v2.api.records.JobId;
 import org.apache.hadoop.mapreduce.v2.jobhistory.JobHistoryUtils;
-import org.apache.hadoop.yarn.YarnException;
+import org.apache.hadoop.service.CompositeService;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.event.EventHandler;
-import org.apache.hadoop.yarn.service.CompositeService;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 
 /**
  * Reads in history events from the JobHistoryFile and sends them out again
@@ -58,8 +57,8 @@ public class JobHistoryCopyService extends CompositeService implements HistoryEv
   }
 
   @Override
-  public void init(Configuration conf) {
-    super.init(conf);
+  protected void serviceInit(Configuration conf) throws Exception {
+    super.serviceInit(conf);
   }
   
   @Override
@@ -71,14 +70,14 @@ public class JobHistoryCopyService extends CompositeService implements HistoryEv
   }
   
   @Override
-  public void start() {
+  protected void serviceStart() throws Exception {
     try {
       //TODO should we parse on a background thread???
       parse();
     } catch (IOException e) {
-      throw new YarnException(e);
+      throw new YarnRuntimeException(e);
     }
-    super.start();
+    super.serviceStart();
   }
   
   private void parse() throws IOException {

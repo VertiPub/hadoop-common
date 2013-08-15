@@ -27,6 +27,7 @@ import java.net.Socket;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
@@ -106,8 +107,8 @@ public class TestDiskError {
       }
     } finally {
       // restore its old permission
-      dir1.setWritable(true);
-      dir2.setWritable(true);
+      FileUtil.setWritable(dir1, true);
+      FileUtil.setWritable(dir2, true);
     }
   }
 
@@ -147,7 +148,7 @@ public class TestDiskError {
         BlockTokenSecretManager.DUMMY_TOKEN, "",
         new DatanodeInfo[0], null,
         BlockConstructionStage.PIPELINE_SETUP_CREATE, 1, 0L, 0L, 0L,
-        checksum);
+        checksum, CachingStrategy.newDefaultStrategy());
     out.flush();
 
     // close the connection before sending the content of the block

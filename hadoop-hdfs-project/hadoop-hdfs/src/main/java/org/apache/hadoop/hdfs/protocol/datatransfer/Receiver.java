@@ -30,8 +30,11 @@ import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpCopyBlockProto
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpReadBlockProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpReplaceBlockProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpTransferBlockProto;
+import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpRequestShortCircuitAccessProto;
+import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.CachingStrategyProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpWriteBlockProto;
 import org.apache.hadoop.hdfs.protocolPB.PBHelper;
+import org.apache.hadoop.hdfs.server.datanode.CachingStrategy;
 
 /** Receiver */
 @InterfaceAudience.Private
@@ -76,9 +79,20 @@ public abstract class Receiver implements DataTransferProtocol {
     case TRANSFER_BLOCK:
       opTransferBlock(in);
       break;
+    case REQUEST_SHORT_CIRCUIT_FDS:
+      opRequestShortCircuitFds(in);
+      break;
     default:
       throw new IOException("Unknown op " + op + " in data stream");
     }
+  }
+
+  static private CachingStrategy getCachingStrategy(CachingStrategyProto strategy) {
+    Boolean dropBehind = strategy.hasDropBehind() ?
+        strategy.getDropBehind() : null;
+    Long readahead = strategy.hasReadahead() ?
+        strategy.getReadahead() : null;
+    return new CachingStrategy(dropBehind, readahead);
   }
 
   /** Receive OP_READ_BLOCK */
@@ -89,7 +103,10 @@ public abstract class Receiver implements DataTransferProtocol {
         proto.getHeader().getClientName(),
         proto.getOffset(),
         proto.getLen(),
-        proto.getSendChecksums());
+        proto.getSendChecksums(),
+        (proto.hasCachingStrategy() ?
+            getCachingStrategy(proto.getCachingStrategy()) :
+          CachingStrategy.newDefaultStrategy()));
   }
   
   /** Receive OP_WRITE_BLOCK */
@@ -104,7 +121,10 @@ public abstract class Receiver implements DataTransferProtocol {
         proto.getPipelineSize(),
         proto.getMinBytesRcvd(), proto.getMaxBytesRcvd(),
         proto.getLatestGenerationStamp(),
-        fromProto(proto.getRequestedChecksum()));
+        fromProto(proto.getRequestedChecksum()),
+        (proto.hasCachingStrategy() ?
+            getCachingStrategy(proto.getCachingStrategy()) :
+          CachingStrategy.newDefaultStrategy()));
   }
 
   /** Receive {@link Op#TRANSFER_BLOCK} */
@@ -115,6 +135,15 @@ public abstract class Receiver implements DataTransferProtocol {
         PBHelper.convert(proto.getHeader().getBaseHeader().getToken()),
         proto.getHeader().getClientName(),
         PBHelper.convert(proto.getTargetsList()));
+  }
+
+  /** Receive {@link Op#REQUEST_SHORT_CIRCUIT_FDS} */
+  private void opRequestShortCircuitFds(DataInputStream in) throws IOException {
+    final OpRequestShortCircuitAccessProto proto =
+      OpRequestShortCircuitAccessProto.parseFrom(vintPrefixed(in));
+    requestShortCircuitFds(PBHelper.convert(proto.getHeader().getBlock()),
+        PBHelper.convert(proto.getHeader().getToken()),
+        proto.getMaxVersion());
   }
 
   /** Receive OP_REPLACE_BLOCK */

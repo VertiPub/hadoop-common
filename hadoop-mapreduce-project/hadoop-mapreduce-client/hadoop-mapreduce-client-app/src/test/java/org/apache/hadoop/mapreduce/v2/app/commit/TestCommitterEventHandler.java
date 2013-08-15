@@ -36,8 +36,6 @@ import org.apache.hadoop.mapreduce.v2.app.AppContext;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobEventType;
 import org.apache.hadoop.mapreduce.v2.app.rm.RMHeartbeatHandler;
-import org.apache.hadoop.yarn.Clock;
-import org.apache.hadoop.yarn.SystemClock;
 import org.apache.hadoop.yarn.event.AsyncDispatcher;
 import org.apache.hadoop.yarn.event.EventHandler;
 
@@ -60,12 +58,14 @@ import org.apache.hadoop.mapreduce.v2.app.job.event.JobCommitCompletedEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobCommitFailedEvent;
 import org.apache.hadoop.mapreduce.v2.util.MRApps;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.Event;
 import org.apache.hadoop.yarn.event.EventHandler;
+import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
+import org.apache.hadoop.yarn.util.Clock;
 import org.apache.hadoop.yarn.util.ConverterUtils;
+import org.apache.hadoop.yarn.util.SystemClock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -295,7 +295,7 @@ public class TestCommitterEventHandler {
     when(mockContext.getEventHandler()).thenReturn(waitForItHandler);
     when(mockContext.getClock()).thenReturn(mockClock);
     
-    doThrow(new YarnException("Intentional Failure")).when(mockCommitter)
+    doThrow(new YarnRuntimeException("Intentional Failure")).when(mockCommitter)
       .commitJob(any(JobContext.class));
     
     handler.init(conf);

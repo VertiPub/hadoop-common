@@ -23,6 +23,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.MRConfig;
 import org.apache.hadoop.mapreduce.MRJobConfig;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.server.jobtracker.JTConfig;
 import org.apache.hadoop.mapreduce.server.tasktracker.TTConfig;
 
@@ -47,6 +48,7 @@ public class ConfigUtil {
   /**
    * Adds deprecated keys and the corresponding new keys to the Configuration
    */
+  @SuppressWarnings("deprecation")
   private static void addDeprecatedKeys()  {
     Configuration.addDeprecation("mapred.temp.dir", 
       new String[] {MRConfig.TEMP_DIR});
@@ -242,6 +244,10 @@ public class ConfigUtil {
       new String[] {MRJobConfig.CACHE_LOCALFILES});
     Configuration.addDeprecation("mapred.cache.localArchives", 
       new String[] {MRJobConfig.CACHE_LOCALARCHIVES});
+    Configuration.addDeprecation("mapred.cache.files.filesizes",
+      new String[] {MRJobConfig.CACHE_FILES_SIZES});
+    Configuration.addDeprecation("mapred.cache.archives.filesizes",
+      new String[] {MRJobConfig.CACHE_ARCHIVES_SIZES});
     Configuration.addDeprecation("mapred.cache.files.timestamps", 
       new String[] {MRJobConfig.CACHE_FILE_TIMESTAMPS});
     Configuration.addDeprecation("mapred.cache.archives.timestamps", 
@@ -521,6 +527,10 @@ public class ConfigUtil {
     });
     Configuration.addDeprecation("mapreduce.user.classpath.first",
       MRJobConfig.MAPREDUCE_JOB_USER_CLASSPATH_FIRST);
+    Configuration.addDeprecation(JTConfig.JT_MAX_JOB_SPLIT_METAINFO_SIZE,
+        MRJobConfig.SPLIT_METAINFO_MAXSIZE);
+    Configuration.addDeprecation("mapred.input.dir.recursive",
+        FileInputFormat.INPUT_DIR_RECURSIVE);
   }
 
   public static void main(String[] args) {

@@ -19,13 +19,15 @@
 package org.apache.hadoop.yarn.server.api.protocolrecords.impl.pb;
 
 
-import org.apache.hadoop.yarn.api.records.ProtoBase;
-import org.apache.hadoop.yarn.proto.YarnServerCommonProtos.RegistrationResponseProto;
+import org.apache.hadoop.yarn.api.records.impl.pb.ProtoBase;
+import org.apache.hadoop.yarn.proto.YarnServerCommonProtos.MasterKeyProto;
+import org.apache.hadoop.yarn.proto.YarnServerCommonProtos.NodeActionProto;
 import org.apache.hadoop.yarn.proto.YarnServerCommonServiceProtos.RegisterNodeManagerResponseProto;
 import org.apache.hadoop.yarn.proto.YarnServerCommonServiceProtos.RegisterNodeManagerResponseProtoOrBuilder;
 import org.apache.hadoop.yarn.server.api.protocolrecords.RegisterNodeManagerResponse;
-import org.apache.hadoop.yarn.server.api.records.RegistrationResponse;
-import org.apache.hadoop.yarn.server.api.records.impl.pb.RegistrationResponsePBImpl;
+import org.apache.hadoop.yarn.server.api.records.MasterKey;
+import org.apache.hadoop.yarn.server.api.records.NodeAction;
+import org.apache.hadoop.yarn.server.api.records.impl.pb.MasterKeyPBImpl;
 
 
     
@@ -34,7 +36,8 @@ public class RegisterNodeManagerResponsePBImpl extends ProtoBase<RegisterNodeMan
   RegisterNodeManagerResponseProto.Builder builder = null;
   boolean viaProto = false;
   
-  private RegistrationResponse registartionResponse = null;
+  private MasterKey containerTokenMasterKey = null;
+  private MasterKey nmTokenMasterKey = null;
   
   private boolean rebuild = false;
   
@@ -56,9 +59,13 @@ public class RegisterNodeManagerResponsePBImpl extends ProtoBase<RegisterNodeMan
   }
 
   private void mergeLocalToBuilder() {
-    if (this.registartionResponse != null) {
-      builder.setRegistrationResponse(convertToProtoFormat(this.registartionResponse));
-      this.registartionResponse = null;
+    if (this.containerTokenMasterKey != null) {
+      builder.setContainerTokenMasterKey(
+          convertToProtoFormat(this.containerTokenMasterKey));
+    }
+    if (this.nmTokenMasterKey != null) {
+      builder.setNmTokenMasterKey(
+          convertToProtoFormat(this.nmTokenMasterKey));
     }
   }
 
@@ -77,39 +84,117 @@ public class RegisterNodeManagerResponsePBImpl extends ProtoBase<RegisterNodeMan
     }
     viaProto = false;
   }
-    
-  
+
   @Override
-  public RegistrationResponse getRegistrationResponse() {
+  public MasterKey getContainerTokenMasterKey() {
     RegisterNodeManagerResponseProtoOrBuilder p = viaProto ? proto : builder;
-    if (this.registartionResponse != null) {
-      return this.registartionResponse;
+    if (this.containerTokenMasterKey != null) {
+      return this.containerTokenMasterKey;
     }
-    if (!p.hasRegistrationResponse()) {
+    if (!p.hasContainerTokenMasterKey()) {
       return null;
     }
-    this.registartionResponse = convertFromProtoFormat(p.getRegistrationResponse());
-    rebuild = true;
-    return this.registartionResponse;
+    this.containerTokenMasterKey =
+        convertFromProtoFormat(p.getContainerTokenMasterKey());
+    return this.containerTokenMasterKey;
   }
 
   @Override
-  public void setRegistrationResponse(RegistrationResponse registrationResponse) {
+  public void setContainerTokenMasterKey(MasterKey masterKey) {
     maybeInitBuilder();
-    if (registrationResponse == null) 
-      builder.clearRegistrationResponse();
-    this.registartionResponse = registrationResponse;
+    if (masterKey == null)
+      builder.clearContainerTokenMasterKey();
+    this.containerTokenMasterKey = masterKey;
     rebuild = true;
   }
 
-  private RegistrationResponsePBImpl convertFromProtoFormat(RegistrationResponseProto p) {
-    return new RegistrationResponsePBImpl(p);
+  @Override
+  public MasterKey getNMTokenMasterKey() {
+    RegisterNodeManagerResponseProtoOrBuilder p = viaProto ? proto : builder;
+    if (this.nmTokenMasterKey != null) {
+      return this.nmTokenMasterKey;
+    }
+    if (!p.hasNmTokenMasterKey()) {
+      return null;
+    }
+    this.nmTokenMasterKey =
+        convertFromProtoFormat(p.getNmTokenMasterKey());
+    return this.nmTokenMasterKey;
   }
 
-  private RegistrationResponseProto convertToProtoFormat(RegistrationResponse t) {
-    return ((RegistrationResponsePBImpl)t).getProto();
+  @Override
+  public void setNMTokenMasterKey(MasterKey masterKey) {
+    maybeInitBuilder();
+    if (masterKey == null)
+      builder.clearNmTokenMasterKey();
+    this.nmTokenMasterKey = masterKey;
+    rebuild = true;
   }
 
+  @Override
+  public String getDiagnosticsMessage() {
+    RegisterNodeManagerResponseProtoOrBuilder p = viaProto ? proto : builder;
+    if (!p.hasDiagnosticsMessage()) {
+      return null;
+    }
+    return p.getDiagnosticsMessage();
+  }
 
+  @Override
+  public void setDiagnosticsMessage(String diagnosticsMessage) {
+    maybeInitBuilder();
+    if (diagnosticsMessage == null) {
+      builder.clearDiagnosticsMessage();
+      return;
+    }
+    builder.setDiagnosticsMessage((diagnosticsMessage));
+  }
 
+  @Override
+  public NodeAction getNodeAction() {
+    RegisterNodeManagerResponseProtoOrBuilder p = viaProto ? proto : builder;
+    if(!p.hasNodeAction()) {
+      return null;
+    }
+    return convertFromProtoFormat(p.getNodeAction());
+  }
+
+  @Override
+  public void setNodeAction(NodeAction nodeAction) {
+    maybeInitBuilder();
+    if (nodeAction == null) {
+      builder.clearNodeAction();
+    } else {
+      builder.setNodeAction(convertToProtoFormat(nodeAction));
+    }
+    rebuild = true;
+  }
+
+  @Override
+  public long getRMIdentifier() {
+    RegisterNodeManagerResponseProtoOrBuilder p = viaProto ? proto : builder;
+    return (p.getRmIdentifier());
+  }
+
+  @Override
+  public void setRMIdentifier(long rmIdentifier) {
+    maybeInitBuilder();
+    builder.setRmIdentifier(rmIdentifier);
+  }
+
+  private NodeAction convertFromProtoFormat(NodeActionProto p) {
+    return  NodeAction.valueOf(p.name());
+  }
+
+  private NodeActionProto convertToProtoFormat(NodeAction t) {
+    return NodeActionProto.valueOf(t.name());
+  }
+
+  private MasterKeyPBImpl convertFromProtoFormat(MasterKeyProto p) {
+    return new MasterKeyPBImpl(p);
+  }
+
+  private MasterKeyProto convertToProtoFormat(MasterKey t) {
+    return ((MasterKeyPBImpl)t).getProto();
+  }
 }  

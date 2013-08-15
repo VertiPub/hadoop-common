@@ -43,10 +43,12 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.service.AbstractService;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.service.AbstractService;
+
+import com.google.common.annotations.VisibleForTesting;
 
 /**
  * Service to renew application delegation tokens.
@@ -86,19 +88,18 @@ public class DelegationTokenRenewer extends AbstractService {
   }
 
   @Override
-  public synchronized void init(Configuration conf) {
-    super.init(conf);
+  protected synchronized void serviceInit(Configuration conf) throws Exception {
     this.tokenKeepAliveEnabled =
         conf.getBoolean(YarnConfiguration.LOG_AGGREGATION_ENABLED,
             YarnConfiguration.DEFAULT_LOG_AGGREGATION_ENABLED);
     this.tokenRemovalDelayMs =
         conf.getInt(YarnConfiguration.RM_NM_EXPIRY_INTERVAL_MS,
             YarnConfiguration.DEFAULT_RM_NM_EXPIRY_INTERVAL_MS);
+    super.serviceInit(conf);
   }
 
   @Override
-  public synchronized void start() {
-    super.start();
+  protected void serviceStart() throws Exception {
     
     dtCancelThread.start();
     renewalTimer = new Timer(true);
@@ -108,10 +109,11 @@ public class DelegationTokenRenewer extends AbstractService {
               "DelayedTokenCanceller");
       delayedRemovalThread.start();
     }
+    super.serviceStart();
   }
 
   @Override
-  public synchronized void stop() {
+  protected void serviceStop() {
     if (renewalTimer != null) {
       renewalTimer.cancel();
     }
@@ -131,15 +133,14 @@ public class DelegationTokenRenewer extends AbstractService {
         LOG.info("Interrupted while joining on delayed removal thread.", e);
       }
     }
-    
-    super.stop();
   }
 
   /**
    * class that is used for keeping tracks of DT to renew
    *
    */
-  private static class DelegationTokenToRenew {
+  @VisibleForTesting
+  protected static class DelegationTokenToRenew {
     public final Token<?> token;
     public final ApplicationId applicationId;
     public final Configuration conf;
@@ -238,6 +239,9 @@ public class DelegationTokenRenewer extends AbstractService {
         } catch (IOException e) {
           LOG.warn("Failed to cancel token " + tokenWithConf.token + " " +  
               StringUtils.stringifyException(e));
+        } catch (RuntimeException e) {
+          LOG.warn("Failed to cancel token " + tokenWithConf.token + " " +  
+              StringUtils.stringifyException(e));
         } catch (InterruptedException ie) {
           return;
         } catch (Throwable t) {
@@ -252,7 +256,16 @@ public class DelegationTokenRenewer extends AbstractService {
   private void addTokenToList(DelegationTokenToRenew t) {
     delegationTokens.add(t);
   }
-  
+
+  @VisibleForTesting
+  public Set<Token<?>> getDelegationTokens() {
+    Set<Token<?>> tokens = new HashSet<Token<?>>();
+    for(DelegationTokenToRenew delegationToken : delegationTokens) {
+      tokens.add(delegationToken.token);
+    }
+    return tokens;
+  }
+
   /**
    * Add application tokens for renewal.
    * @param applicationId added application
@@ -261,7 +274,7 @@ public class DelegationTokenRenewer extends AbstractService {
    * done else false. 
    * @throws IOException
    */
-  public synchronized void addApplication(
+  public void addApplication(
       ApplicationId applicationId, Credentials ts, boolean shouldCancelAtEnd) 
   throws IOException {
     if (ts == null) {
@@ -343,7 +356,8 @@ public class DelegationTokenRenewer extends AbstractService {
   /**
    * set task to renew the token
    */
-  private void setTimerForTokenRenewal(DelegationTokenToRenew token)
+  @VisibleForTesting
+  protected void setTimerForTokenRenewal(DelegationTokenToRenew token)
       throws IOException {
       
     // calculate timer time
@@ -358,7 +372,8 @@ public class DelegationTokenRenewer extends AbstractService {
   }
 
   // renew a token
-  private void renewToken(final DelegationTokenToRenew dttr)
+  @VisibleForTesting
+  protected void renewToken(final DelegationTokenToRenew dttr)
       throws IOException {
     // need to use doAs so that http can find the kerberos tgt
     // NOTE: token renewers should be responsible for the correct UGI!

@@ -23,8 +23,6 @@ import java.io.StringWriter;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.text.DateFormat;
-import java.text.DecimalFormat;
-import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -32,13 +30,18 @@ import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.StringTokenizer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import com.google.common.net.InetAddresses;
+import org.apache.commons.lang.SystemUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.net.NetUtils;
+
+import com.google.common.net.InetAddresses;
 
 /**
  * General string utils
@@ -52,12 +55,26 @@ public class StringUtils {
    */
   public static final int SHUTDOWN_HOOK_PRIORITY = 0;
 
-  private static final DecimalFormat decimalFormat;
-  static {
-          NumberFormat numberFormat = NumberFormat.getNumberInstance(Locale.ENGLISH);
-          decimalFormat = (DecimalFormat) numberFormat;
-          decimalFormat.applyPattern("#.##");
-  }
+  /**
+   * Shell environment variables: $ followed by one letter or _ followed by
+   * multiple letters, numbers, or underscores.  The group captures the
+   * environment variable name without the leading $.
+   */
+  public static final Pattern SHELL_ENV_VAR_PATTERN =
+    Pattern.compile("\\$([A-Za-z_]{1}[A-Za-z0-9_]*)");
+
+  /**
+   * Windows environment variables: surrounded by %.  The group captures the
+   * environment variable name without the leading and trailing %.
+   */
+  public static final Pattern WIN_ENV_VAR_PATTERN = Pattern.compile("%(.*?)%");
+
+  /**
+   * Regular expression that matches and captures environment variable names
+   * according to platform-specific rules.
+   */
+  public static final Pattern ENV_VAR_PATTERN = Shell.WINDOWS ?
+    WIN_ENV_VAR_PATTERN : SHELL_ENV_VAR_PATTERN;
 
   /**
    * Make a string representation of the exception.
@@ -87,50 +104,33 @@ public class StringUtils {
     }
     return fullHostname;
   }
-
-  private static DecimalFormat oneDecimal = new DecimalFormat("0.0");
   
   /**
    * Given an integer, return a string that is in an approximate, but human 
    * readable format. 
-   * It uses the bases 'k', 'm', and 'g' for 1024, 1024**2, and 1024**3.
    * @param number the number to format
    * @return a human readable form of the integer
+   *
+   * @deprecated use {@link TraditionalBinaryPrefix#long2String(long, String, int)}.
    */
+  @Deprecated
   public static String humanReadableInt(long number) {
-    long absNumber = Math.abs(number);
-    double result = number;
-    String suffix = "";
-    if (absNumber < 1024) {
-      // since no division has occurred, don't format with a decimal point
-      return String.valueOf(number);
-    } else if (absNumber < 1024 * 1024) {
-      result = number / 1024.0;
-      suffix = "k";
-    } else if (absNumber < 1024 * 1024 * 1024) {
-      result = number / (1024.0 * 1024);
-      suffix = "m";
-    } else {
-      result = number / (1024.0 * 1024 * 1024);
-      suffix = "g";
-    }
-    return oneDecimal.format(result) + suffix;
+    return TraditionalBinaryPrefix.long2String(number, "", 1);
   }
-  
+
+  /** The same as String.format(Locale.ENGLISH, format, objects). */
+  public static String format(final String format, final Object... objects) {
+    return String.format(Locale.ENGLISH, format, objects);
+  }
+
   /**
    * Format a percentage for presentation to the user.
-   * @param done the percentage to format (0.0 to 1.0)
-   * @param digits the number of digits past the decimal point
+   * @param fraction the percentage as a fraction, e.g. 0.1 = 10%
+   * @param decimalPlaces the number of decimal places
    * @return a string representation of the percentage
    */
-  public static String formatPercent(double done, int digits) {
-    DecimalFormat percentFormat = new DecimalFormat("0.00%");
-    double scale = Math.pow(10.0, digits+2);
-    double rounded = Math.floor(done * scale);
-    percentFormat.setDecimalSeparatorAlwaysShown(false);
-    percentFormat.setMinimumFractionDigits(digits);
-    percentFormat.setMaximumFractionDigits(digits);
-    return percentFormat.format(rounded / scale);
+  public static String formatPercent(double fraction, int decimalPlaces) {
+    return format("%." + decimalPlaces + "f%%", fraction*100);
   }
   
   /**
@@ -165,7 +165,7 @@ public class StringUtils {
     }
     StringBuilder s = new StringBuilder(); 
     for(int i = start; i < end; i++) {
-      s.append(String.format("%02x", bytes[i]));
+      s.append(format("%02x", bytes[i]));
     }
     return s.toString();
   }
@@ -352,7 +352,7 @@ public class StringUtils {
    * @return an array of <code>String</code> values
    */
   public static String[] getTrimmedStrings(String str){
-    if (null == str || "".equals(str.trim())) {
+    if (null == str || str.trim().isEmpty()) {
       return emptyStringArray;
     }
 
@@ -412,7 +412,7 @@ public class StringUtils {
       String str, char separator) {
     // String.split returns a single empty result for splitting the empty
     // string.
-    if ("".equals(str)) {
+    if (str.isEmpty()) {
       return new String[]{""};
     }
     ArrayList<String> strList = new ArrayList<String>();
@@ -613,6 +613,13 @@ public class StringUtils {
         )
       );
 
+    if (SystemUtils.IS_OS_UNIX) {
+      try {
+        SignalLogger.INSTANCE.register(LOG);
+      } catch (Throwable t) {
+        LOG.warn("failed to register any UNIX signal loggers: ", t);
+      }
+    }
     ShutdownHookManager.get().addShutdownHook(
       new Runnable() {
         @Override
@@ -630,18 +637,22 @@ public class StringUtils {
    * TraditionalBinaryPrefix symbol are case insensitive. 
    */
   public static enum TraditionalBinaryPrefix {
-    KILO(1024),
-    MEGA(KILO.value << 10),
-    GIGA(MEGA.value << 10),
-    TERA(GIGA.value << 10),
-    PETA(TERA.value << 10),
-    EXA(PETA.value << 10);
+    KILO(10),
+    MEGA(KILO.bitShift + 10),
+    GIGA(MEGA.bitShift + 10),
+    TERA(GIGA.bitShift + 10),
+    PETA(TERA.bitShift + 10),
+    EXA (PETA.bitShift + 10);
 
     public final long value;
     public final char symbol;
+    public final int bitShift;
+    public final long bitMask;
 
-    TraditionalBinaryPrefix(long value) {
-      this.value = value;
+    private TraditionalBinaryPrefix(int bitShift) {
+      this.bitShift = bitShift;
+      this.value = 1L << bitShift;
+      this.bitMask = this.value - 1L;
       this.symbol = toString().charAt(0);
     }
 
@@ -692,8 +703,58 @@ public class StringUtils {
         return num * prefix;
       }
     }
+
+    /**
+     * Convert a long integer to a string with traditional binary prefix.
+     * 
+     * @param n the value to be converted
+     * @param unit The unit, e.g. "B" for bytes.
+     * @param decimalPlaces The number of decimal places.
+     * @return a string with traditional binary prefix.
+     */
+    public static String long2String(long n, String unit, int decimalPlaces) {
+      if (unit == null) {
+        unit = "";
+      }
+      //take care a special case
+      if (n == Long.MIN_VALUE) {
+        return "-8 " + EXA.symbol + unit;
+      }
+
+      final StringBuilder b = new StringBuilder();
+      //take care negative numbers
+      if (n < 0) {
+        b.append('-');
+        n = -n;
+      }
+      if (n < KILO.value) {
+        //no prefix
+        b.append(n);
+        return (unit.isEmpty()? b: b.append(" ").append(unit)).toString();
+      } else {
+        //find traditional binary prefix
+        int i = 0;
+        for(; i < values().length && n >= values()[i].value; i++);
+        TraditionalBinaryPrefix prefix = values()[i - 1];
+
+        if ((n & prefix.bitMask) == 0) {
+          //exact division
+          b.append(n >> prefix.bitShift);
+        } else {
+          final String  format = "%." + decimalPlaces + "f";
+          String s = format(format, n/(double)prefix.value);
+          //check a special rounding up case
+          if (s.startsWith("1024")) {
+            prefix = values()[i];
+            s = format(format, n/(double)prefix.value);
+          }
+          b.append(s);
+        }
+        return b.append(' ').append(prefix.symbol).append(unit).toString();
+      }
+    }
   }
-  
+
     /**
      * Escapes HTML Special characters present in the string.
      * @param string
@@ -731,32 +792,16 @@ public class StringUtils {
     }
 
   /**
-   * Return an abbreviated English-language desc of the byte length
+   * @return a byte description of the given long interger value.
    */
   public static String byteDesc(long len) {
-    double val = 0.0;
-    String ending = "";
-    if (len < 1024 * 1024) {
-      val = (1.0 * len) / 1024;
-      ending = " KB";
-    } else if (len < 1024 * 1024 * 1024) {
-      val = (1.0 * len) / (1024 * 1024);
-      ending = " MB";
-    } else if (len < 1024L * 1024 * 1024 * 1024) {
-      val = (1.0 * len) / (1024 * 1024 * 1024);
-      ending = " GB";
-    } else if (len < 1024L * 1024 * 1024 * 1024 * 1024) {
-      val = (1.0 * len) / (1024L * 1024 * 1024 * 1024);
-      ending = " TB";
-    } else {
-      val = (1.0 * len) / (1024L * 1024 * 1024 * 1024 * 1024);
-      ending = " PB";
-    }
-    return limitDecimalTo2(val) + ending;
+    return TraditionalBinaryPrefix.long2String(len, "B", 2);
   }
 
-  public static synchronized String limitDecimalTo2(double d) {
-    return decimalFormat.format(d);
+  /** @deprecated use StringUtils.format("%.2f", d). */
+  @Deprecated
+  public static String limitDecimalTo2(double d) {
+    return format("%.2f", d);
   }
   
   /**
@@ -779,6 +824,28 @@ public class StringUtils {
   }
 
   /**
+   * Concatenates strings, using a separator.
+   *
+   * @param separator to join with
+   * @param strings to join
+   * @return  the joined string
+   */
+  public static String join(CharSequence separator, String[] strings) {
+    // Ideally we don't have to duplicate the code here if array is iterable.
+    StringBuilder sb = new StringBuilder();
+    boolean first = true;
+    for (String s : strings) {
+      if (first) {
+        first = false;
+      } else {
+        sb.append(separator);
+      }
+      sb.append(s);
+    }
+    return sb.toString();
+  }
+
+  /**
    * Convert SOME_STUFF to SomeStuff
    *
    * @param s input string
@@ -792,5 +859,50 @@ public class StringUtils {
       sb.append(org.apache.commons.lang.StringUtils.capitalize(word));
 
     return sb.toString();
+  }
+
+  /**
+   * Matches a template string against a pattern, replaces matched tokens with
+   * the supplied replacements, and returns the result.  The regular expression
+   * must use a capturing group.  The value of the first capturing group is used
+   * to look up the replacement.  If no replacement is found for the token, then
+   * it is replaced with the empty string.
+   * 
+   * For example, assume template is "%foo%_%bar%_%baz%", pattern is "%(.*?)%",
+   * and replacements contains 2 entries, mapping "foo" to "zoo" and "baz" to
+   * "zaz".  The result returned would be "zoo__zaz".
+   * 
+   * @param template String template to receive replacements
+   * @param pattern Pattern to match for identifying tokens, must use a capturing
+   *   group
+   * @param replacements Map<String, String> mapping tokens identified by the
+   *   capturing group to their replacement values
+   * @return String template with replacements
+   */
+  public static String replaceTokens(String template, Pattern pattern,
+      Map<String, String> replacements) {
+    StringBuffer sb = new StringBuffer();
+    Matcher matcher = pattern.matcher(template);
+    while (matcher.find()) {
+      String replacement = replacements.get(matcher.group(1));
+      if (replacement == null) {
+        replacement = "";
+      }
+      matcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+    }
+    matcher.appendTail(sb);
+    return sb.toString();
+  }
+  
+  /**
+   * Get stack trace for a given thread.
+   */
+  public static String getStackTrace(Thread t) {
+    final StackTraceElement[] stackTrace = t.getStackTrace();
+    StringBuilder str = new StringBuilder();
+    for (StackTraceElement e : stackTrace) {
+      str.append(e.toString() + "\n");
+    }
+    return str.toString();
   }
 }

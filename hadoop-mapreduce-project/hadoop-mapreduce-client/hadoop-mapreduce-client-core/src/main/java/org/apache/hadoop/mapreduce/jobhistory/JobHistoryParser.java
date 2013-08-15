@@ -246,6 +246,7 @@ public class JobHistoryParser implements HistoryEventHandler {
     attemptInfo.state = StringInterner.weakIntern(event.getState());
     attemptInfo.counters = event.getCounters();
     attemptInfo.hostname = StringInterner.weakIntern(event.getHostname());
+    info.completedTaskAttemptsMap.put(event.getAttemptId(), attemptInfo);
   }
 
   private void handleReduceAttemptFinishedEvent
@@ -262,6 +263,7 @@ public class JobHistoryParser implements HistoryEventHandler {
     attemptInfo.hostname = StringInterner.weakIntern(event.getHostname());
     attemptInfo.port = event.getPort();
     attemptInfo.rackname = StringInterner.weakIntern(event.getRackName());
+    info.completedTaskAttemptsMap.put(event.getAttemptId(), attemptInfo);
   }
 
   private void handleMapAttemptFinishedEvent(MapAttemptFinishedEvent event) {
@@ -276,6 +278,7 @@ public class JobHistoryParser implements HistoryEventHandler {
     attemptInfo.hostname = StringInterner.weakIntern(event.getHostname());
     attemptInfo.port = event.getPort();
     attemptInfo.rackname = StringInterner.weakIntern(event.getRackName());
+    info.completedTaskAttemptsMap.put(event.getAttemptId(), attemptInfo);
   }
 
   private void handleTaskAttemptFailedEvent(
@@ -292,6 +295,7 @@ public class JobHistoryParser implements HistoryEventHandler {
     attemptInfo.shuffleFinishTime = event.getFinishTime();
     attemptInfo.sortFinishTime = event.getFinishTime();
     attemptInfo.mapFinishTime = event.getFinishTime();
+    attemptInfo.counters = event.getCounters();
     if(TaskStatus.State.SUCCEEDED.toString().equals(taskInfo.status))
     {
       //this is a successful task
@@ -306,6 +310,7 @@ public class JobHistoryParser implements HistoryEventHandler {
         taskInfo.successfulAttemptId = null;
       }
     }
+    info.completedTaskAttemptsMap.put(event.getTaskAttemptId(), attemptInfo);
   }
 
   private void handleTaskAttemptStartedEvent(TaskAttemptStartedEvent event) {
@@ -343,6 +348,7 @@ public class JobHistoryParser implements HistoryEventHandler {
     taskInfo.finishTime = event.getFinishTime();
     taskInfo.error = StringInterner.weakIntern(event.getError());
     taskInfo.failedDueToAttemptId = event.getFailedAttemptID();
+    taskInfo.counters = event.getCounters();
     info.errorInfo = "Task " + taskInfo.taskId +" failed " +
     taskInfo.attemptsMap.size() + " times ";
   }
@@ -443,6 +449,7 @@ public class JobHistoryParser implements HistoryEventHandler {
     Map<JobACL, AccessControlList> jobACLs;
     
     Map<TaskID, TaskInfo> tasksMap;
+    Map<TaskAttemptID, TaskAttemptInfo> completedTaskAttemptsMap;
     List<AMInfo> amInfos;
     AMInfo latestAmInfo;
     boolean uberized;
@@ -456,6 +463,7 @@ public class JobHistoryParser implements HistoryEventHandler {
       finishedMaps = finishedReduces = 0;
       username = jobname = jobConfPath = jobQueueName = "";
       tasksMap = new HashMap<TaskID, TaskInfo>();
+      completedTaskAttemptsMap = new HashMap<TaskAttemptID, TaskAttemptInfo>();
       jobACLs = new HashMap<JobACL, AccessControlList>();
       priority = JobPriority.NORMAL;
     }
@@ -530,6 +538,8 @@ public class JobHistoryParser implements HistoryEventHandler {
     public Counters getReduceCounters() { return reduceCounters; }
     /** @return the map of all tasks in this job */
     public Map<TaskID, TaskInfo> getAllTasks() { return tasksMap; }
+    /** @return the map of all completed task attempts in this job */
+    public Map<TaskAttemptID, TaskAttemptInfo> getAllCompletedTaskAttempts() { return completedTaskAttemptsMap; }
     /** @return the priority of this job */
     public String getPriority() { return priority.toString(); }
     public Map<JobACL, AccessControlList> getJobACLs() { return jobACLs; }

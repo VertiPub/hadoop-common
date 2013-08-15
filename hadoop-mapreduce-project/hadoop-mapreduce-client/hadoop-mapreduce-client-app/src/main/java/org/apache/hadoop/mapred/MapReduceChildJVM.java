@@ -111,8 +111,6 @@ public class MapReduceChildJVM {
         MRJobConfig.STDERR_LOGFILE_ENV,
         getTaskLogFile(TaskLog.LogName.STDERR)
         );
-    environment.put(MRJobConfig.APPLICATION_ATTEMPT_ID_ENV, 
-        	conf.get(MRJobConfig.APPLICATION_ATTEMPT_ID).toString());
   }
 
   private static String getChildJavaOpts(JobConf jobConf, boolean isMapTask) {
@@ -164,7 +162,6 @@ public class MapReduceChildJVM {
 
     Vector<String> vargs = new Vector<String>(8);
 
-    vargs.add("exec");
     vargs.add(Environment.JAVA_HOME.$() + "/bin/java");
 
     // Add child (task) java-vm options.

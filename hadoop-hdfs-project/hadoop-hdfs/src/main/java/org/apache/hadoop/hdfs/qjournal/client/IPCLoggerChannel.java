@@ -133,6 +133,8 @@ public class IPCLoggerChannel implements AsyncLogger {
   private Stopwatch lastHeartbeatStopwatch = new Stopwatch();
   
   private static final long HEARTBEAT_INTERVAL_MILLIS = 1000;
+
+  private static final long WARN_JOURNAL_MILLIS_THRESHOLD = 1000;
   
   static final Factory FACTORY = new AsyncLogger.Factory() {
     @Override
@@ -371,6 +373,12 @@ public class IPCLoggerChannel implements AsyncLogger {
                 now - submitNanos, TimeUnit.NANOSECONDS);
             metrics.addWriteEndToEndLatency(endToEndTime);
             metrics.addWriteRpcLatency(rpcTime);
+            if (rpcTime / 1000 > WARN_JOURNAL_MILLIS_THRESHOLD) {
+              QuorumJournalManager.LOG.warn(
+                  "Took " + (rpcTime / 1000) + "ms to send a batch of " +
+                  numTxns + " edits (" + data.length + " bytes) to " +
+                  "remote journal " + IPCLoggerChannel.this);
+            }
           }
           synchronized (IPCLoggerChannel.this) {
             highestAckedTxId = firstTxnId + numTxns - 1;
@@ -511,12 +519,13 @@ public class IPCLoggerChannel implements AsyncLogger {
 
   @Override
   public ListenableFuture<RemoteEditLogManifest> getEditLogManifest(
-      final long fromTxnId) {
+      final long fromTxnId, final boolean forReading, 
+      final boolean inProgressOk) {
     return executor.submit(new Callable<RemoteEditLogManifest>() {
       @Override
       public RemoteEditLogManifest call() throws IOException {
         GetEditLogManifestResponseProto ret = getProxy().getEditLogManifest(
-            journalId, fromTxnId);
+            journalId, fromTxnId, forReading, inProgressOk);
         // Update the http port, since we need this to build URLs to any of the
         // returned logs.
         httpPort = ret.getHttpPort();

@@ -17,8 +17,11 @@
  */
 package org.apache.hadoop.hdfs.protocol;
 
+import java.net.URI;
+
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hdfs.DFSUtil;
@@ -40,6 +43,10 @@ public class HdfsFileStatus {
   private FsPermission permission;
   private String owner;
   private String group;
+  private long fileId;
+  
+  // Used by dir, not including dot and dotdot. Always zero for a regular file.
+  private int childrenNum;
   
   public static final byte[] EMPTY_NAME = new byte[0];
 
@@ -55,11 +62,12 @@ public class HdfsFileStatus {
    * @param owner the owner of the path
    * @param group the group of the path
    * @param path the local name in java UTF8 encoding the same as that in-memory
+   * @param fileId the file id
    */
   public HdfsFileStatus(long length, boolean isdir, int block_replication,
                     long blocksize, long modification_time, long access_time,
                     FsPermission permission, String owner, String group, 
-                    byte[] symlink, byte[] path) {
+                    byte[] symlink, byte[] path, long fileId, int childrenNum) {
     this.length = length;
     this.isdir = isdir;
     this.block_replication = (short)block_replication;
@@ -75,6 +83,8 @@ public class HdfsFileStatus {
     this.group = (group == null) ? "" : group;
     this.symlink = symlink;
     this.path = path;
+    this.fileId = fileId;
+    this.childrenNum = childrenNum;
   }
 
   /**
@@ -222,5 +232,23 @@ public class HdfsFileStatus {
   
   final public byte[] getSymlinkInBytes() {
     return symlink;
+  }
+  
+  final public long getFileId() {
+    return fileId;
+  }
+  
+  final public int getChildrenNum() {
+    return childrenNum;
+  }
+
+  final public FileStatus makeQualified(URI defaultUri, Path path) {
+    return new FileStatus(getLen(), isDir(), getReplication(),
+        getBlockSize(), getModificationTime(),
+        getAccessTime(),
+        getPermission(), getOwner(), getGroup(),
+        isSymlink() ? new Path(getSymlink()) : null,
+        (getFullPath(path)).makeQualified(
+            defaultUri, null)); // fully-qualify path
   }
 }

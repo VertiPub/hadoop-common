@@ -16,6 +16,12 @@
  * limitations under the License.
  */
 
+/**
+ * These .proto interfaces are public and stable.
+ * Please see http://wiki.apache.org/hadoop/Compatibility
+ * for what changes are allowed for a *stable* .proto interface.
+ */
+
 option java_package = "org.apache.hadoop.yarn.proto";
 option java_outer_classname = "YarnServiceProtos";
 option java_generic_services = true;
@@ -28,42 +34,50 @@ import "yarn_protos.proto";
 /////// AM_RM_Protocol ///////////////////////////////
 //////////////////////////////////////////////////////
 message RegisterApplicationMasterRequestProto {
-  optional ApplicationAttemptIdProto application_attempt_id = 1;
-  optional string host = 2;
-  optional int32 rpc_port = 3;
-  optional string tracking_url = 4;
+  optional string host = 1;
+  optional int32 rpc_port = 2;
+  optional string tracking_url = 3;
 }
 
 message RegisterApplicationMasterResponseProto {
-  optional ResourceProto minimumCapability = 1;
-  optional ResourceProto maximumCapability = 2;
+  optional ResourceProto maximumCapability = 1;
+  optional bytes client_to_am_token_master_key = 2;
   repeated ApplicationACLMapProto application_ACLs = 3;
 }
 
 message FinishApplicationMasterRequestProto {
-  optional ApplicationAttemptIdProto application_attempt_id = 1;
-  optional string diagnostics = 2;
-  optional string tracking_url = 3;
-  optional FinalApplicationStatusProto final_application_status = 4;
+  optional string diagnostics = 1;
+  optional string tracking_url = 2;
+  optional FinalApplicationStatusProto final_application_status = 3;
 }
 
 message FinishApplicationMasterResponseProto {
 }
 
 message AllocateRequestProto {
-  optional ApplicationAttemptIdProto application_attempt_id = 1;
-  repeated ResourceRequestProto ask = 2;
-  repeated ContainerIdProto release = 3;
+  repeated ResourceRequestProto ask = 1;
+  repeated ContainerIdProto release = 2;
+  optional ResourceBlacklistRequestProto blacklist_request = 3;
   optional int32 response_id = 4;
   optional float progress = 5;
 }
 
-message AllocateResponseProto {
-  optional AMResponseProto AM_response = 1;
-  optional int32 num_cluster_nodes = 2;
+message NMTokenProto {
+  optional NodeIdProto nodeId = 1; 
+  optional hadoop.common.TokenProto token = 2;
 }
 
-
+message AllocateResponseProto {
+  optional AMCommandProto a_m_command = 1;
+  optional int32 response_id = 2;
+  repeated ContainerProto allocated_containers = 3;
+  repeated ContainerStatusProto completed_container_statuses = 4;
+  optional ResourceProto limit = 5;
+  repeated NodeReportProto updated_nodes = 6;
+  optional int32 num_cluster_nodes = 7;
+  optional PreemptionMessageProto preempt = 8;
+  repeated NMTokenProto nm_tokens = 9;
+}
 
 //////////////////////////////////////////////////////
 /////// client_RM_Protocol ///////////////////////////
@@ -74,8 +88,7 @@ message GetNewApplicationRequestProto {
 
 message GetNewApplicationResponseProto {
   optional ApplicationIdProto application_id = 1;
-  optional ResourceProto minimumCapability = 2;
-  optional ResourceProto maximumCapability = 3;
+  optional ResourceProto maximumCapability = 2;
 }
 
 message GetApplicationReportRequestProto {
@@ -107,14 +120,16 @@ message GetClusterMetricsResponseProto {
   optional YarnClusterMetricsProto cluster_metrics = 1;
 }
 
-message GetAllApplicationsRequestProto {
+message GetApplicationsRequestProto {
+  repeated string application_types = 1;
 }
 
-message GetAllApplicationsResponseProto {
+message GetApplicationsResponseProto {
   repeated ApplicationReportProto applications = 1;
 }
 
 message GetClusterNodesRequestProto {
+  repeated NodeStateProto nodeStates = 1;
 }
 
 message GetClusterNodesResponseProto {
@@ -146,10 +161,11 @@ message GetQueueUserAclsInfoResponseProto {
 
 message StartContainerRequestProto {
   optional ContainerLaunchContextProto container_launch_context = 1;
+  optional hadoop.common.TokenProto container_token = 2;
 }
 
 message StartContainerResponseProto {
-  repeated StringBytesMapProto service_response = 1;
+  repeated StringBytesMapProto services_meta_data = 1;
 }
 
 message StopContainerRequestProto {
@@ -165,4 +181,38 @@ message GetContainerStatusRequestProto {
 
 message GetContainerStatusResponseProto {
   optional ContainerStatusProto status = 1;
+}
+
+//// bulk API records
+message StartContainersRequestProto {
+  repeated StartContainerRequestProto start_container_request = 1;
+}
+
+message ContainerExceptionMapProto {
+  optional ContainerIdProto container_id = 1;
+  optional SerializedExceptionProto exception = 2;
+}
+
+message StartContainersResponseProto {
+  repeated StringBytesMapProto services_meta_data = 1;
+  repeated ContainerIdProto succeeded_requests = 2;
+  repeated ContainerExceptionMapProto failed_requests = 3;
+}
+
+message StopContainersRequestProto {
+  repeated ContainerIdProto container_id = 1;
+}
+
+message StopContainersResponseProto {
+  repeated ContainerIdProto succeeded_requests = 1;
+  repeated ContainerExceptionMapProto failed_requests = 2;
+}
+
+message GetContainerStatusesRequestProto {
+  repeated ContainerIdProto container_id = 1;
+}
+
+message GetContainerStatusesResponseProto {
+  repeated ContainerStatusProto status = 1;
+  repeated ContainerExceptionMapProto failed_requests = 2;
 }

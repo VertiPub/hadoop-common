@@ -18,6 +18,7 @@
 package org.apache.hadoop.ha;
 
 import static org.junit.Assert.*;
+import static org.junit.Assume.assumeTrue;
 
 import java.security.NoSuchAlgorithmException;
 
@@ -28,6 +29,7 @@ import org.apache.hadoop.ha.HAServiceProtocol.StateChangeRequestInfo;
 import org.apache.hadoop.ha.HealthMonitor.State;
 import org.apache.hadoop.ha.MiniZKFCCluster.DummyZKFC;
 import org.apache.hadoop.test.GenericTestUtils;
+import org.apache.hadoop.util.Shell;
 import org.apache.hadoop.util.Time;
 import org.apache.log4j.Level;
 import org.apache.zookeeper.KeeperException;
@@ -66,6 +68,8 @@ public class TestZKFailoverController extends ClientBaseWithFixes {
   
   @Before
   public void setupConfAndServices() {
+    // skip tests on Windows until after resolution of ZooKeeper client bug
+    assumeTrue(!Shell.WINDOWS);
     conf = new Configuration();
     conf.set(ZKFailoverController.ZK_ACL_KEY, TEST_ACL);
     conf.set(ZKFailoverController.ZK_AUTH_KEY, TEST_AUTH_GOOD);
@@ -418,7 +422,7 @@ public class TestZKFailoverController extends ClientBaseWithFixes {
     }
   }
   
-  @Test(timeout=15000)
+  @Test(timeout=25000)
   public void testGracefulFailover() throws Exception {
     try {
       cluster.start();
@@ -426,11 +430,16 @@ public class TestZKFailoverController extends ClientBaseWithFixes {
       cluster.waitForActiveLockHolder(0);
       cluster.getService(1).getZKFCProxy(conf, 5000).gracefulFailover();
       cluster.waitForActiveLockHolder(1);
+
       cluster.getService(0).getZKFCProxy(conf, 5000).gracefulFailover();
       cluster.waitForActiveLockHolder(0);
-      
+
+      Thread.sleep(10000); // allow to quiesce
+
       assertEquals(0, cluster.getService(0).fenceCount);
       assertEquals(0, cluster.getService(1).fenceCount);
+      assertEquals(2, cluster.getService(0).activeTransitionCount);
+      assertEquals(1, cluster.getService(1).activeTransitionCount);
     } finally {
       cluster.stop();
     }

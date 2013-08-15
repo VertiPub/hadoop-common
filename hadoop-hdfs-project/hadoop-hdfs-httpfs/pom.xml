@@ -22,12 +22,12 @@
   <parent>
     <groupId>org.apache.hadoop</groupId>
     <artifactId>hadoop-project</artifactId>
-    <version>2.0.3-SNAPSHOT</version>
+    <version>2.3.0-SNAPSHOT</version>
     <relativePath>../../hadoop-project</relativePath>
   </parent>
   <groupId>org.apache.hadoop</groupId>
   <artifactId>hadoop-hdfs-httpfs</artifactId>
-  <version>2.0.3-SNAPSHOT</version>
+  <version>2.3.0-SNAPSHOT</version>
   <packaging>war</packaging>
 
   <name>Apache Hadoop HttpFS</name>
@@ -539,15 +539,8 @@
 
                     <!-- Using Unix script to preserve file permissions -->
                     <echo file="${project.build.directory}/tomcat-untar.sh">
-
-                      which cygpath 2&gt; /dev/null
-                      if [ $? = 1 ]; then
-                      BUILD_DIR="${project.build.directory}"
-                      else
-                      BUILD_DIR=`cygpath --unix '${project.build.directory}'`
-                      fi
-                      cd $BUILD_DIR/tomcat.exp
-                      tar xzf ${basedir}/downloads/apache-tomcat-${tomcat.version}.tar.gz
+                      cd "${project.build.directory}/tomcat.exp"
+                      gzip -cd ../../downloads/apache-tomcat-${tomcat.version}.tar.gz | tar xf -
                     </echo>
                     <exec executable="sh" dir="${project.build.directory}" failonerror="true">
                       <arg line="./tomcat-untar.sh"/>
@@ -561,6 +554,7 @@
                     <delete file="${httpfs.tomcat.dist.dir}/conf/server.xml"/>
                     <copy file="${basedir}/src/main/tomcat/server.xml"
                           toDir="${httpfs.tomcat.dist.dir}/conf"/>
+                    <delete file="${httpfs.tomcat.dist.dir}/conf/logging.properties"/>
                     <copy file="${basedir}/src/main/tomcat/logging.properties"
                           toDir="${httpfs.tomcat.dist.dir}/conf"/>
                     <copy toDir="${httpfs.tomcat.dist.dir}/webapps/ROOT">
@@ -582,15 +576,8 @@
                   <target if="tar">
                     <!-- Using Unix script to preserve symlinks -->
                     <echo file="${project.build.directory}/dist-maketar.sh">
-
-                      which cygpath 2&gt; /dev/null
-                      if [ $? = 1 ]; then
-                      BUILD_DIR="${project.build.directory}"
-                      else
-                      BUILD_DIR=`cygpath --unix '${project.build.directory}'`
-                      fi
-                      cd $BUILD_DIR
-                      tar czf ${project.artifactId}-${project.version}.tar.gz ${project.artifactId}-${project.version}
+                      cd "${project.build.directory}"
+                      tar cf - ${project.artifactId}-${project.version} | gzip > ${project.artifactId}-${project.version}.tar.gz
                     </echo>
                     <exec executable="sh" dir="${project.build.directory}" failonerror="true">
                       <arg line="./dist-maketar.sh"/>

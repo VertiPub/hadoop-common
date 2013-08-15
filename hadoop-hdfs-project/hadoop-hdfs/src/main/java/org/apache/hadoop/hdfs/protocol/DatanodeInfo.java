@@ -17,10 +17,13 @@
  */
 package org.apache.hadoop.hdfs.protocol;
 
+import static org.apache.hadoop.hdfs.DFSUtil.percent2String;
+
 import java.util.Date;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
+import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DFSUtil;
 import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.net.NetworkTopology;
@@ -201,10 +204,10 @@ public class DatanodeInfo extends DatanodeID implements Node {
     this.xceiverCount = xceiverCount; 
   }
 
-  /** rack name */
+  /** network location */
   public synchronized String getNetworkLocation() {return location;}
     
-  /** Sets the rack name */
+  /** Sets the network location */
   public synchronized void setNetworkLocation(String location) {
     this.location = NodeBase.normalize(location);
   }
@@ -242,8 +245,8 @@ public class DatanodeInfo extends DatanodeID implements Node {
     buffer.append("DFS Used: "+u+" ("+StringUtils.byteDesc(u)+")"+"\n");
     buffer.append("Non DFS Used: "+nonDFSUsed+" ("+StringUtils.byteDesc(nonDFSUsed)+")"+"\n");
     buffer.append("DFS Remaining: " +r+ " ("+StringUtils.byteDesc(r)+")"+"\n");
-    buffer.append("DFS Used%: "+StringUtils.limitDecimalTo2(usedPercent)+"%\n");
-    buffer.append("DFS Remaining%: "+StringUtils.limitDecimalTo2(remainingPercent)+"%\n");
+    buffer.append("DFS Used%: "+percent2String(usedPercent) + "\n");
+    buffer.append("DFS Remaining%: "+percent2String(remainingPercent) + "\n");
     buffer.append("Last contact: "+new Date(lastUpdate)+"\n");
     return buffer.toString();
   }
@@ -267,7 +270,7 @@ public class DatanodeInfo extends DatanodeID implements Node {
     }
     buffer.append(" " + c + "(" + StringUtils.byteDesc(c)+")");
     buffer.append(" " + u + "(" + StringUtils.byteDesc(u)+")");
-    buffer.append(" " + StringUtils.limitDecimalTo2(((1.0*u)/c)*100)+"%");
+    buffer.append(" " + percent2String(u/(double)c));
     buffer.append(" " + r + "(" + StringUtils.byteDesc(r)+")");
     buffer.append(" " + new Date(lastUpdate));
     return buffer.toString();
@@ -324,7 +327,7 @@ public class DatanodeInfo extends DatanodeID implements Node {
    * Check if the datanode is in stale state. Here if 
    * the namenode has not received heartbeat msg from a 
    * datanode for more than staleInterval (default value is
-   * {@link DFSConfigKeys#DFS_NAMENODE_STALE_DATANODE_INTERVAL_MILLI_DEFAULT}),
+   * {@link DFSConfigKeys#DFS_NAMENODE_STALE_DATANODE_INTERVAL_DEFAULT}),
    * the datanode will be treated as stale node.
    * 
    * @param staleInterval

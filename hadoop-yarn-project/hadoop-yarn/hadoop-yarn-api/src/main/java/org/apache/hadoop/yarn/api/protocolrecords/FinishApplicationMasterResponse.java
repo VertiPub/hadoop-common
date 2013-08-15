@@ -18,9 +18,12 @@
 
 package org.apache.hadoop.yarn.api.protocolrecords;
 
+import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Stable;
-import org.apache.hadoop.yarn.api.AMRMProtocol;
+import org.apache.hadoop.classification.InterfaceStability.Unstable;
+import org.apache.hadoop.yarn.api.ApplicationMasterProtocol;
+import org.apache.hadoop.yarn.util.Records;
 
 /**
  * <p>The response sent by the <code>ResourceManager</code> to a 
@@ -28,10 +31,16 @@ import org.apache.hadoop.yarn.api.AMRMProtocol;
  * 
  * <p>Currently, this is empty.</p>
  * 
- * @see AMRMProtocol#finishApplicationMaster(FinishApplicationMasterRequest)
+ * @see ApplicationMasterProtocol#finishApplicationMaster(FinishApplicationMasterRequest)
  */
 @Public
 @Stable
-public interface FinishApplicationMasterResponse {
-
+public abstract class FinishApplicationMasterResponse {
+  @Private
+  @Unstable
+  public static FinishApplicationMasterResponse newInstance() {
+    FinishApplicationMasterResponse response =
+        Records.newRecord(FinishApplicationMasterResponse.class);
+    return response;
+  }
 }
