@@ -208,8 +208,7 @@ class JobSubmitter {
       for (String tmpjars: libjarsArr) {
         Path tmp = new Path(tmpjars);
         Path newPath = copyRemoteFiles(libjarsDir, tmp, conf, replication);
-        DistributedCache.addFileToClassPath(
-            new Path(newPath.toUri().getPath()), conf);
+        DistributedCache.addFileToClassPath(newPath, conf);
       }
     }
       
