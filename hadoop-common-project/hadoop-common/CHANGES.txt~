@@ -8,7 +8,324 @@ Release 2.2.0 - 2013-10-13
     (sanjay via suresh)
 
   NEW FEATURES
-    HADOOP-9623. Update jet3t dependency to 0.9.0 (Amandeep Khurana via Colin Patrick McCabe)
+<<<<<<< HEAD
+=======
+    
+  IMPROVEMENTS
+
+    HADOOP-8017. Configure hadoop-main pom to get rid of M2E plugin execution
+    not covered (Eric Charles via bobby)
+
+    HADOOP-8015. ChRootFileSystem should extend FilterFileSystem 
+    (Daryn Sharp via bobby)
+
+    HADOOP-7595. Upgrade dependency to Avro 1.5.3. (Alejandro Abdelnur via atm)
+
+    HADOOP-7664. Remove warmings when overriding final parameter configuration
+    if the override value is same as the final parameter value.
+    (Ravi Prakash via suresh)
+
+    HADOOP-8078. Add capability to turn on security in unit tests. (Jaimin Jetly
+    via jitendra)
+
+    HADOOP-7757. Test file reference count is at least 3x actual value (Jon
+    Eagles via bobby)
+
+    HADOOP-8147. test-patch should run tests with -fn to avoid masking test
+    failures (Robert Evans via tgraves)
+
+    HADOOP-8290. Remove remaining references to hadoop.native.lib (harsh)
+
+    HADOOP-8308. Support cross-project Jenkins builds. (tomwhite)
+
+    HADOOP-8297. Writable javadocs don't carry default constructor (harsh)
+
+    HADOOP-8360. empty-configuration.xml fails xml validation
+    (Radim Kolar via harsh)
+
+    HADOOP-7659. fs -getmerge isn't guaranteed to work well over non-HDFS
+    filesystems (harsh)
+
+    HADOOP-8059. Add javadoc to InterfaceAudience and InterfaceStability.
+    (Brandon Li via suresh)
+
+    HADOOP-8434. Add tests for Configuration setter methods.
+    (Madhukara Phatak via suresh)
+
+    HADOOP-8523. test-patch.sh doesn't validate patches before building
+    (Jack Dintruff via jeagles)
+
+    HADOOP-8719. Workaround for kerberos-related log errors upon running any
+    hadoop command on OSX. (Jianbin Wei via harsh)
+
+    HADOOP-8588. SerializationFactory shouldn't throw a
+    NullPointerException if the serializations list is empty.
+    (Sho Shimauchi via harsh)
+
+    HADOOP-7930. Kerberos relogin interval in UserGroupInformation
+    should be configurable (Robert Kanter via harsh)
+
+    HADOOP-8838. Colorize the test-patch output sent to JIRA (Harsh J via
+    bobby)
+
+    HADOOP-8840. Fix the test-patch colorizer to cover all sorts of +1 lines.
+    (Harsh J via bobby)
+
+    HADOOP-8864. Addendum to HADOOP-8840: Add a coloring case for +0 results
+    too. (harsh)
+
+    HADOOP-8910. Add examples to GlobExpander#expand method. (suresh)
+
+    HADOOP-8920. Add more javadoc to metrics2 related classes. (suresh)
+
+    HADOOP-8776. Provide an option in test-patch that can enable/disable
+    compiling native code. (Chris Nauroth via suresh)
+
+    HADOOP-6616. Improve documentation for rack awareness. (Adam Faris via 
+    jghoman)
+
+    HADOOP-9075. FileContext#FSLinkResolver should be made static.
+    (Arpit Agarwal via suresh)
+
+    HADOOP-9277. Improve javadoc for FileContext. (Andrew Wang via suresh)
+
+    HADOOP-9258 Add stricter tests to FileSystemContractTestBase (stevel)
+
+    HADOOP-9486. Promoted Windows and Shell related utils from YARN to Hadoop
+    Common. (Chris Nauroth via vinodkv)
+
+    HADOOP-9540. Expose the InMemoryS3 and S3N FilesystemStores implementations
+    for Unit testing. (Hari via stevel)
+
+    HADOOP-8844. Add a plaintext fs -text test-case.
+    (Akira AJISAKA via harsh)
+
+    HADOOP-9432 Add support for markdown .md files in site documentation (stevel)
+
+    HADOOP-9186.  test-patch.sh should report build failure to JIRA.
+    (Binglin Chang via Colin Patrick McCabe)
+
+    HADOOP-9833 move slf4j to version 1.7.5 (Kousuke Saruta via stevel)
+
+    HADOOP-9623 Update jets3t dependency to 0.9.0.  (Amandeep Khurana via Colin
+    Patrick McCabe)
+
+  BUG FIXES
+
+    HADOOP-9451. Fault single-layer config if node group topology is enabled.
+    (Junping Du via llu)
+
+    HADOOP-8419. Fixed GzipCode NPE reset for IBM JDK. (Yu Li via eyang)
+
+    HADOOP-8177. MBeans shouldn't try to register when it fails to create MBeanName.
+    (Devaraj K via umamahesh)
+
+    HADOOP-8018.  Hudson auto test for HDFS has started throwing javadoc
+    (Jon Eagles via bobby)
+
+    HADOOP-7610. Fix for hadoop debian package (Eric Yang via gkesavan)
+
+    HADOOP-7641. Add Apache License to template config files.
+    (Eric Yang via atm)
+
+    HADOOP-7621. alfredo config should be in a file not readable by users
+    (Alejandro Abdelnur via atm)
+    
+    HADOOP-7669  Fix newly introduced release audit warning. 
+    (Uma Maheswara Rao G via stevel)
+    
+    HADOOP-6220. HttpServer wraps InterruptedExceptions by IOExceptions 
+    if interrupted in startup (stevel)
+
+    HADOOP-7703. Improved exception handling of shutting down web server.
+    (Devaraj K via Eric Yang)
+
+    HADOOP-7704. Reduce number of object created by JMXJsonServlet.
+    (Devaraj K via Eric Yang)
+
+    HADOOP-7769. TestJMXJsonServlet is failing. (tomwhite)
+
+    HADOOP-7770. ViewFS getFileChecksum throws FileNotFoundException for files in 
+    /tmp and /user. (Ravi Prakash via jitendra)
+
+    HADOOP-8141. Add method to SecurityUtil to init krb5 cipher suites.
+    (todd)
+
+    HADOOP-7788. Add simple HealthMonitor class to watch an HAService (todd)
+
+    HADOOP-8312. testpatch.sh should provide a simpler way to see which
+    warnings changed (bobby)
+
+    HADOOP-8339. jenkins complaining about 16 javadoc warnings 
+    (Tom White and Robert Evans via tgraves)
+
+    HADOOP-8354. test-patch findbugs may fail if a dependent module is changed
+    (Tom White and Robert Evans)
+
+    HADOOP-8375. test-patch should stop immediately once it has found
+    compilation errors (bobby)
+
+    HADOOP-8395. Text shell command unnecessarily demands that a
+    SequenceFile's key class be WritableComparable (harsh)
+
+    HADOOP-8413. test-patch.sh gives out the wrong links for
+    newPatchFindbugsWarnings (Colin Patrick McCabe via bobby)
+
+    HADOOP-6871. When the value of a configuration key is set to its
+    unresolved form, it causes the IllegalStateException in
+    Configuration.get() stating that substitution depth is too large.
+    (Arvind Prabhakar via harsh)
+
+    HADOOP-8548. test-patch.sh shows an incorrect link in Jekins builds
+    (Kihwal Lee via bobby)
+
+    HADOOP-8110. Fix trash checkpoint collisions (Jason Lowe via daryn)
+
+    HADOOP-8584. test-patch.sh should not immediately exit when no
+    tests are added or modified. (Colin Patrick McCabe via eli)
+
+    HADOOP-8521. Port StreamInputFormat to new Map Reduce API (madhukara
+    phatak via bobby)
+
+    HADOOP-8593. Add missed @Override annotations in Metric/Metrics2 package.
+    (Brandon Li via suresh)
+
+    HADOOP-8623. hadoop jar command should respect HADOOP_OPTS.
+    (Steven Willis via suresh)
+
+    HADOOP-8684. Deadlock between WritableComparator and WritableComparable.
+    (Jing Zhao via suresh)
+
+    HADOOP-8786. HttpServer continues to start even if AuthenticationFilter
+    fails to init (todd)
+
+    HADOOP-8767. Secondary namenode is started on slave nodes instead of
+    master nodes. (Giovanni Delussu via suresh)
+
+    HADOOP-8818. Use equals instead == in MD5MD5CRC32FileChecksum
+    and TFileDumper. (Brandon Li via suresh)
+
+    HADOOP-8821. Fix findbugs warning related to concatenating string in a 
+    for loop in Configuration#dumpDeprecatedKeys(). (suresh)
+
+    HADOOP-7256. Resource leak during failure scenario of closing
+    of resources. (Ramkrishna S. Vasudevan via harsh)
+
+    HADOOP-8151. Error handling in snappy decompressor throws invalid
+    exceptions. (Matt Foley via harsh)
+
+    HADOOP-8813. Add InterfaceAudience and InterfaceStability annotations
+    to RPC Server and Client classes. (Brandon Li via suresh)
+
+    HADOOP-8815. RandomDatum needs to override hashCode().
+    (Brandon Li via suresh)
+
+    HADOOP-8436. NPE In getLocalPathForWrite ( path, conf ) when the
+    required context item is not configured
+    (Brahma Reddy Battula via harsh)
+
+    HADOOP-8386. hadoop script doesn't work if 'cd' prints to stdout
+    (default behavior in some bash setups (esp. Ubuntu))
+    (Chiristopher Berner and Andy Isaacson via harsh)
+
+    HADOOP-8839. test-patch's -1 on @author tag presence doesn't cause
+    a -1 to the overall result (harsh)
+
+    HADOOP-8918. test-patch.sh is parsing modified files wrong.
+    (Raja Aluri via suresh)
+
+    HADOOP-8974. TestDFVariations fails on Windows. (Chris Nauroth via suresh)
+
+    HADOOP-9037. Bug in test-patch.sh and precommit build process (Kihwal Lee
+    via jlowe)
+
+    HADOOP-9121. InodeTree.java has redundant check for vName while 
+    throwing exception. (Arup Malakar via suresh)
+
+    HADOOP-9131. Turn off TestLocalFileSystem#testListStatusWithColons on
+    Windows. (Chris Nauroth via suresh)
+
+    HADOOP-9139. improve killKdc.sh (Ivan A. Veselovsky via bobby)
+
+    HADOOP-9202. test-patch.sh fails during mvn eclipse:eclipse if patch adds
+    a new module to the build (Chris Nauroth via bobby)
+
+    HADOOP-9249. hadoop-maven-plugins version-info goal causes build failure
+    when running with Clover. (Chris Nauroth via suresh)
+
+    HADOOP-9393. TestRPC fails with JDK7. (Andrew Wang via atm)
+
+    HADOOP-9394. Port findHangingTest.sh from HBase to Hadoop. (Andrew Wang
+    via atm)
+
+    HADOOP-9099. NetUtils.normalizeHostName fails on domains where 
+    UnknownHost resolves to an IP address. (Ivan Mitic via suresh)
+
+    HADOOP-9431 TestSecurityUtil#testLocalHostNameForNullOrWild on systems where hostname
+    contains capital letters  (Chris Nauroth via sanjay)
+
+    HADOOP-9261 S3n filesystem can move a directory under itself -and so lose data
+    (fixed in HADOOP-9258) (stevel)
+
+    HADOOP-9265 S3 blockstore filesystem breaks part of the Filesystem contract
+    (fixed in HADOOP-9258) (stevel)
+
+    HADOOP-9433 TestLocalFileSystem#testHasFileDescriptor leaks file handle
+    (Chris Nauroth via sanjay)
+
+    HADOOP-9583. test-patch gives +1 despite build failure when running tests.
+    (jlowe via kihwal)
+
+    HADOOP-9847. TestGlobPath symlink tests fail to cleanup properly.
+    (cmccabe via wang)
+
+    HADOOP-9740. Fix FsShell '-text' command to be able to read Avro
+    files stored in HDFS and other filesystems. (Allan Yan via cutting)
+
+  OPTIMIZATIONS
+
+    HADOOP-7761. Improve the performance of raw comparisons. (todd)
+
+    HADOOP-8589 ViewFs tests fail when tests and home dirs are nested (sanjay Radia)
+
+Release 2.3.0 - UNRELEASED
+
+  INCOMPATIBLE CHANGES
+
+  NEW FEATURES
+
+    HADOOP-8545. Filesystem Implementation for OpenStack Swift
+    (Dmitry Mezhensky, David Dobbins, Stevel via stevel)
+
+  IMPROVEMENTS
+
+    HADOOP-9784. Add a builder for HttpServer. (Junping Du via llu)
+
+    HADOOP 9871. Fix intermittent findbugs warnings in DefaultMetricsSystem.
+    (Junping Du via llu)
+
+    HADOOP-9319. Update bundled LZ4 source to r99. (Binglin Chang via llu)
+
+    HADOOP-9241. DU refresh interval is not configurable (harsh)
+
+    HADOOP-9417.  Support for symlink resolution in LocalFileSystem /
+    RawLocalFileSystem.  (Andrew Wang via Colin Patrick McCabe)
+
+    HADOOP-9703.  org.apache.hadoop.ipc.Client leaks threads on stop.
+    (Tsuyoshi OZAWA vi Colin Patrick McCabe)
+
+    HADOOP-9618.  Add thread which detects GC pauses.
+    (Todd Lipcon via Colin Patrick McCabe)
+
+    HADOOP-9435.  Support building the JNI code against the IBM JVM.
+    (Tian Hong Wang via Colin Patrick McCabe)
+
+    HADOOP-9848. Create a MiniKDC for use with security testing. 
+    (ywskycn via tucu)
+
+    HADOOP-9860. Remove class HackedKeytab and HackedKeytabEncoder from 
+    hadoop-minikdc once jira DIRSERVER-1882 solved. (ywskycn via tucu)
+>>>>>>> a2a9693... HADOOP-9623. Update jet3t dependency to 0.9.0 (Amandeep Khurana via Colin Patrick McCabe)
 
     HDFS-4817.  Make HDFS advisory caching configurable on a per-file basis.
     (Contributed by Colin Patrick McCabe)
