@@ -247,7 +247,7 @@ public class PathData implements Comparable<PathData> {
     // check getPath() so scheme slashes aren't considered part of the path
     String separator = uri.getPath().endsWith(Path.SEPARATOR)
         ? "" : Path.SEPARATOR;
-    return uri + separator + basename;
+    return new Path(uri).toString() + separator + basename;
   }
   
   protected enum PathType { HAS_SCHEME, SCHEMELESS_ABSOLUTE, RELATIVE };
@@ -300,7 +300,7 @@ public class PathData implements Comparable<PathData> {
             if (globUri.getAuthority() == null) {
               matchUri = removeAuthority(matchUri);
             }
-            globMatch = matchUri.toString();
+            globMatch = new Path(matchUri).toString();
             break;
           case SCHEMELESS_ABSOLUTE: // take just the uri's path
             globMatch = matchUri.getPath();
@@ -411,7 +411,7 @@ public class PathData implements Comparable<PathData> {
 
   /** Construct a URI from a String with unescaped special characters
    *  that have non-standard sematics. e.g. /, ?, #. A custom parsing
-   *  is needed to prevent misbihaviors.
+   *  is needed to prevent misbehaviors.
    *  @param pathString The input path in string form
    *  @return URI
    */
