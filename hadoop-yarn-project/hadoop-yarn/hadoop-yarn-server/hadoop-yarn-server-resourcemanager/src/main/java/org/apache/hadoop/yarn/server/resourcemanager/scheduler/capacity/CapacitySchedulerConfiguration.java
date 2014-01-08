@@ -133,6 +133,10 @@ public class CapacitySchedulerConfiguration extends Configuration {
      PREFIX + "node-locality-delay";
 
   @Private 
+  public static final String SCHEDULE_ASYNCHRONOUSLY = 
+     PREFIX + "schedule-asynchronously";
+  
+  @Private 
   public static final int DEFAULT_NODE_LOCALITY_DELAY = -1;
 
   public CapacitySchedulerConfiguration() {
@@ -349,5 +353,13 @@ public class CapacitySchedulerConfiguration extends Configuration {
         RESOURCE_CALCULATOR_CLASS, 
         resourceCalculatorClass, 
         ResourceCalculator.class);
+  }
+  
+  public boolean getScheduleAynschronously() {
+    return getBoolean(SCHEDULE_ASYNCHRONOUSLY, true);
+  }
+
+  public void setScheduleAynschronously(boolean async) {
+    setBoolean(SCHEDULE_ASYNCHRONOUSLY, async);
   }
 }
