@@ -120,6 +120,7 @@ import org.apache.hadoop.oncrpc.security.SysSecurityHandler;
 import org.apache.hadoop.oncrpc.security.Verifier;
 import org.apache.hadoop.oncrpc.security.VerifierNone;
 import org.apache.hadoop.security.AccessControlException;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
@@ -476,7 +477,12 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
     try {
       // Use superUserClient to get file attr since we don't know whether the
       // NFS client user has access permission to the file
-      attrs = writeManager.getFileAttr(superUserClient, handle, iug);
+      if(UserGroupInformation.isSecurityEnabled()){
+        attrs = writeManager.getFileAttr(dfsClient, handle, iug);
+      } else {
+        attrs = writeManager.getFileAttr(superUserClient, handle, iug);
+      }
+
       if (attrs == null) {
         LOG.error("Can't get path for fileId:" + handle.getFileId());
         return new ACCESS3Response(Nfs3Status.NFS3ERR_STALE);
@@ -597,8 +603,13 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       // Only do access check.
       try {
         // Don't read from cache. Client may not have read permission.
-        attrs = Nfs3Utils.getFileAttr(superUserClient,
+        if (UserGroupInformation.isSecurityEnabled()){
+          attrs = Nfs3Utils.getFileAttr(dfsClient,
+                  Nfs3Utils.getFileIdPath(handle), iug);
+        } else {
+          attrs = Nfs3Utils.getFileAttr(superUserClient,
             Nfs3Utils.getFileIdPath(handle), iug);
+        }
       } catch (IOException e) {
         if (LOG.isDebugEnabled()) {
           LOG.debug("Get error accessing file, fileId:" + handle.getFileId());
