@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.security.PrivilegedExceptionAction;
 import java.util.concurrent.ExecutionException;
 
+import com.google.common.base.Preconditions;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -39,6 +40,7 @@ import com.google.common.cache.RemovalNotification;
  * A cache saves DFSClient objects for different users
  */
 class DFSClientCache {
+  public static final String ROOT_USER = "root";
   private static final Log LOG = LogFactory.getLog(DFSClientCache.class);
   /**
    * Cache that maps User id to corresponding DFSClient.
@@ -66,9 +68,10 @@ class DFSClientCache {
     return new CacheLoader<String, DFSClient>() {
       @Override
       public DFSClient load(String userName) throws Exception {
-        UserGroupInformation ugi = UserGroupInformation
-            .createRemoteUser(userName);
-
+        UserGroupInformation ugi = getUserGroupInformation(
+                userName,
+                UserGroupInformation.isSecurityEnabled(),
+                UserGroupInformation.getCurrentUser());
         // Guava requires CacheLoader never returns null.
         return ugi.doAs(new PrivilegedExceptionAction<DFSClient>() {
           public DFSClient run() throws IOException {
@@ -77,6 +80,46 @@ class DFSClientCache {
         });
       }
     };
+  }
+
+  /**
+   * This method uses the currentUser, userName, and security
+   * enabled status to generate the correct UserGroupInformation.
+   * This allows NFS to switch to current user when it's mounting
+   * as root, and use the proxy user settings otherwise.
+   * This intentionally does not validate the proxyuser settings,
+   * and relies on the server to properly authorize the user.
+   * @param userName
+   * @param securityEnabled
+   * @param currentUser
+   * @return UserGroupInformation depending on security settings
+   * @throws IOException
+   */
+  UserGroupInformation getUserGroupInformation(
+          String userName,
+          boolean securityEnabled,
+          UserGroupInformation currentUser)
+          throws IOException {
+    Preconditions.checkNotNull(userName);
+    Preconditions.checkNotNull(currentUser);
+    UserGroupInformation ugi = null;
+    if (securityEnabled){
+      ugi = currentUser;
+      if (!userName.equals(ROOT_USER)){
+        ugi = UserGroupInformation.createProxyUser(userName, ugi);
+      }
+      if (LOG.isDebugEnabled()){
+        LOG.debug(String.format("Security is enabled and created ugi:" +
+                " %s for username: %s", ugi, userName));
+      }
+    } else {
+      ugi = UserGroupInformation.createRemoteUser(userName);
+      if (LOG.isDebugEnabled()){
+        LOG.debug(String.format("Security is disabled and created ugi:" +
+                " %s for username: %s", ugi, userName));
+      }
+    }
+    return ugi;
   }
 
   private RemovalListener<String, DFSClient> clientRemovealListener() {
