@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.EnumSet;
 
 import org.apache.commons.logging.Log;
@@ -1653,6 +1654,7 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       int wtmax = MAX_WRITE_TRANSFER_SIZE;
       int dtperf = MAX_READDIR_TRANSFER_SIZE;
       LOG.debug(String.format("Calling getFileAttr with client: %s for user: %s", dfsClient, securityHandler.getUser()));
+      LOG.debug("Call stack " + Arrays.toString(new Throwable().getStackTrace()));
       Nfs3FileAttributes attrs = Nfs3Utils.getFileAttr(dfsClient,
           Nfs3Utils.getFileIdPath(handle), iug);
       if (attrs == null) {
