@@ -104,10 +104,7 @@ class DFSClientCache {
     Preconditions.checkNotNull(currentUser);
     UserGroupInformation ugi = null;
     if (securityEnabled){
-      ugi = currentUser;
-      if (!userName.equals(ROOT_USER)){
-        ugi = UserGroupInformation.createProxyUser(userName, ugi);
-      }
+      ugi = UserGroupInformation.createProxyUser(userName, currentUser);
       if (LOG.isDebugEnabled()){
         LOG.debug(String.format("Security is enabled and created ugi:" +
                 " %s for username: %s", ugi, userName));

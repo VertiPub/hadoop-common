@@ -478,10 +478,7 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       // Use superUserClient to get file attr since we don't know whether the
       // NFS client user has access permission to the file
       if(UserGroupInformation.isSecurityEnabled()){
-        attrs = writeManager.getFileAttr(
-                clientCache.get(securityHandler.getUser()),
-                handle,
-                iug);
+        attrs = writeManager.getFileAttr(dfsClient, handle, iug);
       } else {
         attrs = writeManager.getFileAttr(superUserClient, handle, iug);
       }
@@ -608,7 +605,7 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
         // Don't read from cache. Client may not have read permission.
         if (UserGroupInformation.isSecurityEnabled()){
           attrs = Nfs3Utils.getFileAttr(
-                  clientCache.get(securityHandler.getUser()),
+                  dfsClient,
                   Nfs3Utils.getFileIdPath(handle),
                   iug);
         } else {
@@ -1655,7 +1652,7 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       int rtmax = MAX_READ_TRANSFER_SIZE;
       int wtmax = MAX_WRITE_TRANSFER_SIZE;
       int dtperf = MAX_READDIR_TRANSFER_SIZE;
-
+      LOG.debug(String.format("Calling getFileAttr with client: %s for user: %s", dfsClient, securityHandler.getUser()));
       Nfs3FileAttributes attrs = Nfs3Utils.getFileAttr(dfsClient,
           Nfs3Utils.getFileIdPath(handle), iug);
       if (attrs == null) {
