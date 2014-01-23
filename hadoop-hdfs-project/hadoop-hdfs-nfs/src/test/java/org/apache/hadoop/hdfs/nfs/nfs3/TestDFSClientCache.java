@@ -24,7 +24,6 @@ import static org.junit.Assert.assertThat;
 import static org.hamcrest.core.Is.is;
 
 import java.io.IOException;
-import java.lang.reflect.Field;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
@@ -66,7 +65,7 @@ public class TestDFSClientCache {
     conf.set(FileSystem.FS_DEFAULT_NAME_KEY, "hdfs://localhost");
     DFSClientCache cache = new DFSClientCache(conf);
     UserGroupInformation ugiResult
-            = cache.getUserGroupInformation(userName, true, currentUserUgi);
+            = cache.getUserGroupInformation(userName, currentUserUgi);
 
     assertThat(ugiResult.getUserName(), is(userName));
     assertThat(ugiResult.getRealUser(), is(currentUserUgi));

@@ -69,7 +69,6 @@ class DFSClientCache {
       public DFSClient load(String userName) throws Exception {
         UserGroupInformation ugi = getUserGroupInformation(
                 userName,
-                UserGroupInformation.isSecurityEnabled(),
                 UserGroupInformation.getCurrentUser());
         // Guava requires CacheLoader never returns null.
         return ugi.doAs(new PrivilegedExceptionAction<DFSClient>() {
@@ -88,32 +87,22 @@ class DFSClientCache {
    * as root, and use the proxy user settings otherwise.
    * This intentionally does not validate the proxyuser settings,
    * and relies on the server to properly authorize the user.
+   *
    * @param userName
-   * @param securityEnabled
    * @param currentUser
    * @return UserGroupInformation depending on security settings
    * @throws IOException
    */
   UserGroupInformation getUserGroupInformation(
           String userName,
-          boolean securityEnabled,
           UserGroupInformation currentUser)
           throws IOException {
     Preconditions.checkNotNull(userName);
     Preconditions.checkNotNull(currentUser);
-    UserGroupInformation ugi = null;
-    if (securityEnabled){
-      ugi = UserGroupInformation.createProxyUser(userName, currentUser);
-      if (LOG.isDebugEnabled()){
-        LOG.debug(String.format("Security is enabled and created ugi:" +
-                " %s for username: %s", ugi, userName));
-      }
-    } else {
-      ugi = UserGroupInformation.createRemoteUser(userName);
-      if (LOG.isDebugEnabled()){
-        LOG.debug(String.format("Security is disabled and created ugi:" +
-                " %s for username: %s", ugi, userName));
-      }
+    UserGroupInformation ugi = UserGroupInformation.createProxyUser(userName, currentUser);
+    if (LOG.isDebugEnabled()){
+      LOG.debug(String.format("Created ugi:" +
+              " %s for username: %s", ugi, userName));
     }
     return ugi;
   }
