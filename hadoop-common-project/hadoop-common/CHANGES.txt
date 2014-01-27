@@ -13,6 +13,7 @@ Release 2.2.0 - 2013-10-13
     HDFS-4817.  Make HDFS advisory caching configurable on a per-file basis.
     (Contributed by Colin Patrick McCabe)
 
+    HADOOP-10203. Connection leak in Jets3tNativeFileSystemStore#retrieveMetadata. Contributed by Andrei Savu.
   IMPROVEMENTS
 
     HADOOP-9948. Add a config value to CLITestHelper to skip tests on Windows.
