@@ -187,6 +187,8 @@ public class AMLauncher implements Runnable {
     // Construct the actual Container
     ContainerLaunchContext container = 
         applicationMasterContext.getAMContainerSpec();
+    Map<String, String> environment = container.getEnvironment();
+    environment.put(ApplicationConstants.APPLICATION_MASTER_CONTAINER, Boolean.TRUE.toString());
     LOG.info("Command to launch container "
         + containerID
         + " : "
