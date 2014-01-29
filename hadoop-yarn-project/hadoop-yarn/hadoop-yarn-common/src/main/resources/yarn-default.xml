@@ -23,7 +23,19 @@
 <!-- there.  If yarn-site.xml does not already exist, create it.      -->
 
 <configuration>
-  
+  <property>
+    <description>Name of the docker container.</description>
+    <name>DOCKER_CONTAINER_NAME</name>
+  </property>
+  <property>
+    <description>Arguments to pass to the Docker container.</description>
+    <name>DOCKER_CONTAINER_ARGS</name>
+  </property>
+  <property>
+    <description>The command to launch a docker container.</description>
+    <name>DOCKER_LAUNCH_COMMAND</name>
+    <value>docker -H tcp://0.0.0.0:4243 run -rm -name</value>
+  </property>
   <!-- IPC Configs -->
   <property>
     <description>Factory to create client IPC classes.</description>
