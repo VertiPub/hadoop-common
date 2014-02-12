@@ -557,6 +557,7 @@ public class DataStorage extends Storage {
     File prevDir = sd.getPreviousDir();
     // This is a regular startup or a post-federation rollback
     if (!prevDir.exists()) {
+      LOG.info("Previous dir does not exist for storage: " + sd.getRoot());
       // The current datanode version supports federation and the layout
       // version from namenode matches what the datanode supports. An invalid
       // rollback may happen if namenode didn't rollback and datanode is
