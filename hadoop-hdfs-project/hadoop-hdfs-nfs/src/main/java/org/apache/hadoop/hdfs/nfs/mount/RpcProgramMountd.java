@@ -45,9 +45,14 @@ import org.apache.hadoop.oncrpc.RpcResponse;
 import org.apache.hadoop.oncrpc.RpcUtil;
 import org.apache.hadoop.oncrpc.XDR;
 import org.apache.hadoop.oncrpc.security.VerifierNone;
+import org.apache.hadoop.security.SecurityUtil;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.ChannelHandlerContext;
+
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NFSGATEWAY_KEYTAB_FILE_KEY;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NFSGATEWAY_USER_NAME_KEY;
 
 /**
  * RPC program corresponding to mountd daemon. See {@link Mountd}.
@@ -88,6 +93,9 @@ public class RpcProgramMountd extends RpcProgram implements MountInterface {
     this.hostsMatcher = NfsExports.getInstance(config);
     this.mounts = Collections.synchronizedList(new ArrayList<MountEntry>());
     this.exports = Collections.unmodifiableList(exports);
+    UserGroupInformation.setConfiguration(config);
+    SecurityUtil.login(config, DFS_NFSGATEWAY_KEYTAB_FILE_KEY,
+            DFS_NFSGATEWAY_USER_NAME_KEY);
     this.dfsClient = new DFSClient(NameNode.getAddress(config), config);
   }
   

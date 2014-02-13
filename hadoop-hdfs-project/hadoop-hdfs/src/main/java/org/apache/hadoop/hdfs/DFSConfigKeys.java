@@ -496,6 +496,10 @@ public class DFSConfigKeys extends CommonConfigurationKeys {
   public static final long DFS_NAMENODE_RETRY_CACHE_EXPIRYTIME_MILLIS_DEFAULT = 600000; // 10 minutes
   public static final String DFS_NAMENODE_RETRY_CACHE_HEAP_PERCENT_KEY = "dfs.namenode.retrycache.heap.percent";
   public static final float DFS_NAMENODE_RETRY_CACHE_HEAP_PERCENT_DEFAULT = 0.03f;
+
+  //NFS gateway keytabs
+  public static final String DFS_NFSGATEWAY_KEYTAB_FILE_KEY = "dfs.nfsgateway.keytab.file";
+  public static final String DFS_NFSGATEWAY_USER_NAME_KEY = "dfs.nfsgateway.kerberos.principal";
   
   // The number of NN response dropped by client proactively in each RPC call.
   // For testing NN retry cache, we can set this property with positive value.

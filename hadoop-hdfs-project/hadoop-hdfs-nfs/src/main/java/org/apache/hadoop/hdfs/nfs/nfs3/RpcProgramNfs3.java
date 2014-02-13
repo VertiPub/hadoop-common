@@ -120,11 +120,15 @@ import org.apache.hadoop.oncrpc.security.SysSecurityHandler;
 import org.apache.hadoop.oncrpc.security.Verifier;
 import org.apache.hadoop.oncrpc.security.VerifierNone;
 import org.apache.hadoop.security.AccessControlException;
+import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelHandlerContext;
+
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NFSGATEWAY_KEYTAB_FILE_KEY;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NFSGATEWAY_USER_NAME_KEY;
 
 /**
  * RPC program corresponding to nfs daemon. See {@link Nfs3}.
@@ -188,6 +192,9 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
         Nfs3Constant.FILE_DUMP_DIR_DEFAULT);
     boolean enableDump = config.getBoolean(Nfs3Constant.ENABLE_FILE_DUMP_KEY,
         Nfs3Constant.ENABLE_FILE_DUMP_DEFAULT);
+    UserGroupInformation.setConfiguration(config);
+    SecurityUtil.login(config, DFS_NFSGATEWAY_KEYTAB_FILE_KEY,
+            DFS_NFSGATEWAY_USER_NAME_KEY);
     if (!enableDump) {
       writeDumpDir = null;
     } else {
@@ -1641,7 +1648,7 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       int dtperf = MAX_READDIR_TRANSFER_SIZE;
 
       Nfs3FileAttributes attrs = Nfs3Utils.getFileAttr(dfsClient,
-          Nfs3Utils.getFileIdPath(handle), iug);
+              Nfs3Utils.getFileIdPath(handle), iug);
       if (attrs == null) {
         LOG.info("Can't get path for fileId:" + handle.getFileId());
         return new FSINFO3Response(Nfs3Status.NFS3ERR_STALE);

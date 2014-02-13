@@ -95,6 +95,7 @@ class DFSClientCache {
           throws IOException {
     Preconditions.checkNotNull(effectiveUser);
     Preconditions.checkNotNull(realUser);
+    realUser.checkTGTAndReloginFromKeytab();
     UserGroupInformation ugi =
             UserGroupInformation.createProxyUser(effectiveUser, realUser);
     if (LOG.isDebugEnabled()){
