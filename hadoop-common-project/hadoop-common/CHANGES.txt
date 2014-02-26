@@ -13,7 +13,8 @@ Release 2.2.0 - 2013-10-13
     HDFS-4817.  Make HDFS advisory caching configurable on a per-file basis.
     (Contributed by Colin Patrick McCabe)
 
-    HADOOP-10203. Connection leak in Jets3tNativeFileSystemStore#retrieveMetadata. Contributed by Andrei Savu.
+    HADOOP-9454. Support multipart uploads for s3native. Contributed by Jordan Mendelson and Akira AJISAKA.
+
   IMPROVEMENTS
 
     HADOOP-9948. Add a config value to CLITestHelper to skip tests on Windows.
@@ -31,6 +32,8 @@ Release 2.2.0 - 2013-10-13
   OPTIMIZATIONS
 
   BUG FIXES
+
+    HADOOP-10203. Connection leak in Jets3tNativeFileSystemStore#retrieveMetadata. Contributed by Andrei Savu.
 
     HADOOP-9776. HarFileSystem.listStatus() returns invalid authority if port
     number is empty. (Shanyu Zhao via ivanmi)
