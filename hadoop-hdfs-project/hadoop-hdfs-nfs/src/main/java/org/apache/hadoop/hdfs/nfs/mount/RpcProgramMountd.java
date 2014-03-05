@@ -16,6 +16,8 @@
  * limitations under the License.
  */
 package org.apache.hadoop.hdfs.nfs.mount;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NFS_KEYTAB_FILE_KEY;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_NFS_USER_NAME_KEY;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -45,6 +47,8 @@ import org.apache.hadoop.oncrpc.RpcResponse;
 import org.apache.hadoop.oncrpc.RpcUtil;
 import org.apache.hadoop.oncrpc.XDR;
 import org.apache.hadoop.oncrpc.security.VerifierNone;
+import org.apache.hadoop.security.SecurityUtil;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.ChannelHandlerContext;
@@ -88,6 +92,9 @@ public class RpcProgramMountd extends RpcProgram implements MountInterface {
     this.hostsMatcher = NfsExports.getInstance(config);
     this.mounts = Collections.synchronizedList(new ArrayList<MountEntry>());
     this.exports = Collections.unmodifiableList(exports);
+    UserGroupInformation.setConfiguration(config);
+    SecurityUtil.login(config, DFS_NFS_KEYTAB_FILE_KEY,
+            DFS_NFS_USER_NAME_KEY);
     this.dfsClient = new DFSClient(NameNode.getAddress(config), config);
   }
   
