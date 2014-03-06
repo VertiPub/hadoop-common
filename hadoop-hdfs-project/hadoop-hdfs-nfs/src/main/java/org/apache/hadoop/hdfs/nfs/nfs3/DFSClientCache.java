@@ -17,13 +17,14 @@
  */
 package org.apache.hadoop.hdfs.nfs.nfs3;
 
+import org.apache.commons.logging.LogFactory;
+
 import java.io.IOException;
 import java.security.PrivilegedExceptionAction;
 import java.util.concurrent.ExecutionException;
 
 import com.google.common.base.Preconditions;
 import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.server.namenode.NameNode;
@@ -95,6 +96,8 @@ class DFSClientCache {
           throws IOException {
     Preconditions.checkNotNull(effectiveUser);
     Preconditions.checkNotNull(realUser);
+    realUser.checkTGTAndReloginFromKeytab();
+
     UserGroupInformation ugi =
             UserGroupInformation.createProxyUser(effectiveUser, realUser);
     if (LOG.isDebugEnabled()){
