@@ -636,6 +636,8 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
     
     try {
       if (readBlock == null){
+        LOG.info("Hitting Namenode fileId: " + handle.getFileId() + " offset: " + offset
+                + " count: " + count);
         int buffSize = (int)blockSize;
         byte[] readbuffer = new byte[buffSize];
 
@@ -649,16 +651,18 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
         fis.close();
 
         //chunk the readBuffer into n buffers of size count
-        int arrayCount = readCount / count + 1;
-        readBlock = new byte[arrayCount][count];
-        for (int i = 0; i < arrayCount; i++){
+        int splitCount = readCount / count + 1;
+        LOG.info("Array split count: " + splitCount);
+        readBlock = new byte[splitCount][count];
+        for (int i = 0; i < splitCount; i++){
           int leftToRead = readCount - (i * count);
           int size = Math.min(leftToRead, count);
+          LOG.info("Array size: " + size);
           byte[] bArray = new byte[size];
           System.arraycopy(readbuffer, (int)offset, bArray, 0, size);
           readBlock[i] = bArray;
         }
-
+        LOG.info("Divided blocks into: " + readBlock.length);
         //get rid of the readbuffer
         readbuffer = null;
 
@@ -671,10 +675,12 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       }
       // HDFS returns -1 for read beyond file size.
       int index = (int)offset/count;
+      LOG.info("index: " + index);
       if (index == readBlock.length - 1){
         readBlock = null;
       }
       eof = (offset + count) < fileAttributes.getSize() ? false : true;
+      LOG.info("eof: " + eof + " filesize: " + fileAttributes.getSize() + " array length: " + readBlock[index].length);
       return new READ3Response(Nfs3Status.NFS3_OK, fileAttributes, readBlock[index].length, eof,
           ByteBuffer.wrap(readBlock[index]));
 
