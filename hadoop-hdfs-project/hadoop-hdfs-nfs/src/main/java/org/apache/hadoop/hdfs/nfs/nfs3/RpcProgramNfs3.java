@@ -23,7 +23,9 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -44,6 +46,7 @@ import org.apache.hadoop.hdfs.protocol.DirectoryListing;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
 import org.apache.hadoop.hdfs.server.namenode.NameNode;
+import org.apache.hadoop.hdfs.util.ByteArray;
 import org.apache.hadoop.nfs.AccessPrivilege;
 import org.apache.hadoop.nfs.NfsExports;
 import org.apache.hadoop.nfs.NfsFileType;
@@ -164,6 +167,8 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
   private String writeDumpDir; // The dir save dump files
   
   private final RpcCallCache rpcCallCache;
+  private byte[][] readBlock;
+  private Nfs3FileAttributes fileAttributes;
 
   public RpcProgramNfs3() throws IOException {
     this(new Configuration());
@@ -599,13 +604,12 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
           + " count: " + count);
     }
 
-    Nfs3FileAttributes attrs;
     boolean eof;
     if (count == 0) {
       // Only do access check.
       try {
         // Don't read from cache. Client may not have read permission.
-        attrs = Nfs3Utils.getFileAttr(dfsClient,
+        fileAttributes = Nfs3Utils.getFileAttr(dfsClient,
                   Nfs3Utils.getFileIdPath(handle), iug);
       } catch (IOException e) {
         if (LOG.isDebugEnabled()) {
@@ -613,17 +617,17 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
         }
         return new READ3Response(Nfs3Status.NFS3ERR_IO);
       }
-      if (attrs == null) {
+      if (fileAttributes == null) {
         if (LOG.isDebugEnabled()) {
           LOG.debug("Can't get path for fileId:" + handle.getFileId());
         }
         return new READ3Response(Nfs3Status.NFS3ERR_NOENT);
       }
       int access = Nfs3Utils.getAccessRightsForUserGroup(
-          securityHandler.getUid(), securityHandler.getGid(), attrs);
+          securityHandler.getUid(), securityHandler.getGid(), fileAttributes);
       if ((access & Nfs3Constant.ACCESS3_READ) != 0) {
-        eof = offset < attrs.getSize() ? false : true;
-        return new READ3Response(Nfs3Status.NFS3_OK, attrs, 0, eof,
+        eof = offset < fileAttributes.getSize() ? false : true;
+        return new READ3Response(Nfs3Status.NFS3_OK, fileAttributes, 0, eof,
             ByteBuffer.wrap(new byte[0]));
       } else {
         return new READ3Response(Nfs3Status.NFS3ERR_ACCES);
@@ -631,28 +635,48 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
     }
     
     try {
-      int buffSize = Math.min(MAX_READ_TRANSFER_SIZE, count);
-      byte[] readbuffer = new byte[buffSize];
+      if (readBlock == null){
+        int buffSize = (int)blockSize;
+        byte[] readbuffer = new byte[buffSize];
 
-      DFSInputStream is = dfsClient.open(Nfs3Utils.getFileIdPath(handle));
-      FSDataInputStream fis = new FSDataInputStream(is);
-      
-      int readCount = fis.read(offset, readbuffer, 0, count);
-      fis.close();
+        DFSInputStream is = dfsClient.open(Nfs3Utils.getFileIdPath(handle));
+        FSDataInputStream fis = new FSDataInputStream(is);
+        //read an entire block
+        //cache the read block until it's fully read
+        //once its read, get rid of the cache
 
-      attrs = Nfs3Utils.getFileAttr(dfsClient, Nfs3Utils.getFileIdPath(handle),
-          iug);
-      if (readCount < count) {
-        LOG.info("Partical read. Asked offset:" + offset + " count:" + count
-            + " and read back:" + readCount + "file size:" + attrs.getSize());
+        int readCount = fis.read(0, readbuffer, 0, (int)blockSize);
+        fis.close();
+
+        //chunk the readBuffer into n buffers of size count
+        int arrayCount = readCount / count + 1;
+        readBlock = new byte[arrayCount][count];
+        for (int i = 0; i < arrayCount; i++){
+          int leftToRead = readCount - (i * count);
+          int size = Math.min(leftToRead, count);
+          byte[] bArray = new byte[size];
+          System.arraycopy(readbuffer, (int)offset, bArray, 0, size);
+          readBlock[i] = bArray;
+        }
+
+        //get rid of the readbuffer
+        readbuffer = null;
+
+        fileAttributes = Nfs3Utils.getFileAttr(dfsClient, Nfs3Utils.getFileIdPath(handle),
+                iug);
+        if (readCount < blockSize) {
+          LOG.info("Partical read. Asked offset:" + offset + " count:" + count
+                  + " and read back:" + readCount + "file size:" + fileAttributes.getSize());
+        }
       }
       // HDFS returns -1 for read beyond file size.
-      if (readCount < 0) {
-        readCount = 0;
+      int index = (int)offset/count;
+      if (index == readBlock.length - 1){
+        readBlock = null;
       }
-      eof = (offset + readCount) < attrs.getSize() ? false : true;
-      return new READ3Response(Nfs3Status.NFS3_OK, attrs, readCount, eof,
-          ByteBuffer.wrap(readbuffer));
+      eof = (offset + count) < fileAttributes.getSize() ? false : true;
+      return new READ3Response(Nfs3Status.NFS3_OK, fileAttributes, readBlock[index].length, eof,
+          ByteBuffer.wrap(readBlock[index]));
 
     } catch (IOException e) {
       LOG.warn("Read error: " + e.getClass() + " offset: " + offset
