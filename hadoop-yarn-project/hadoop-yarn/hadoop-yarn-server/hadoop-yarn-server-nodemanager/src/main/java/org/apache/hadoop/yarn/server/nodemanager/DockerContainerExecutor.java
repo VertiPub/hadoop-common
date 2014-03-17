@@ -102,9 +102,9 @@ public synchronized void startLocalizer(Path nmPrivateContainerTokensPath,
   String tokenFn = String.format(ContainerLocalizer.TOKEN_FILE_NAME_FMT, locId);
   Path tokenDst = new Path(appStorageDir, tokenFn);
   lfs.util().copy(nmPrivateContainerTokensPath, tokenDst);
-  LOG.info("Copying from " + nmPrivateContainerTokensPath + " to " + tokenDst);
+  LOG.debug("Copying from " + nmPrivateContainerTokensPath + " to " + tokenDst);
   lfs.setWorkingDirectory(appStorageDir);
-  LOG.info("CWD set to " + appStorageDir + " = " + lfs.getWorkingDirectory());
+  LOG.debug("CWD set to " + appStorageDir + " = " + lfs.getWorkingDirectory());
   // TODO: DO it over RPC for maintaining similarity?
   localizer.runLocalization(nmAddr);
 }
@@ -180,7 +180,7 @@ public int launchContainer(Container container,
           "-w /home/${userName} -name ${containerId} ${image}";
   StrSubstitutor sub = new StrSubstitutor(valuesMap);
   String commandStr = sub.replace(templateString);
-  LOG.info("Passing: " +commandStr);
+  LOG.debug("Passing: " +commandStr);
   Path pidFile = getPidFilePath(containerId);
   if (pidFile != null) {
     sb.writeLocalWrapperScript(launchDst, pidFile, commandStr);
