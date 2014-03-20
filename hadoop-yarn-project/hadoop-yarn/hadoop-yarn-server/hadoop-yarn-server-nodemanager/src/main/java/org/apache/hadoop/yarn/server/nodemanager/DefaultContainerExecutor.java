@@ -108,9 +108,9 @@ public class DefaultContainerExecutor extends ContainerExecutor {
 
   @Override
   public int launchContainer(Container container,
-      Path nmPrivateContainerScriptPath, Path nmPrivateTokensPath,
-      String userName, String appId, Path containerWorkDir,
-      List<String> localDirs, List<String> logDirs) throws IOException {
+                             Path nmPrivateContainerScriptPath, Path nmPrivateTokensPath,
+                             String userName, String appId, Path containerWorkDir,
+                             List<String> localDirs, List<String> logDirs, String containerName) throws IOException {
 
     FsPermission dirPerm = new FsPermission(APPDIR_PERM);
     ContainerId containerId = container.getContainerId();

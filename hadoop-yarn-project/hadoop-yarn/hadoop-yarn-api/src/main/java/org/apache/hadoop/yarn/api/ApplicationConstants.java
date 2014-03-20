@@ -45,6 +45,9 @@ public interface ApplicationConstants {
   public static final String CONTAINER_TOKEN_FILE_ENV_NAME =
       UserGroupInformation.HADOOP_TOKEN_FILE_LOCATION;
 
+  public static final String CONTAINER_NAME =
+          "mr.container.name";
+
   /**
    * The environmental variable for APPLICATION_WEB_PROXY_BASE. Set in 
    * ApplicationMaster's environment only. This states that for all non-relative

@@ -82,6 +82,7 @@ import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.security.client.RMDelegationTokenSelector;
+import org.apache.hadoop.yarn.util.Apps;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -459,6 +460,16 @@ public class YARNRunner implements ClientProtocol {
     acls.put(ApplicationAccessType.MODIFY_APP, jobConf.get(
         MRJobConfig.JOB_ACL_MODIFY_JOB,
         MRJobConfig.DEFAULT_JOB_ACL_MODIFY_JOB));
+
+    // Add container environment from JobConf
+    // TODO: Make this separate from the environment
+    MRApps.setEnvFromInputString(environment,
+            conf.get(MRJobConfig.MR_AM_ADMIN_USER_ENV));
+
+    MRApps.addToEnvironment(
+            environment,
+            MRJobConfig.MR_AM_CONTAINER_NAME_KEY,
+            conf.get(MRJobConfig.MR_AM_CONTAINER_NAME, MRJobConfig.MR_AM_CONTAINER_NAME_DEFAULT));
 
     // Setup ContainerLaunchContext for AM container
     ContainerLaunchContext amContainer =

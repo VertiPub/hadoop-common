@@ -402,6 +402,16 @@ public interface MRJobConfig {
   public static final String MR_AM_CONTAINERLAUNCHER_THREAD_COUNT_LIMIT =
     MR_AM_PREFIX+"containerlauncher.thread-count-limit";
 
+
+  public static final String MR_AM_CONTAINER_NAME_KEY =
+         "MR_CONTAINER_NAME";
+
+  public static final String MR_AM_CONTAINER_NAME =
+          "mr.container.name";
+
+  public static final String MR_AM_CONTAINER_NAME_DEFAULT =
+          "10.252.4.12:5000/classpathed";
+
   public static final int DEFAULT_MR_AM_CONTAINERLAUNCHER_THREAD_COUNT_LIMIT = 
       500;
 
@@ -428,7 +438,7 @@ public interface MRJobConfig {
       33;
   
   /** Enable job recovery.*/
-  public static final String MR_AM_JOB_RECOVERY_ENABLE = 
+  public static final String MR_AM_JOB_RECOVERY_ENABLE =
     MR_AM_PREFIX + "job.recovery.enable";
   public static final boolean MR_AM_JOB_RECOVERY_ENABLE_DEFAULT = true;
 

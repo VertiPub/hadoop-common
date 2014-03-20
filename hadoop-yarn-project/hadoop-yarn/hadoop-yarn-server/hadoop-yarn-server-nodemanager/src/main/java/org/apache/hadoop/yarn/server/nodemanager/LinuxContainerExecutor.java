@@ -220,9 +220,9 @@ public class LinuxContainerExecutor extends ContainerExecutor {
 
   @Override
   public int launchContainer(Container container,
-      Path nmPrivateCotainerScriptPath, Path nmPrivateTokensPath,
-      String user, String appId, Path containerWorkDir,
-      List<String> localDirs, List<String> logDirs) throws IOException {
+                             Path nmPrivateCotainerScriptPath, Path nmPrivateTokensPath,
+                             String user, String appId, Path containerWorkDir,
+                             List<String> localDirs, List<String> logDirs, String containerName) throws IOException {
 
     ContainerId containerId = container.getContainerId();
     String containerIdStr = ConverterUtils.toString(containerId);

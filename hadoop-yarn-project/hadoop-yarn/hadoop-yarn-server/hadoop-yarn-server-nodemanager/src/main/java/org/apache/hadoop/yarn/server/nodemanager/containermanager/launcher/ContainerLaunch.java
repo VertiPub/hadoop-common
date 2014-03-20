@@ -309,10 +309,11 @@ public class ContainerLaunch implements Callable<Integer> {
         ret = ExitCode.TERMINATED.getExitCode();
       }
       else {
+        String containerName = environment.get(ApplicationConstants.CONTAINER_NAME);
         exec.activateContainer(containerID, pidFilePath);
         ret = exec.launchContainer(container, nmPrivateContainerScriptPath,
                 nmPrivateTokensPath, user, appIdStr, containerWorkDir,
-                localDirs, logDirs);
+                localDirs, logDirs, containerName);
       }
     } catch (Throwable e) {
       LOG.warn("Failed to launch container.", e);

@@ -126,7 +126,7 @@ public class TestLinuxContainerExecutorWithMocks {
     mockExec.activateContainer(cId, pidFile);
     int ret = mockExec.launchContainer(container, scriptPath, tokensPath,
         appSubmitter, appId, workDir, dirsHandler.getLocalDirs(),
-        dirsHandler.getLogDirs());
+        dirsHandler.getLogDirs(), null);
     assertEquals(0, ret);
     assertEquals(Arrays.asList(appSubmitter, cmd, appId, containerId,
         workDir.toString(), "/bin/echo", "/dev/null", pidFile.toString(),
@@ -243,7 +243,7 @@ public class TestLinuxContainerExecutorWithMocks {
     mockExec.activateContainer(cId, pidFile);
     int ret = mockExec.launchContainer(container, scriptPath, tokensPath,
         appSubmitter, appId, workDir, dirsHandler.getLocalDirs(),
-        dirsHandler.getLogDirs());
+        dirsHandler.getLogDirs(), null);
     Assert.assertNotSame(0, ret);
     assertEquals(Arrays.asList(appSubmitter, cmd, appId, containerId,
         workDir.toString(), "/bin/echo", "/dev/null", pidFile.toString(),

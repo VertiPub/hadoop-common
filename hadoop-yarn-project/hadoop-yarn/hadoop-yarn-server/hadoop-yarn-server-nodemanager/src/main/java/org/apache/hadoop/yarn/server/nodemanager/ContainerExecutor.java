@@ -102,6 +102,7 @@ public abstract class ContainerExecutor implements Configurable {
   /**
    * Launch the container on the node. This is a blocking call and returns only
    * when the container exits.
+   *
    * @param container the container to be launched
    * @param nmPrivateContainerScriptPath the path for launch script
    * @param nmPrivateTokensPath the path for tokens for the container
@@ -110,13 +111,14 @@ public abstract class ContainerExecutor implements Configurable {
    * @param containerWorkDir the work dir for the container
    * @param localDirs nm-local-dirs to be used for this container
    * @param logDirs nm-log-dirs to be used for this container
+   * @param containerName
    * @return the return status of the launch
    * @throws IOException
    */
   public abstract int launchContainer(Container container,
-      Path nmPrivateContainerScriptPath, Path nmPrivateTokensPath,
-      String user, String appId, Path containerWorkDir, List<String> localDirs,
-      List<String> logDirs) throws IOException;
+                                      Path nmPrivateContainerScriptPath, Path nmPrivateTokensPath,
+                                      String user, String appId, Path containerWorkDir, List<String> localDirs,
+                                      List<String> logDirs, String containerName) throws IOException;
 
   public abstract boolean signalContainer(String user, String pid,
       Signal signal)

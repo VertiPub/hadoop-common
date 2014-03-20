@@ -114,7 +114,7 @@ public synchronized void startLocalizer(Path nmPrivateContainerTokensPath,
 public int launchContainer(Container container,
                            Path nmPrivateContainerScriptPath, Path nmPrivateTokensPath,
                            String userName, String appId, Path containerWorkDir,
-                           List<String> localDirs, List<String> logDirs) throws IOException {
+                           List<String> localDirs, List<String> logDirs, String containerName) throws IOException {
   LOG.debug("Launching default: " + container);
   FsPermission dirPerm = new FsPermission(APPDIR_PERM);
   ContainerId containerId = container.getContainerId();
@@ -174,7 +174,7 @@ public int launchContainer(Container container,
   valuesMap.put("firstLocalDir", firstLocalDir);
   valuesMap.put("firstLogDir", firstLogDir);
   valuesMap.put("containerId", containerIdStr);
-  valuesMap.put("image", "classpathed");
+  valuesMap.put("image", containerName);
   String templateString = "sudo -u ${userName} -i sudo docker run -rm " +
           "-v ${firstLocalDir}:${firstLocalDir} -v ${firstLogDir}:${firstLogDir} " +
           "-w /home/${userName} -name ${containerId} ${image}";
