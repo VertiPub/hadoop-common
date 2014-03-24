@@ -46,7 +46,9 @@ public interface ApplicationConstants {
       UserGroupInformation.HADOOP_TOKEN_FILE_LOCATION;
 
   public static final String CONTAINER_NAME =
-          "mr.container.name";
+          "MR_CONTAINER_NAME";
+  public static final String DEFAULT_CONTAINER_NAME =
+          "10.252.4.12:5000/classpathed";
 
   /**
    * The environmental variable for APPLICATION_WEB_PROXY_BASE. Set in 

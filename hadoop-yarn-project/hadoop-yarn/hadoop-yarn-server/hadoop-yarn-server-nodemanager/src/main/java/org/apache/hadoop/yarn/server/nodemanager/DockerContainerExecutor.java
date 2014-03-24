@@ -180,7 +180,7 @@ public int launchContainer(Container container,
           "-w /home/${userName} -name ${containerId} ${image}";
   StrSubstitutor sub = new StrSubstitutor(valuesMap);
   String commandStr = sub.replace(templateString);
-  LOG.debug("Passing: " +commandStr);
+  LOG.info("Passing: " +commandStr);
   Path pidFile = getPidFilePath(containerId);
   if (pidFile != null) {
     sb.writeLocalWrapperScript(launchDst, pidFile, commandStr);
