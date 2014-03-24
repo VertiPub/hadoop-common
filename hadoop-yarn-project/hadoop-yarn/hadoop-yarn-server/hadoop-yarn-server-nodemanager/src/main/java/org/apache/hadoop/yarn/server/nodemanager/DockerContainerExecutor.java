@@ -175,7 +175,7 @@ public int launchContainer(Container container,
   valuesMap.put("firstLogDir", firstLogDir);
   valuesMap.put("containerId", containerIdStr);
   valuesMap.put("image", containerName);
-  String templateString = "sudo -u ${userName} -i sudo docker run -rm " +
+  String templateString = "docker -H tcp://0.0.0.0:4243 run -rm " +
           "-v ${firstLocalDir}:${firstLocalDir} -v ${firstLogDir}:${firstLogDir} " +
           "-w /home/${userName} -name ${containerId} ${image}";
   StrSubstitutor sub = new StrSubstitutor(valuesMap);
