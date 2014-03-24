@@ -310,6 +310,7 @@ public class ContainerLaunch implements Callable<Integer> {
       }
       else {
         String containerName = environment.get(ApplicationConstants.CONTAINER_NAME);
+        LOG.debug("Container name from config: " + containerName);
         containerName = containerName == null? ApplicationConstants.DEFAULT_CONTAINER_NAME : containerName;
         exec.activateContainer(containerID, pidFilePath);
         ret = exec.launchContainer(container, nmPrivateContainerScriptPath,

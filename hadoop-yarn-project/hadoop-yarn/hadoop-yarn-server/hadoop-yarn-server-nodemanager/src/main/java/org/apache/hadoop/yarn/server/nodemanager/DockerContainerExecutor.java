@@ -177,10 +177,10 @@ public int launchContainer(Container container,
   valuesMap.put("image", containerName);
   String templateString = "docker -H tcp://0.0.0.0:4243 run -rm " +
           "-v ${firstLocalDir}:${firstLocalDir} -v ${firstLogDir}:${firstLogDir} " +
-          "-w /home/${userName} -name ${containerId} ${image}";
+          "-name ${containerId} ${image}";
   StrSubstitutor sub = new StrSubstitutor(valuesMap);
   String commandStr = sub.replace(templateString);
-  LOG.info("Passing: " +commandStr);
+  LOG.debug("Passing: " +commandStr);
   Path pidFile = getPidFilePath(containerId);
   if (pidFile != null) {
     sb.writeLocalWrapperScript(launchDst, pidFile, commandStr);
