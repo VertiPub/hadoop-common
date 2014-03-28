@@ -48,7 +48,7 @@ public interface ApplicationConstants {
   public static final String CONTAINER_NAME =
           "MR_CONTAINER_NAME";
   public static final String DEFAULT_CONTAINER_NAME =
-          "registry.test.altiscale.com:5000/classpathed";
+          "classpathed";
 
   /**
    * The environmental variable for APPLICATION_WEB_PROXY_BASE. Set in 

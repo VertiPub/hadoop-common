@@ -410,7 +410,7 @@ public interface MRJobConfig {
           "mr.container.name";
 
   public static final String MR_AM_CONTAINER_NAME_DEFAULT =
-          "registry.test.altiscale.com:5000/classpathed";
+          "classpathed";
 
   public static final int DEFAULT_MR_AM_CONTAINERLAUNCHER_THREAD_COUNT_LIMIT = 
       500;
