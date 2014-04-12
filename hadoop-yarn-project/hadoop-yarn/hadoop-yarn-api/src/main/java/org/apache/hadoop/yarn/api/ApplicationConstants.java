@@ -47,6 +47,9 @@ public interface ApplicationConstants {
 
   public static final String CONTAINER_NAME =
           "MR_CONTAINER_NAME";
+
+  public static final String APPLICATION_MASTER_CONTAINER =
+          "APPLICATION_MASTER_CONTAINER";
   public static final String DEFAULT_CONTAINER_NAME =
           "classpathed";
 

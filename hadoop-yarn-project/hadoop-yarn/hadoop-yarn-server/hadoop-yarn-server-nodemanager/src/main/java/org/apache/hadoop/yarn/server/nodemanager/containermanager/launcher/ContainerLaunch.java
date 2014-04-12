@@ -312,6 +312,12 @@ public class ContainerLaunch implements Callable<Integer> {
         String containerName = environment.get(ApplicationConstants.CONTAINER_NAME);
         LOG.info("Container name from config: " + containerName);
         containerName = containerName == null? ApplicationConstants.DEFAULT_CONTAINER_NAME : containerName;
+        if (environment.containsKey(ApplicationConstants.APPLICATION_MASTER_CONTAINER)
+                && environment.get(ApplicationConstants.APPLICATION_MASTER_CONTAINER).equals(Boolean.TRUE.toString())) {
+          
+          containerName = ApplicationConstants.APPLICATION_MASTER_CONTAINER;
+          environment.put(ApplicationConstants.APPLICATION_MASTER_CONTAINER, Boolean.FALSE.toString());
+        }
         exec.activateContainer(containerID, pidFilePath);
         ret = exec.launchContainer(container, nmPrivateContainerScriptPath,
                 nmPrivateTokensPath, user, appIdStr, containerWorkDir,

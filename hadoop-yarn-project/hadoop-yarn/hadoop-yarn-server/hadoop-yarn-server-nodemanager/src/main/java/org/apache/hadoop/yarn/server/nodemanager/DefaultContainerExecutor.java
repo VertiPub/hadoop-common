@@ -112,6 +112,7 @@ public class DefaultContainerExecutor extends ContainerExecutor {
                              String userName, String appId, Path containerWorkDir,
                              List<String> localDirs, List<String> logDirs, String containerName) throws IOException {
 
+    LOG.info("Launching a default container");
     FsPermission dirPerm = new FsPermission(APPDIR_PERM);
     ContainerId containerId = container.getContainerId();
 

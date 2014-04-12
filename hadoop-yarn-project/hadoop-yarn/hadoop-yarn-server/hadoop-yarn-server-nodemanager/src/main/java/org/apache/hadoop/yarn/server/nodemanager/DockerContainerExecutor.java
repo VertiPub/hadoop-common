@@ -31,6 +31,7 @@ import org.apache.hadoop.util.Shell;
 import org.apache.hadoop.util.Shell.ExitCodeException;
 import org.apache.hadoop.util.Shell.ShellCommandExecutor;
 import org.apache.hadoop.util.StringUtils;
+import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
@@ -55,7 +56,7 @@ import java.util.Map;
 import static org.apache.hadoop.fs.CreateFlag.CREATE;
 import static org.apache.hadoop.fs.CreateFlag.OVERWRITE;
 
-public class DockerContainerExecutor extends ContainerExecutor {
+public class DockerContainerExecutor extends DefaultContainerExecutor {
 
 private static final Log LOG = LogFactory
         .getLog(DockerContainerExecutor.class);
@@ -115,7 +116,12 @@ public int launchContainer(Container container,
                            Path nmPrivateContainerScriptPath, Path nmPrivateTokensPath,
                            String userName, String appId, Path containerWorkDir,
                            List<String> localDirs, List<String> logDirs, String containerName) throws IOException {
-  LOG.debug("Launching default: " + container);
+  LOG.info("Launching default: " + container);
+  if (containerName != null && containerName.equals(ApplicationConstants.APPLICATION_MASTER_CONTAINER)){
+    LOG.info("Launching application master container with Default container executor");
+    return super.launchContainer(container, nmPrivateContainerScriptPath, nmPrivateTokensPath,
+          userName, appId, containerWorkDir, localDirs, logDirs, containerName);
+  }
   FsPermission dirPerm = new FsPermission(APPDIR_PERM);
   ContainerId containerId = container.getContainerId();
 
@@ -180,7 +186,7 @@ public int launchContainer(Container container,
           "-name ${containerId} ${image}";
   StrSubstitutor sub = new StrSubstitutor(valuesMap);
   String commandStr = sub.replace(templateString);
-  LOG.debug("Passing: " +commandStr);
+  LOG.info("Passing: " +commandStr);
   Path pidFile = getPidFilePath(containerId);
   if (pidFile != null) {
     sb.writeLocalWrapperScript(launchDst, pidFile, commandStr);
