@@ -103,9 +103,13 @@ public synchronized void startLocalizer(Path nmPrivateContainerTokensPath,
   String tokenFn = String.format(ContainerLocalizer.TOKEN_FILE_NAME_FMT, locId);
   Path tokenDst = new Path(appStorageDir, tokenFn);
   lfs.util().copy(nmPrivateContainerTokensPath, tokenDst);
-  LOG.debug("Copying from " + nmPrivateContainerTokensPath + " to " + tokenDst);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Copying from " + nmPrivateContainerTokensPath + " to " + tokenDst);
+  }
   lfs.setWorkingDirectory(appStorageDir);
-  LOG.debug("CWD set to " + appStorageDir + " = " + lfs.getWorkingDirectory());
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("CWD set to " + appStorageDir + " = " + lfs.getWorkingDirectory());
+  }
   // TODO: DO it over RPC for maintaining similarity?
   localizer.runLocalization(nmAddr);
 }
@@ -116,9 +120,13 @@ public int launchContainer(Container container,
                            Path nmPrivateContainerScriptPath, Path nmPrivateTokensPath,
                            String userName, String appId, Path containerWorkDir,
                            List<String> localDirs, List<String> logDirs, String containerName) throws IOException {
-  LOG.info("Launching default: " + container);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Launching default: " + container);
+  }
   if (containerName != null && containerName.equals(ApplicationConstants.APPLICATION_MASTER_CONTAINER)){
-    LOG.info("Launching application master container with Default container executor");
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Launching application master container with Default container executor");
+    }
     return super.launchContainer(container, nmPrivateContainerScriptPath, nmPrivateTokensPath,
           userName, appId, containerWorkDir, localDirs, logDirs, containerName);
   }
@@ -186,7 +194,9 @@ public int launchContainer(Container container,
           "-name ${containerId} ${image}";
   StrSubstitutor sub = new StrSubstitutor(valuesMap);
   String commandStr = sub.replace(templateString);
-  LOG.info("Passing: " +commandStr);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Passing: " +commandStr);
+  }
   Path pidFile = getPidFilePath(containerId);
   if (pidFile != null) {
     sb.writeLocalWrapperScript(launchDst, pidFile, commandStr);
@@ -208,8 +218,9 @@ public int launchContainer(Container container,
     // Setup command to run
     String[] command = getRunCommand(sb.getWrapperScriptPath().toString(),
             containerIdStr, this.getConf());
-
-    LOG.info("launchContainer: " + Arrays.toString(command));
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("launchContainer: " + Arrays.toString(command));
+    }
     shExec = new ShellCommandExecutor(
             command,
             new File(containerWorkDir.toUri().getPath()),
