@@ -268,7 +268,9 @@ public class ContainerLaunch implements Callable<Integer> {
                 "HADOOP_MAPRED_HOME",
                 System.getenv("HADOOP_MAPRED_HOME")
         );
-        LOG.info("Environment: " + preEnvironment);
+        if (LOG.isDebugEnabled()){
+          LOG.debug("Environment: " + preEnvironment);
+        }
 
         environment.put(
             ApplicationConstants.CONTAINER_TOKEN_FILE_ENV_NAME, 
@@ -309,7 +311,7 @@ public class ContainerLaunch implements Callable<Integer> {
         ret = ExitCode.TERMINATED.getExitCode();
       }
       else {
-        String containerName = environment.get(ApplicationConstants.CONTAINER_NAME);
+        String containerName = conf.get(ApplicationConstants.CONTAINER_NAME);
         LOG.info("Container name from config: " + containerName);
         containerName = containerName == null? ApplicationConstants.DEFAULT_CONTAINER_NAME : containerName;
         if (environment.containsKey(ApplicationConstants.APPLICATION_MASTER_CONTAINER)
