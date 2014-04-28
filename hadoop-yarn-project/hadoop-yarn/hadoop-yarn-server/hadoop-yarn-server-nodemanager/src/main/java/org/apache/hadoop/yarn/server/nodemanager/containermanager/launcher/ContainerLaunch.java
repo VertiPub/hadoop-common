@@ -30,6 +30,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -257,18 +258,43 @@ public class ContainerLaunch implements Callable<Integer> {
               EnumSet.of(CREATE, OVERWRITE));
 
         // Set the token location too.
+        Map<String, String> orderedEnv = new LinkedHashMap<String, String>();
+        putEnvIfNotNull(orderedEnv,
+                Environment.HADOOP_CONF_DIR.name(),
+                System.getenv(Environment.HADOOP_CONF_DIR.name())
+        );
+        putEnvIfNotNull(orderedEnv,
+                Environment.HADOOP_COMMON_HOME.name(),
+                System.getenv(Environment.HADOOP_COMMON_HOME.name())
+        );
+        putEnvIfNotNull(orderedEnv,
+                Environment.HADOOP_HDFS_HOME.name(),
+                System.getenv(Environment.HADOOP_HDFS_HOME.name())
+        );
+        putEnvIfNotNull(orderedEnv,
+                "HADOOP_MAPRED_HOME",
+                System.getenv("HADOOP_MAPRED_HOME")
+        );
+        putEnvIfNotNull(orderedEnv,
+                "HADOOP_YARN_HOME",
+                System.getenv("HADOOP_YARN_HOME")
+        );
+        if (LOG.isDebugEnabled()){
+          LOG.debug("Environment: " + orderedEnv);
+        }
+
         environment.put(
             ApplicationConstants.CONTAINER_TOKEN_FILE_ENV_NAME, 
             new Path(containerWorkDir, 
                 FINAL_CONTAINER_TOKENS_FILE).toUri().getPath());
         // Sanitize the container's environment
         sanitizeEnv(environment, containerWorkDir, appDirs, containerLogDirs,
-          localResources);
-        
+                localResources);
+        orderedEnv.putAll(environment);
         // Write out the environment
-        writeLaunchEnv(containerScriptOutStream, environment, localResources,
-            launchContext.getCommands());
-        
+        writeLaunchEnv(containerScriptOutStream, orderedEnv, localResources,
+                launchContext.getCommands());
+
         // /////////// End of writing out container-script
 
         // /////////// Write out the container-tokens in the nmPrivate space.
@@ -295,6 +321,14 @@ public class ContainerLaunch implements Callable<Integer> {
         ret = ExitCode.TERMINATED.getExitCode();
       }
       else {
+       // This needs to happen because the application master that resides on a separate container would not
+        // be able to speak to a regular docker container without some network bridging.
+        if (environment.containsKey(ApplicationConstants.APPLICATION_MASTER_CONTAINER)
+                && environment.get(ApplicationConstants.APPLICATION_MASTER_CONTAINER).equals(Boolean.TRUE.toString())
+                && conf.getBoolean(ApplicationConstants.APPLICATION_MASTER_CONTAINER, false)) {
+          conf.setBoolean(ApplicationConstants.APPLICATION_MASTER_CONTAINER, true);
+          environment.remove(ApplicationConstants.APPLICATION_MASTER_CONTAINER);
+        }
         exec.activateContainer(containerID, pidFilePath);
         ret = exec.launchContainer(container, nmPrivateContainerScriptPath,
                 nmPrivateTokensPath, user, appIdStr, containerWorkDir,
@@ -454,7 +488,7 @@ public class ContainerLaunch implements Callable<Integer> {
         ConverterUtils.toString(container.getContainerId());
     String processId = null;
     LOG.debug("Accessing pid for container " + containerIdStr
-        + " from pid file " + pidFilePath);
+            + " from pid file " + pidFilePath);
     int sleepCounter = 0;
     final int sleepInterval = 100;
 
