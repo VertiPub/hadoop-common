@@ -62,30 +62,10 @@ public class TestDockerContainerExecutorWithMocks {
   public static final String DOCKER_LAUNCH_ARGS = "-args";
 
   private DockerContainerExecutor mockExec = null;
-  private final File mockParamFile = new File("./params.txt");
   private LocalDirsHandlerService dirsHandler;
   private Path workDir;
   private FileContext lfs;
 
-
-  private void deleteMockParamFile() {
-    if(mockParamFile.exists()) {
-      mockParamFile.delete();
-    }
-  }
-  
-  private List<String> readMockParams() throws IOException {
-    LinkedList<String> ret = new LinkedList<String>();
-    LineNumberReader reader = new LineNumberReader(new FileReader(
-        mockParamFile));
-    String line;
-    while((line = reader.readLine()) != null) {
-      ret.add(line);
-    }
-    reader.close();
-    return ret;
-  }
-  
   @Before
   public void setup() {
     assumeTrue(!Path.WINDOWS);
@@ -118,7 +98,6 @@ public class TestDockerContainerExecutorWithMocks {
 
   @After
   public void tearDown() {
-    deleteMockParamFile();
     try {
       lfs.delete(workDir, true);
     } catch (IOException e) {
@@ -191,121 +170,4 @@ public class TestDockerContainerExecutorWithMocks {
     return localDirs;
   }
 
-
-  @Test (timeout = 5000)
-  public void testStartLocalizer() throws IOException {
-
-  
-    InetSocketAddress address = InetSocketAddress.createUnresolved("localhost", 8040);
-    Path nmPrivateCTokensPath= new Path("file:///bin/nmPrivateCTokensPath");
- 
-    try {
-      mockExec.startLocalizer(nmPrivateCTokensPath, address, "test", "application_0", "12345", dirsHandler.getLocalDirs(), dirsHandler.getLogDirs());
-      List<String> result=readMockParams();
-      Assert.assertEquals(result.size(), 16);
-      Assert.assertEquals(result.get(0), "test");
-      Assert.assertEquals(result.get(1), "0" );
-      Assert.assertEquals(result.get(2),"application_0" );
-      Assert.assertEquals(result.get(3), "/bin/nmPrivateCTokensPath");
-      Assert.assertEquals(result.get(7), "-classpath" );
-      Assert.assertEquals(result.get(10),"org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.ContainerLocalizer" );
-      Assert.assertEquals(result.get(11), "test");
-      Assert.assertEquals(result.get(12), "application_0");
-      Assert.assertEquals(result.get(13),"12345" );
-      Assert.assertEquals(result.get(14),"localhost" );
-      Assert.assertEquals(result.get(15),"8040" );
-
-    } catch (InterruptedException e) {
-      LOG.error("Error:"+e.getMessage(),e);
-      Assert.fail();
-    }
-  }
-  
-  
-  @Test
-  public void testContainerLaunchError() throws IOException {
-
-    // reinitialize executer
-    File f = new File("./src/test/resources/mock-container-executer-with-error");
-    if (!FileUtil.canExecute(f)) {
-      FileUtil.setExecutable(f, true);
-    }
-    String executorPath = f.getAbsolutePath();
-    Configuration conf = new Configuration();
-    conf.set(YarnConfiguration.NM_LINUX_CONTAINER_EXECUTOR_PATH, executorPath);
-    conf.set(YarnConfiguration.NM_LOCAL_DIRS, "file:///bin/echo");
-    conf.set(YarnConfiguration.NM_LOG_DIRS, "file:///dev/null");
-
-    mockExec = new DockerContainerExecutor();
-    dirsHandler = new LocalDirsHandlerService();
-    dirsHandler.init(conf);
-    mockExec.setConf(conf);
-
-    String appSubmitter = "nobody";
-    String cmd = ApplicationConstants.DEFAULT_DOCKER_LAUNCH_COMMAND;
-    String appId = "APP_ID";
-    String containerId = "CONTAINER_ID";
-    Container container = mock(Container.class);
-    ContainerId cId = mock(ContainerId.class);
-    ContainerLaunchContext context = mock(ContainerLaunchContext.class);
-    HashMap<String, String> env = new HashMap<String, String>();
-
-    when(container.getContainerId()).thenReturn(cId);
-    when(container.getLaunchContext()).thenReturn(context);
-
-    when(cId.toString()).thenReturn(containerId);
-
-    when(context.getEnvironment()).thenReturn(env);
-
-    Path scriptPath = new Path("file:///bin/echo");
-    Path tokensPath = new Path("file:///dev/null");
-    Path workDir = new Path("/tmp");
-    Path pidFile = new Path(workDir, "pid.txt");
-
-    mockExec.activateContainer(cId, pidFile);
-    int ret = mockExec.launchContainer(container, scriptPath, tokensPath,
-        appSubmitter, appId, workDir, dirsHandler.getLocalDirs(),
-        dirsHandler.getLogDirs());
-    Assert.assertNotSame(0, ret);
-    assertEquals(Arrays.asList(appSubmitter, cmd, appId, containerId,
-        workDir.toString(), "/bin/echo", "/dev/null", pidFile.toString(),
-        StringUtils.join(",", dirsHandler.getLocalDirs()),
-        StringUtils.join(",", dirsHandler.getLogDirs()),
-        "cgroups=none"), readMockParams());
-
-  }
-  
-  @Test
-  public void testInit() throws Exception {
-
-    mockExec.init();
-    assertEquals(Arrays.asList("--checksetup"), readMockParams());
-    
-  }
-
-  
-  @Test
-  public void testContainerKill() throws IOException {
-    String appSubmitter = "nobody";
-    String cmd = String.valueOf(
-        LinuxContainerExecutor.Commands.SIGNAL_CONTAINER.getValue());
-    ContainerExecutor.Signal signal = ContainerExecutor.Signal.QUIT;
-    String sigVal = String.valueOf(signal.getValue());
-    
-    mockExec.signalContainer(appSubmitter, "1000", signal);
-    assertEquals(Arrays.asList(appSubmitter, cmd, "1000", sigVal),
-        readMockParams());
-  }
-  
-//  @Test
-//  public void testDeleteAsUser() throws IOException {
-//    String appSubmitter = "nobody";
-//    String cmd = String.valueOf(
-//        LinuxContainerExecutor.Commands.DELETE_AS_USER.getValue());
-//    Path dir = new Path("/tmp/testdir");
-//
-//    mockExec.deleteAsUser(appSubmitter, dir);
-//    assertEquals(Arrays.asList(appSubmitter, cmd, "/tmp/testdir"),
-//        readMockParams());
-//  }
 }
