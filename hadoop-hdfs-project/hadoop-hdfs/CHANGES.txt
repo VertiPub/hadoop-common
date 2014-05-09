@@ -10,6 +10,9 @@ Release 2.4.1 - 2014-06-23
 
     HDFS-6215. Wrong error message for upgrade. (Kihwal Lee via jeagles)
 
+    HDFS-6294. Use INode IDs to avoid conflicts when a file open for write is
+    renamed. (cmccabe)
+
   OPTIMIZATIONS
 
   BUG FIXES 
