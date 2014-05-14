@@ -19,20 +19,17 @@
 package org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 
 import java.io.IOException;
-import java.lang.reflect.Constructor;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import junit.framework.Assert;
 
@@ -78,7 +75,9 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
-
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Map;
+import java.lang.reflect.Constructor;
 
 public class TestCapacityScheduler {
   private static final Log LOG = LogFactory.getLog(TestCapacityScheduler.class);
@@ -632,5 +631,33 @@ public class TestCapacityScheduler {
       }
       assertFalse(failed.get());
     }
+
+  @Test
+  public void testAsyncScheduling() throws Exception {
+    Configuration conf = new Configuration();
+    conf.setClass(YarnConfiguration.RM_SCHEDULER, CapacityScheduler.class,
+        ResourceScheduler.class);
+    MockRM rm = new MockRM(conf);
+    rm.start();
+    CapacityScheduler cs = (CapacityScheduler) rm.getResourceScheduler();
+
+    final int NODES = 100;
+    
+    // Register nodes
+    for (int i=0; i < NODES; ++i) {
+      String host = "192.168.1." + i;
+      RMNode node =
+          MockNodes.newNodeInfo(0, MockNodes.newResource(4 * GB), 1, host);
+      cs.handle(new NodeAddedSchedulerEvent(node));
+    }
+    
+    // Now directly exercise the scheduling loop
+    for (int i=0; i < NODES; ++i) {
+      CapacityScheduler.schedule(cs);
+    }
+  }
+
+
+
 
 }
