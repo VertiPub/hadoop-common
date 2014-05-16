@@ -44,6 +44,7 @@ import org.apache.hadoop.hdfs.protocol.DirectoryListing;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
 import org.apache.hadoop.hdfs.server.namenode.NameNode;
+import org.apache.hadoop.ipc.RemoteException;
 import org.apache.hadoop.nfs.AccessPrivilege;
 import org.apache.hadoop.nfs.NfsExports;
 import org.apache.hadoop.nfs.NfsFileType;
@@ -122,6 +123,7 @@ import org.apache.hadoop.oncrpc.security.VerifierNone;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.authorize.AuthorizationException;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
@@ -263,6 +265,16 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
     try {
       attrs = writeManager.getFileAttr(dfsClient, handle, iug);
     } catch (IOException e) {
+       LOG.info("Printing call stack from getattr", e);
+       if (e instanceof RemoteException) {
+           IOException ioe = ((RemoteException) e).unwrapRemoteException();
+           if (ioe instanceof AuthorizationException) {
+               LOG.info("catching an auth exception", ioe);
+               response.setStatus(Nfs3Status.NFS3ERR_ACCES);
+//               response.setStatus(Nfs3Status.NFS3_OK);
+               return response;
+           }
+       }
       LOG.info("Can't get file attribute, fileId=" + handle.getFileId());
       response.setStatus(Nfs3Status.NFS3ERR_IO);
       return response;
@@ -484,6 +496,7 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       attrs = writeManager.getFileAttr(dfsClient, handle, iug);
       if (attrs == null) {
         LOG.error("Can't get path for fileId:" + handle.getFileId());
+        LOG.info("Can't get path for fileId:" + handle.getFileId() + " set stale file handle");
         return new ACCESS3Response(Nfs3Status.NFS3ERR_STALE);
       }
       int access = Nfs3Utils.getAccessRightsForUserGroup(
@@ -492,6 +505,24 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       return new ACCESS3Response(Nfs3Status.NFS3_OK, attrs, access);
     } catch (IOException e) {
       LOG.warn("Exception ", e);
+      if (e instanceof RemoteException)
+      {
+        IOException ioe = ((RemoteException)e).unwrapRemoteException();
+        if (ioe instanceof AuthorizationException)
+        {
+          LOG.info("catching an auth exception", ioe);
+          attrs = new Nfs3FileAttributes(fileType, fs.getChildrenNum(), fs
+                        .getPermission().toShort(), iug.getUidAllowingUnknown(fs.getOwner()),
+                iug.getGidAllowingUnknown(fs.getGroup()), fs.getLen(), 0 /* fsid */,
+                fs.getFileId(), fs.getModificationTime(), fs.getAccessTime());
+//          return new ACCESS3Response(Nfs3Status.NFS3ERR_ACCES, attrs, 0);
+          // access should be zero here
+          return new ACCESS3Response(Nfs3Status.NFS3_OK, attrs, 0);
+//          response.setStatus(Nfs3Status.NFS3ERR_ACCES);
+//          return response;
+        }
+      }
+
       return new ACCESS3Response(Nfs3Status.NFS3ERR_IO);
     }
   }
@@ -1799,6 +1830,7 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
   public void handleInternal(ChannelHandlerContext ctx, RpcInfo info) {
     RpcCall rpcCall = (RpcCall) info.header();
     final NFSPROC3 nfsproc3 = NFSPROC3.fromValue(rpcCall.getProcedure());
+    LOG.info("Entering RpcProgramNfs3.handleInternal with nfsproc3 = " + nfsproc3.toString());
     int xid = rpcCall.getXid();
     byte[] data = new byte[info.data().readableBytes()];
     info.data().readBytes(data);
@@ -1928,6 +1960,7 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
     }
 
     RpcUtil.sendRpcResponse(ctx, rsp);
+    LOG.info("Exiting from RpcProgramNfs3.handleInternal");
   }
   
   @Override
