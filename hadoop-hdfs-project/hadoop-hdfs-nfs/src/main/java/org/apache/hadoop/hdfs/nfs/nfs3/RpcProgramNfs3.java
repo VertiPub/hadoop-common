@@ -268,9 +268,9 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       if (e instanceof RemoteException)
       {
           IOException ioe = ((RemoteException)e).unwrapRemoteException();
-          if (ioe instanceof AuthorizationException)
+          if (ioe instanceof AccessControlException)
           {
-            LOG.warn("catching an authorization exception: " + ioe.getMessage());
+            LOG.warn("Catching an authorization exception in getattr: " + ioe.getMessage());
             attrs = new Nfs3FileAttributes(NfsFileType.NFSDIR, 0, (short)0, 0,
                                            0, 0, 0 /* fsid */, handle.getFileId(), 0, 0);
             return new GETATTR3Response(Nfs3Status.NFS3_OK, attrs);
@@ -508,9 +508,9 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       if (e instanceof RemoteException)
       {
         IOException ioe = ((RemoteException)e).unwrapRemoteException();
-        if (ioe instanceof AuthorizationException)
+        if (ioe instanceof AccessControlException)
         {
-          LOG.warn("catching an authorization exception: " + ioe.getMessage());
+          LOG.warn("catching an authorization exception in access: " + ioe.getMessage());
           attrs = new Nfs3FileAttributes(NfsFileType.NFSDIR, 0, (short)0, 0,
                 0, 0, 0 /* fsid */, handle.getFileId(), 0, 0);
           // access should be zero here to indicate user has no access whatsoever
@@ -1640,9 +1640,9 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
         if (e instanceof RemoteException)
         {
             IOException ioe = ((RemoteException)e).unwrapRemoteException();
-            if (ioe instanceof AuthorizationException)
+            if (ioe instanceof AccessControlException)
             {
-                LOG.warn("catching an authorization exception: " + ioe.getMessage());
+                LOG.warn("Catching an authorization exception in fsstat: " + ioe.getMessage());
                 return new FSSTAT3Response(Nfs3Status.NFS3ERR_ACCES);
             }
         }
