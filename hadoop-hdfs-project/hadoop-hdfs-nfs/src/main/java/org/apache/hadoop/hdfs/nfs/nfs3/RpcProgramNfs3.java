@@ -270,7 +270,7 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
           IOException ioe = ((RemoteException)e).unwrapRemoteException();
           if (ioe instanceof AuthorizationException)
           {
-            LOG.info("catching an auth exception", ioe);
+            LOG.warn("catching an authorization exception: " + ioe.getMessage());
             attrs = new Nfs3FileAttributes(NfsFileType.NFSDIR, 0, (short)0, 0,
                                            0, 0, 0 /* fsid */, handle.getFileId(), 0, 0);
             return new GETATTR3Response(Nfs3Status.NFS3_OK, attrs);
@@ -505,13 +505,12 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       
       return new ACCESS3Response(Nfs3Status.NFS3_OK, attrs, access);
     } catch (IOException e) {
-      LOG.warn("Exception ", e);
       if (e instanceof RemoteException)
       {
         IOException ioe = ((RemoteException)e).unwrapRemoteException();
         if (ioe instanceof AuthorizationException)
         {
-          LOG.info("catching an auth exception", ioe);
+          LOG.warn("catching an authorization exception: " + ioe.getMessage());
           attrs = new Nfs3FileAttributes(NfsFileType.NFSDIR, 0, (short)0, 0,
                 0, 0, 0 /* fsid */, handle.getFileId(), 0, 0);
           // access should be zero here to indicate user has no access whatsoever
@@ -519,6 +518,7 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
         }
       }
 
+      LOG.warn("Exception ", e);
       return new ACCESS3Response(Nfs3Status.NFS3ERR_IO);
     }
   }
@@ -1637,6 +1637,15 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       return new FSSTAT3Response(Nfs3Status.NFS3_OK, attrs, totalBytes,
           freeBytes, freeBytes, maxFsObjects, maxFsObjects, maxFsObjects, 0);
     } catch (IOException e) {
+        if (e instanceof RemoteException)
+        {
+            IOException ioe = ((RemoteException)e).unwrapRemoteException();
+            if (ioe instanceof AuthorizationException)
+            {
+                LOG.warn("catching an authorization exception: " + ioe.getMessage());
+                return new FSSTAT3Response(Nfs3Status.NFS3ERR_ACCES);
+            }
+        }
       LOG.warn("Exception ", e);
       return new FSSTAT3Response(Nfs3Status.NFS3ERR_IO);
     }
