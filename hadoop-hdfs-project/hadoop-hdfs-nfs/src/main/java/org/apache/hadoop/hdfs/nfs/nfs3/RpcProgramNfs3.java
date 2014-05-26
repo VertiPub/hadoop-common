@@ -123,7 +123,6 @@ import org.apache.hadoop.oncrpc.security.VerifierNone;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.security.authorize.AuthorizationException;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
@@ -265,18 +264,6 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
     try {
       attrs = writeManager.getFileAttr(dfsClient, handle, iug);
     } catch (IOException e) {
-      if (e instanceof RemoteException)
-      {
-          IOException ioe = ((RemoteException)e).unwrapRemoteException();
-          if (ioe instanceof AccessControlException)
-          {
-            LOG.warn("Catching an authorization exception in getattr: " + ioe.getMessage());
-            attrs = new Nfs3FileAttributes(NfsFileType.NFSDIR, 0, (short)0, 0,
-                                           0, 0, 0 /* fsid */, handle.getFileId(), 0, 0);
-            return new GETATTR3Response(Nfs3Status.NFS3_OK, attrs);
-          }
-      }
-
       LOG.info("Can't get file attribute, fileId=" + handle.getFileId());
       response.setStatus(Nfs3Status.NFS3ERR_IO);
       return response;
@@ -504,20 +491,18 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
           securityHandler.getUid(), securityHandler.getGid(), attrs);
       
       return new ACCESS3Response(Nfs3Status.NFS3_OK, attrs, access);
-    } catch (IOException e) {
-      if (e instanceof RemoteException)
-      {
-        IOException ioe = ((RemoteException)e).unwrapRemoteException();
-        if (ioe instanceof AccessControlException)
-        {
-          LOG.warn("catching an authorization exception in access: " + ioe.getMessage());
-          attrs = new Nfs3FileAttributes(NfsFileType.NFSDIR, 0, (short)0, 0,
-                0, 0, 0 /* fsid */, handle.getFileId(), 0, 0);
-          // access should be zero here to indicate user has no access whatsoever
-          return new ACCESS3Response(Nfs3Status.NFS3_OK, attrs, 0);
-        }
+    } catch (RemoteException r) {
+      LOG.warn("Exception ", r);
+      IOException io = r.unwrapRemoteException();
+      /**
+       * AuthorizationException can be thrown if the user can't be proxy'ed.
+       */
+      if (io instanceof AccessControlException) {
+        return new ACCESS3Response(Nfs3Status.NFS3ERR_PERM);
+      } else {
+        return new ACCESS3Response(Nfs3Status.NFS3ERR_IO);
       }
-
+    } catch (IOException e) {
       LOG.warn("Exception ", e);
       return new ACCESS3Response(Nfs3Status.NFS3ERR_IO);
     }
@@ -1643,7 +1628,7 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
             if (ioe instanceof AccessControlException)
             {
                 LOG.warn("Catching an authorization exception in fsstat: " + ioe.getMessage());
-                return new FSSTAT3Response(Nfs3Status.NFS3ERR_ACCES);
+                return new FSSTAT3Response(Nfs3Status.NFS3ERR_PERM);
             }
         }
       LOG.warn("Exception ", e);
