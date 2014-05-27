@@ -44,6 +44,7 @@ import org.apache.hadoop.hdfs.protocol.DirectoryListing;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
 import org.apache.hadoop.hdfs.server.namenode.NameNode;
+import org.apache.hadoop.ipc.RemoteException;
 import org.apache.hadoop.nfs.AccessPrivilege;
 import org.apache.hadoop.nfs.NfsExports;
 import org.apache.hadoop.nfs.NfsFileType;
@@ -122,6 +123,7 @@ import org.apache.hadoop.oncrpc.security.VerifierNone;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.authorize.AuthorizationException;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
@@ -262,6 +264,17 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
     Nfs3FileAttributes attrs = null;
     try {
       attrs = writeManager.getFileAttr(dfsClient, handle, iug);
+    } catch (RemoteException r) {
+      LOG.warn("Exception ", r);
+      IOException io = r.unwrapRemoteException();
+      /**
+       * AuthorizationException can be thrown if the user can't be proxy'ed.
+       */
+      if (io instanceof AuthorizationException) {
+        return new GETATTR3Response(Nfs3Status.NFS3ERR_ACCES);
+      } else {
+        return new GETATTR3Response(Nfs3Status.NFS3ERR_IO);
+      }
     } catch (IOException e) {
       LOG.info("Can't get file attribute, fileId=" + handle.getFileId());
       response.setStatus(Nfs3Status.NFS3ERR_IO);
@@ -490,6 +503,17 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
           securityHandler.getUid(), securityHandler.getGid(), attrs);
       
       return new ACCESS3Response(Nfs3Status.NFS3_OK, attrs, access);
+    } catch (RemoteException r) {
+      LOG.warn("Exception ", r);
+      IOException io = r.unwrapRemoteException();
+      /**
+       * AuthorizationException can be thrown if the user can't be proxy'ed.
+       */
+      if (io instanceof AuthorizationException) {
+        return new ACCESS3Response(Nfs3Status.NFS3ERR_ACCES);
+      } else {
+        return new ACCESS3Response(Nfs3Status.NFS3ERR_IO);
+      }
     } catch (IOException e) {
       LOG.warn("Exception ", e);
       return new ACCESS3Response(Nfs3Status.NFS3ERR_IO);
@@ -1609,6 +1633,17 @@ public class RpcProgramNfs3 extends RpcProgram implements Nfs3Interface {
       
       return new FSSTAT3Response(Nfs3Status.NFS3_OK, attrs, totalBytes,
           freeBytes, freeBytes, maxFsObjects, maxFsObjects, maxFsObjects, 0);
+    } catch (RemoteException r) {
+      LOG.warn("Exception ", r);
+      IOException io = r.unwrapRemoteException();
+      /**
+       * AuthorizationException can be thrown if the user can't be proxy'ed.
+       */
+      if (io instanceof AuthorizationException) {
+        return new FSSTAT3Response(Nfs3Status.NFS3ERR_ACCES);
+      } else {
+        return new FSSTAT3Response(Nfs3Status.NFS3ERR_IO);
+      }
     } catch (IOException e) {
       LOG.warn("Exception ", e);
       return new FSSTAT3Response(Nfs3Status.NFS3ERR_IO);
