@@ -22,6 +22,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
 import java.io.OutputStreamWriter;
+import java.io.Writer;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -106,5 +107,23 @@ public class TestGraphiteMetrics {
             "null.all.Context.Context=all.foo2 2 10\n") ||
             result.equals("null.all.Context.Context=all.foo2 2 10\n" + 
             "null.all.Context.Context=all.foo1 1 10\n"));
+    }
+
+    @Test
+    public void testClose(){
+      GraphiteSink sink = new GraphiteSink();
+      Writer mockWriter = mock(Writer.class);
+      sink.setWriter(mockWriter);
+      try {
+        sink.close();
+      } catch (IOException ioe) {
+        ioe.printStackTrace();
+      }
+
+      try {
+        verify(mockWriter).close();
+      } catch (IOException ioe) {
+        ioe.printStackTrace();
+      }
     }
 }
