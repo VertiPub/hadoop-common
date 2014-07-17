@@ -83,12 +83,17 @@ class LsImageVisitor extends TextWriterImageVisitor {
                                        "s %" + widthGroup + "s %" + widthSize +
                                        "d %" + widthMod + "s %s";
   private void printLine() throws IOException {
-    sb.append(numBlocks < 0 ? "d" : "-");
-    sb.append(perms);
-
+    
     if (0 != linkTarget.length()) {
       path = path + " -> " + linkTarget; 
+      sb.append("l");
     }
+    else {
+      sb.append(numBlocks < 0 ? "d" : "-");
+    }
+
+    sb.append(perms);
+
     formatter.format(lsStr, replication > 0 ? replication : "-",
                            username, group, filesize, modTime, path);
     sb.append("\n");
