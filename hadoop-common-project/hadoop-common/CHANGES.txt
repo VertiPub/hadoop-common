@@ -17,6 +17,9 @@ Release 2.2.0 - 2013-10-13
 
   IMPROVEMENTS
 
+    HADOOP-10610. Upgrade S3n s3.fs.buffer.dir to support multi directories.
+    (Ted Malaska via atm)
+
     HADOOP-9948. Add a config value to CLITestHelper to skip tests on Windows.
     (Chuan Liu via cnauroth)
 
