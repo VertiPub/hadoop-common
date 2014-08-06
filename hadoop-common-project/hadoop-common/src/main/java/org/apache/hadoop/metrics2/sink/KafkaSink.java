@@ -139,11 +139,6 @@ public class KafkaSink implements MetricsSink, Closeable {
 
     @Override
     public void flush() {
-        try {
-            LOG.warn("Kafka seems not to have any flush() mechanism!");
-        } catch (Exception e) {
-            throw new MetricsException("Error flushing metrics", e);
-        }
     }
 
     @Override
