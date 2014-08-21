@@ -138,7 +138,19 @@ public class YarnConfiguration extends Configuration {
   /** The Kerberos principal for the resource manager.*/
   public static final String RM_PRINCIPAL =
     RM_PREFIX + "principal";
+
+  /** Implementation class of ScheduledRequests.*/
+  public static final String  RM_SCHEDULED_REQUESTS_CLASS_KEY =
+    RM_PREFIX + "scheduled.requests.class";
   
+  /** The boolean value if network topology with nodegroup.*/
+  public static final String  NET_TOPOLOGY_WITH_NODEGROUP =
+    "net.topology.with.nodegroup";
+  
+  /** Implementation class of AbstractSchedulerElementsFactory.*/
+  public static final String  RM_SCHEDULER_ELEMENTS_FACTORY_IMPL =
+    RM_PREFIX + "scheduler.elements.factory.impl";
+
   /** The address of the scheduler interface.*/
   public static final String RM_SCHEDULER_ADDRESS = 
     RM_PREFIX + "scheduler.address";

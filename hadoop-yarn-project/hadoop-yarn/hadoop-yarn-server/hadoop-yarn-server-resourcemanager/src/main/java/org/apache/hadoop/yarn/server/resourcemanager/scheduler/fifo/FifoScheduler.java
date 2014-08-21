@@ -102,7 +102,7 @@ public class FifoScheduler extends
     AbstractYarnScheduler<FiCaSchedulerApp, FiCaSchedulerNode> implements
     Configurable {
 
-  private static final Log LOG = LogFactory.getLog(FifoScheduler.class);
+  protected static final Log LOG = LogFactory.getLog(FifoScheduler.class);
 
   private static final RecordFactory recordFactory = 
     RecordFactoryProvider.getRecordFactory(null);
@@ -500,7 +500,7 @@ public class FifoScheduler extends
     }
   }
 
-  private int getMaxAllocatableContainers(FiCaSchedulerApp application,
+  protected int getMaxAllocatableContainers(FiCaSchedulerApp application,
       Priority priority, FiCaSchedulerNode node, NodeType type) {
     int maxContainers = 0;
     
@@ -535,14 +535,13 @@ public class FifoScheduler extends
     return maxContainers;
   }
 
-
-  private int assignContainersOnNode(FiCaSchedulerNode node, 
+  protected int assignContainersOnNode(FiCaSchedulerNode node, 
       FiCaSchedulerApp application, Priority priority 
   ) {
     // Data-local
     int nodeLocalContainers = 
       assignNodeLocalContainers(node, application, priority); 
-
+    
     // Rack-local
     int rackLocalContainers = 
       assignRackLocalContainers(node, application, priority);
@@ -563,7 +562,7 @@ public class FifoScheduler extends
     return (nodeLocalContainers + rackLocalContainers + offSwitchContainers);
   }
 
-  private int assignNodeLocalContainers(FiCaSchedulerNode node, 
+  protected int assignNodeLocalContainers(FiCaSchedulerNode node, 
       FiCaSchedulerApp application, Priority priority) {
     int assignedContainers = 0;
     ResourceRequest request = 
@@ -589,7 +588,7 @@ public class FifoScheduler extends
     return assignedContainers;
   }
 
-  private int assignRackLocalContainers(FiCaSchedulerNode node, 
+  protected int assignRackLocalContainers(FiCaSchedulerNode node, 
       FiCaSchedulerApp application, Priority priority) {
     int assignedContainers = 0;
     ResourceRequest request = 
@@ -614,7 +613,7 @@ public class FifoScheduler extends
     return assignedContainers;
   }
 
-  private int assignOffSwitchContainers(FiCaSchedulerNode node, 
+  protected int assignOffSwitchContainers(FiCaSchedulerNode node, 
       FiCaSchedulerApp application, Priority priority) {
     int assignedContainers = 0;
     ResourceRequest request = 
@@ -627,7 +626,8 @@ public class FifoScheduler extends
     return assignedContainers;
   }
 
-  private int assignContainer(FiCaSchedulerNode node, FiCaSchedulerApp application, 
+  protected int assignContainer(FiCaSchedulerNode node, 
+      FiCaSchedulerApp application,
       Priority priority, int assignableContainers, 
       ResourceRequest request, NodeType type) {
     LOG.debug("assignContainers:" +
@@ -856,7 +856,7 @@ public class FifoScheduler extends
      
   }
   
-  private Resource usedResource = recordFactory.newRecordInstance(Resource.class);
+  protected Resource usedResource = recordFactory.newRecordInstance(Resource.class);
 
   private synchronized void removeNode(RMNode nodeInfo) {
     FiCaSchedulerNode node = getNode(nodeInfo.getNodeID());
@@ -890,7 +890,7 @@ public class FifoScheduler extends
     return DEFAULT_QUEUE.getQueueUserAclInfo(null); 
   }
 
-  private synchronized void addNode(RMNode nodeManager) {
+  protected synchronized void addNode(RMNode nodeManager) {
     this.nodes.put(nodeManager.getNodeID(), new FiCaSchedulerNode(nodeManager,
         usePortForNodeName));
     Resources.addTo(clusterResource, nodeManager.getTotalCapability());

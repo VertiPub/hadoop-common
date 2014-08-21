@@ -75,6 +75,7 @@ import org.apache.hadoop.yarn.api.records.PreemptionMessage;
 import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Token;
 import org.apache.hadoop.yarn.client.api.NMTokenCache;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.exceptions.YarnRuntimeException;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.security.AMRMTokenIdentifier;
@@ -94,9 +95,9 @@ public class RMContainerAllocator extends RMContainerRequestor
   public static final 
   float DEFAULT_COMPLETED_MAPS_PERCENT_FOR_REDUCE_SLOWSTART = 0.05f;
   
-  private static final Priority PRIORITY_FAST_FAIL_MAP;
+  protected static final Priority PRIORITY_FAST_FAIL_MAP;
   private static final Priority PRIORITY_REDUCE;
-  private static final Priority PRIORITY_MAP;
+  static final Priority PRIORITY_MAP;
 
   @VisibleForTesting
   public static final String RAMPDOWN_DIAGNOSTIC = "Reducer preempted "
@@ -140,12 +141,13 @@ public class RMContainerAllocator extends RMContainerRequestor
   private final AssignedRequests assignedRequests = new AssignedRequests();
   
   //holds scheduled requests to be fulfilled by RM
-  private final ScheduledRequests scheduledRequests = new ScheduledRequests();
+  private ScheduledRequests scheduledRequests;
   
-  private int containersAllocated = 0;
+  int containersAllocated = 0;
   private int containersReleased = 0;
-  private int hostLocalAssigned = 0;
-  private int rackLocalAssigned = 0;
+  int hostLocalAssigned = 0;
+  int rackLocalAssigned = 0;
+  int nodegroupLocalAssigned = 0;
   private int lastCompletedTasks = 0;
   
   private boolean recalculateReduceSchedule = false;
@@ -182,7 +184,7 @@ public class RMContainerAllocator extends RMContainerRequestor
   }
 
   @Override
-  protected void serviceInit(Configuration conf) throws Exception {
+  protected synchronized void serviceInit(Configuration conf) throws Exception {
     super.serviceInit(conf);
     reduceSlowStart = conf.getFloat(
         MRJobConfig.COMPLETED_MAPS_FOR_REDUCE_SLOWSTART, 
@@ -197,6 +199,23 @@ public class RMContainerAllocator extends RMContainerRequestor
         MRJobConfig.MR_JOB_REDUCER_PREEMPT_DELAY_SEC,
         MRJobConfig.DEFAULT_MR_JOB_REDUCER_PREEMPT_DELAY_SEC) * 1000;//sec -> ms
     RackResolver.init(conf);
+    Class<? extends ScheduledRequests> scheduledRequestsClass =
+        conf.getClass(YarnConfiguration.RM_SCHEDULED_REQUESTS_CLASS_KEY,
+            ScheduledRequests.class, ScheduledRequests.class);
+    try {
+      // Constructor of nested class will automatically add outer class
+      // as its first parameter, so here we need two parameters rather than
+      // one.
+      Constructor<? extends ScheduledRequests> meth = 
+          scheduledRequestsClass.getDeclaredConstructor(
+              new Class[] {RMContainerAllocator.class, 
+              RMContainerAllocator.class});
+      meth.setAccessible(true);
+      scheduledRequests = meth.newInstance(this, this);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+    
     retryInterval = getConfig().getLong(MRJobConfig.MR_AM_TO_RM_WAIT_INTERVAL_MS,
                                 MRJobConfig.DEFAULT_MR_AM_TO_RM_WAIT_INTERVAL_MS);
     // Init startTime to current time. If all goes well, it will be reset after
@@ -305,7 +324,7 @@ public class RMContainerAllocator extends RMContainerRequestor
   }
 
   @Override
-  public void handle(ContainerAllocatorEvent event) {
+  public synchronized void handle(ContainerAllocatorEvent event) {
     int qSize = eventQueue.size();
     if (qSize != 0 && qSize % 1000 == 0) {
       LOG.info("Size of event-queue in RMContainerAllocator is " + qSize);
@@ -591,7 +610,7 @@ public class RMContainerAllocator extends RMContainerRequestor
   }
 
   @Private
-  public void scheduleAllReduces() {
+  public synchronized void scheduleAllReduces() {
     for (ContainerRequest req : pendingReduces) {
       scheduledRequests.addReduce(req);
     }
@@ -599,7 +618,7 @@ public class RMContainerAllocator extends RMContainerRequestor
   }
   
   @Private
-  public void rampUpReduces(int rampUp) {
+  public synchronized void rampUpReduces(int rampUp) {
     //more reduce to be scheduled
     for (int i = 0; i < rampUp; i++) {
       ContainerRequest request = pendingReduces.removeFirst();
@@ -608,7 +627,7 @@ public class RMContainerAllocator extends RMContainerRequestor
   }
   
   @Private
-  public void rampDownReduces(int rampDown) {
+  public synchronized void rampDownReduces(int rampDown) {
     //remove from the scheduled and move back to pending
     for (int i = 0; i < rampDown; i++) {
       ContainerRequest request = scheduledRequests.removeReduce();
@@ -816,9 +835,9 @@ public class RMContainerAllocator extends RMContainerRequestor
       new LinkedList<TaskAttemptId>();
     
     /** Maps from a host to a list of Map tasks with data on the host */
-    private final Map<String, LinkedList<TaskAttemptId>> mapsHostMapping = 
+    protected final Map<String, LinkedList<TaskAttemptId>> mapsHostMapping = 
       new HashMap<String, LinkedList<TaskAttemptId>>();
-    private final Map<String, LinkedList<TaskAttemptId>> mapsRackMapping = 
+    protected final Map<String, LinkedList<TaskAttemptId>> mapsRackMapping = 
       new HashMap<String, LinkedList<TaskAttemptId>>();
     @VisibleForTesting
     final Map<TaskAttemptId, ContainerRequest> maps =
@@ -826,6 +845,14 @@ public class RMContainerAllocator extends RMContainerRequestor
     
     private final LinkedHashMap<TaskAttemptId, ContainerRequest> reduces = 
       new LinkedHashMap<TaskAttemptId, ContainerRequest>();
+    
+
+    protected RMContainerAllocator rmContainerAllocator;
+    
+    ScheduledRequests(RMContainerAllocator rmContainerAllocator) {
+      this.rmContainerAllocator = rmContainerAllocator;
+    }
+
     
     boolean remove(TaskAttemptId tId) {
       ContainerRequest req = null;
@@ -1128,7 +1155,7 @@ public class RMContainerAllocator extends RMContainerRequestor
     }
     
     @SuppressWarnings("unchecked")
-    private void assignMapsWithLocality(List<Container> allocatedContainers) {
+    protected void assignMapsWithLocality(List<Container> allocatedContainers) {
       // try to assign to all nodes first to match node local
       Iterator<Container> it = allocatedContainers.iterator();
       while(it.hasNext() && maps.size() > 0){

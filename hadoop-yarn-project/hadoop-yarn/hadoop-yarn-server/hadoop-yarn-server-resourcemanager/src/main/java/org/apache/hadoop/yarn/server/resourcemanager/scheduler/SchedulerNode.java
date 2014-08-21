@@ -60,7 +60,7 @@ public abstract class SchedulerNode {
       new HashMap<ContainerId, RMContainer>();
 
   private final RMNode rmNode;
-  private final String nodeName;
+  protected final String nodeName;
 
   public SchedulerNode(RMNode node, boolean usePortForNodeName) {
     this.rmNode = node;
@@ -86,6 +86,16 @@ public abstract class SchedulerNode {
     return this.rmNode.getNodeID();
   }
 
+  /**
+  * Check if SchedulerNode is aware of NodeGroup
+  */
+  public abstract boolean isNodeGroupAware();
+
+  /**
+  * Get name of NodeGroup, return null if not aware of NodeGroup
+  */
+  public abstract String getNodeGroupName();
+  
   public String getHttpAddress() {
     return this.rmNode.getHttpAddress();
   }

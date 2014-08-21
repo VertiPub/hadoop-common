@@ -19,6 +19,7 @@
 package org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -65,11 +66,14 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainerEven
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainerState;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.UpdatedContainerInfo;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.AbstractSchedulerElementsFactory;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.AbstractYarnScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.Allocation;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.PreemptableResourceScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.QueueMetrics;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerApplication;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerElementsFactory;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerNode;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerUtils;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacitySchedulerConfiguration.QueueMapping;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacitySchedulerConfiguration.QueueMapping.MappingType;
@@ -517,8 +521,14 @@ public class CapacityScheduler extends
         throw new IllegalStateException(
             "Queue configuration missing child queue names for " + queueName);
       }
-      queue = 
-          new LeafQueue(csContext, queueName, parent,oldQueues.get(queueName));
+
+      AbstractSchedulerElementsFactory schedulerElementsFactory = 
+          (AbstractSchedulerElementsFactory) ReflectionUtils.newInstance(
+              conf.getClass(YarnConfiguration.RM_SCHEDULER_ELEMENTS_FACTORY_IMPL,
+            SchedulerElementsFactory.class, AbstractSchedulerElementsFactory.class), conf);
+      queue = schedulerElementsFactory.constructLeafQueue(
+          csContext, queueName, parent, applicationComparator, 
+          oldQueues.get(queueName));
       
       // Used only for unit tests
       queue = hook.hook(queue);
@@ -1030,8 +1040,15 @@ public class CapacityScheduler extends
   }
 
   private synchronized void addNode(RMNode nodeManager) {
-    this.nodes.put(nodeManager.getNodeID(), new FiCaSchedulerNode(nodeManager,
-        usePortForNodeName));
+    AbstractSchedulerElementsFactory schedulerElementsFactory = 
+        (AbstractSchedulerElementsFactory) ReflectionUtils.newInstance(
+            conf.getClass(YarnConfiguration.RM_SCHEDULER_ELEMENTS_FACTORY_IMPL,
+            SchedulerElementsFactory.class, 
+            AbstractSchedulerElementsFactory.class), conf);
+    
+    this.nodes.put(nodeManager.getNodeID(),
+        schedulerElementsFactory.constructFiCaSchedulerNode(nodeManager, usePortForNodeName));
+    
     Resources.addTo(clusterResource, nodeManager.getTotalCapability());
     root.updateClusterResource(clusterResource);
     int numNodes = numNodeManagers.incrementAndGet();

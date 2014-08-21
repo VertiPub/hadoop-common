@@ -38,6 +38,16 @@ public class FiCaSchedulerNode extends SchedulerNode {
   }
 
   @Override
+  public boolean isNodeGroupAware() {
+	return false;
+  }
+
+  @Override
+  public String getNodeGroupName() {
+	  return null;
+  }
+
+  @Override
   public synchronized void reserveResource(
       SchedulerApplicationAttempt application, Priority priority,
       RMContainer container) {
