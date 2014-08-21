@@ -831,7 +831,7 @@ public class RMContainerAllocator extends RMContainerRequestor
   @VisibleForTesting
   class ScheduledRequests {
     
-    private final LinkedList<TaskAttemptId> earlierFailedMaps = 
+    protected final LinkedList<TaskAttemptId> earlierFailedMaps = 
       new LinkedList<TaskAttemptId>();
     
     /** Maps from a host to a list of Map tasks with data on the host */
@@ -1031,7 +1031,7 @@ public class RMContainerAllocator extends RMContainerRequestor
     }
     
     @SuppressWarnings("unchecked")
-    private void containerAssigned(Container allocated, 
+    protected void containerAssigned(Container allocated, 
                                     ContainerRequest assigned) {
       // Update resource requests
       decContainerReq(assigned);
@@ -1369,6 +1369,11 @@ public class RMContainerAllocator extends RMContainerRequestor
     }
 
     public void log(String msgPrefix) {
+      boolean isNodeGroupAware = getConfig().getBoolean(
+          YarnConfiguration.NET_TOPOLOGY_WITH_NODEGROUP, false);
+      String nodeGroupAssignedInfo = isNodeGroupAware ? 
+          " nodeGroupLocalAssigned:" + nodegroupLocalAssigned : "";
+
         LOG.info(msgPrefix + "PendingReds:" + numPendingReduces +
         " ScheduledMaps:" + numScheduledMaps +
         " ScheduledReds:" + numScheduledReduces +
@@ -1379,6 +1384,7 @@ public class RMContainerAllocator extends RMContainerRequestor
         " ContAlloc:" + numContainersAllocated +
         " ContRel:" + numContainersReleased +
         " HostLocal:" + hostLocalAssigned +
+        nodeGroupAssignedInfo +
         " RackLocal:" + rackLocalAssigned);
     }
   }

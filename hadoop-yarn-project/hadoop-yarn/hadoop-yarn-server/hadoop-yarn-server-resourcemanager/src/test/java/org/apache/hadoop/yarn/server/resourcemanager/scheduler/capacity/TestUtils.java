@@ -44,8 +44,10 @@ import org.apache.hadoop.yarn.server.resourcemanager.RMContextImpl;
 import org.apache.hadoop.yarn.server.resourcemanager.ahs.RMApplicationHistoryWriter;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.ContainerAllocationExpirer;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
+import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeImplWithNodeGroup;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerApp;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerNode;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerNodeWithNodeGroup;
 import org.apache.hadoop.yarn.server.resourcemanager.security.AMRMTokenSecretManager;
 import org.apache.hadoop.yarn.server.resourcemanager.security.ClientToAMTokenSecretManagerInRM;
 import org.apache.hadoop.yarn.server.resourcemanager.security.RMContainerTokenSecretManager;
@@ -166,6 +168,27 @@ public class TestUtils {
     return node;
   }
   
+  public static FiCaSchedulerNode getMockNodeWithNodeGroup(
+      String host, String nodegroup, String rack, int port, int capability) {
+    NodeId nodeId = mock(NodeId.class);
+    when(nodeId.getHost()).thenReturn(host);
+    when(nodeId.getPort()).thenReturn(port);
+
+    RMNodeImplWithNodeGroup rmNode = mock(RMNodeImplWithNodeGroup.class);
+    when(rmNode.getNodeID()).thenReturn(nodeId);
+    when(rmNode.getTotalCapability()).thenReturn(
+        Resources.createResource(capability));
+    when(rmNode.getNodeAddress()).thenReturn(host+":"+port);
+    when(rmNode.getHostName()).thenReturn(host);
+    when(rmNode.getNodeGroupName()).thenReturn(nodegroup);
+    when(rmNode.getRackName()).thenReturn(rack);
+        
+    FiCaSchedulerNodeWithNodeGroup node = 
+        spy(new FiCaSchedulerNodeWithNodeGroup(rmNode, false));
+    LOG.info("node = " + host + " avail=" + node.getAvailableResource());
+    return node;
+  }
+
   public static ContainerId getMockContainerId(FiCaSchedulerApp application) {
     ContainerId containerId = mock(ContainerId.class);
     doReturn(application.getApplicationAttemptId()).

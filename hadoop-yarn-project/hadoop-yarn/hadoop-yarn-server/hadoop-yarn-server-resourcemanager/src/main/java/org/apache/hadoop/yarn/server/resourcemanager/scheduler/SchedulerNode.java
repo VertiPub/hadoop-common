@@ -59,7 +59,7 @@ public abstract class SchedulerNode {
   private final Map<ContainerId, RMContainer> launchedContainers =
       new HashMap<ContainerId, RMContainer>();
 
-  private final RMNode rmNode;
+  protected final RMNode rmNode;
   protected final String nodeName;
 
   public SchedulerNode(RMNode node, boolean usePortForNodeName) {

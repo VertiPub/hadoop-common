@@ -109,7 +109,7 @@ public class FifoScheduler extends
 
   Configuration conf;
 
-  private boolean usePortForNodeName;
+  protected boolean usePortForNodeName;
 
   private ActiveUsersManager activeUsersManager;
 

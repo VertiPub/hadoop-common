@@ -250,6 +250,26 @@
     <value>org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler</value>
   </property>
 
+   <property>
+    <description>The class to use as scheduled requests.</description>
+    <name>yarn.resourcemanager.scheduled.requests.class</name>
+  </property>
+
+  <property>
+    <description> The boolean value to identify if the cluster is deployed on
+    an environment which needs an additional layer (node group) between
+    node and rack for network topology.
+    </description>
+    <name>net.topology.with.nodegroup</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <description>The class to use as AbstractSchedulerElementsFactory 
+    in RM scheduler.</description>
+    <name>yarn.resourcemanager.scheduler.elements.factory.impl</name>
+  </property>
+
   <property>
     <description>The minimum allocation for every container request at the RM,
     in MBs. Memory requests lower than this won't take effect,

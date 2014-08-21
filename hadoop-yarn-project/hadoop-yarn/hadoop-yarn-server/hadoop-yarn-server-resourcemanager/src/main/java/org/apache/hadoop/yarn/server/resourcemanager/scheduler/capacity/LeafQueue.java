@@ -127,7 +127,7 @@ public class LeafQueue implements CSQueue {
   
   private final ActiveUsersManager activeUsersManager;
   
-  private final ResourceCalculator resourceCalculator;
+  protected final ResourceCalculator resourceCalculator;
   
   public LeafQueue(CapacitySchedulerContext cs, 
       String queueName, CSQueue parent, CSQueue old) {
@@ -799,7 +799,7 @@ public class LeafQueue implements CSQueue {
   private static final CSAssignment NULL_ASSIGNMENT =
       new CSAssignment(Resources.createResource(0, 0), NodeType.NODE_LOCAL);
   
-  private static final CSAssignment SKIP_ASSIGNMENT = new CSAssignment(true);
+  protected static final CSAssignment SKIP_ASSIGNMENT = new CSAssignment(true);
   
   @Override
   public synchronized CSAssignment 

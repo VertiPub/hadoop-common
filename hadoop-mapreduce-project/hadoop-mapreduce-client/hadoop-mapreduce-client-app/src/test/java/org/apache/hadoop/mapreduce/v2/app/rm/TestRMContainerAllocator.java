@@ -70,6 +70,7 @@ import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptKillEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.impl.JobImpl;
 import org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl;
 import org.apache.hadoop.mapreduce.v2.app.rm.preemption.NoopAMPreemptionPolicy;
+import org.apache.hadoop.mapreduce.v2.app.rm.ContainerRequestWithNodeGroupEvent;
 import org.apache.hadoop.mapreduce.v2.util.MRBuilderUtils;
 import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
 import org.apache.hadoop.net.NetUtils;
@@ -737,6 +738,149 @@ public class TestRMContainerAllocator {
     boolean checkHostMatch = false;
     boolean checkRackMatch = true;
     checkAssignments(new ContainerRequestEvent[] { event3, event4 },
+        assigned, checkHostMatch, checkRackMatch);
+  }
+
+  @Test
+  public void testMapTaskSchedulingWithNodeGroup() throws Exception {
+
+    LOG.info("Running testMapTaskSchedulingWithNodeGroup");
+
+    Configuration conf = new Configuration();
+    // Set related implementation classes with NodeGroup.
+    conf.set(YarnConfiguration.NET_TOPOLOGY_WITH_NODEGROUP, "true");
+    conf.set(YarnConfiguration.RM_SCHEDULED_REQUESTS_CLASS_KEY, 
+        "org.apache.hadoop.mapreduce.v2.app.rm.ScheduledRequestsWithNodeGroup");
+    conf.set(YarnConfiguration.RM_SCHEDULER_ELEMENTS_FACTORY_IMPL, 
+        "org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerElementsFactoryWithNodeGroup");
+    MyResourceManager rm = new MyResourceManager(conf);
+    rm.start();
+    DrainDispatcher dispatcher = (DrainDispatcher) rm.getRMContext()
+        .getDispatcher();
+
+    // Submit the application
+    RMApp app = rm.submitApp(1024);
+    dispatcher.await();
+
+    MockNM amNodeManager = rm.registerNode("amNM:1234", 2048);
+    amNodeManager.nodeHeartbeat(true);
+    dispatcher.await();
+
+    ApplicationAttemptId appAttemptId = app.getCurrentAppAttempt()
+        .getAppAttemptId();
+    rm.sendAMLaunched(appAttemptId);
+    dispatcher.await();
+
+    JobId jobId = MRBuilderUtils.newJobId(appAttemptId.getApplicationId(), 0);
+    Job mockJob = mock(Job.class);
+    when(mockJob.getReport()).thenReturn(
+        MRBuilderUtils.newJobReport(jobId, "job", "user", JobState.RUNNING, 0,
+            0, 0, 0, 0, 0, 0, "jobfile", null, false, ""));
+    MyContainerAllocator allocator = new MyContainerAllocator(rm, conf,
+        appAttemptId, mockJob);
+
+    String host1 = "h1:1234";
+    String host2 = "h2:1234";
+    String host3 = "h3:1234";
+    String host4 = "h4:1234";
+    String host5 = "h5:1234";
+    String host6 = "h6:1234";
+
+    String rack1 = "/rack1";
+    String rack2 = "/rack2";
+
+    String nodegroup1 = "/nodegroup1";
+    String nodegroup2 = "/nodegroup2";
+    String nodegroup3 = "/nodegroup3";
+    String nodegroup4 = "/nodegroup4";
+
+    StaticMapping.addNodeToRack(host1, rack1 + nodegroup1);
+    StaticMapping.addNodeToRack("h1", rack1 + nodegroup1);
+
+    StaticMapping.addNodeToRack(host2, rack2 + nodegroup2);
+    StaticMapping.addNodeToRack("h2", rack2 + nodegroup2);
+
+    StaticMapping.addNodeToRack(host3, rack1 + nodegroup1);
+    StaticMapping.addNodeToRack("h3", rack1 + nodegroup1);
+
+    StaticMapping.addNodeToRack(host4, rack2 + nodegroup2);
+    StaticMapping.addNodeToRack("h4", rack2 + nodegroup2);
+
+    StaticMapping.addNodeToRack(host5, rack1 + nodegroup3);
+    StaticMapping.addNodeToRack("h5", rack1 + nodegroup3);
+
+    StaticMapping.addNodeToRack(host6, rack2 + nodegroup4);
+    StaticMapping.addNodeToRack("h6", rack2 + nodegroup4);
+    setRackResolverToUseStaticMapping();
+
+    // add resources to scheduler
+    MockNM nodeManager1 = rm.registerNode(host1, 2048);
+    MockNM nodeManager2 = rm.registerNode(host2, 2048);
+    MockNM nodeManager4 = rm.registerNode(host4, 2048);
+
+    dispatcher.await();
+
+    // send MAP request
+    ContainerRequestEvent event1 = createReq(jobId, 3, 2048,
+            new String[] { "h3" }, new String[] { nodegroup1 },
+                new String[] { rack1 }, false);
+    allocator.sendRequest(event1);
+
+    ContainerRequestEvent event2 = createReq(jobId, 4, 2048,
+            new String[] { "h4" }, new String[] { nodegroup2 },
+                new String[] { rack2 }, false);
+    allocator.sendRequest(event2);
+
+    ContainerRequestEvent event3 = createReq(jobId, 5, 2048,
+            new String[] { "h5" }, new String[] { nodegroup3 },
+                new String[] { rack1 }, false);
+    allocator.sendRequest(event3);
+
+    ContainerRequestEvent event4 = createReq(jobId, 6, 2048,
+            new String[] { "h6" }, new String[] { nodegroup4 },
+                new String[] { rack2 }, false);
+    allocator.sendRequest(event4);
+
+    // this tells the scheduler about the requests
+    // as nodes are not added, no allocations
+    List<TaskAttemptContainerAssignedEvent> assigned = allocator.schedule();
+    dispatcher.await();
+    Assert.assertEquals("No of assignments must be 0", 0, assigned.size());
+
+    // Test scheduling map on node-local
+    // as h4 (nodeManager4) has capacity, so event2 which asks h4 is scheduled first
+    nodeManager4.nodeHeartbeat(true); // Node heartbeat
+    dispatcher.await();
+    assigned = allocator.schedule();
+    dispatcher.await();
+    // Check host locality
+    boolean checkHostMatch = true;
+    checkAssignments(new ContainerRequestEvent[] { event2 },
+        assigned, checkHostMatch);
+
+    // Test scheduling map on nodegroup-local
+    // as h1 (nodemanager1) has capacity, but no request ask for h1, so schedule event1 (ask h3, in the same nodegroup with h1) instead
+    nodeManager1.nodeHeartbeat(true); // Node heartbeat
+    dispatcher.await();
+    assigned = allocator.schedule();
+    dispatcher.await();
+    // Check nodegroup locality
+    checkHostMatch = false;
+    boolean checkNodeGroupMatch = true;
+    boolean checkRackMatch = false;
+    checkAssignments(new ContainerRequestEvent[] { event1 },
+        assigned, checkHostMatch, checkNodeGroupMatch, checkRackMatch);
+
+    // Test scheduling map on rack-local
+    // as h2 (nodemanager2) has capacity, but no request ask for h2 or the same nodegroup (h4), so schedule event4 (ask h6, in the same rack with h2) instead
+    nodeManager2.nodeHeartbeat(true); // Node heartbeat
+    dispatcher.await();
+    assigned = allocator.schedule();
+    dispatcher.await();
+    // Check rack locality
+    checkHostMatch = false;
+    checkRackMatch = true;
+    checkAssignments(new ContainerRequestEvent[] { event4 },
         assigned, checkHostMatch, checkRackMatch);
   }
 
@@ -1659,6 +1803,23 @@ public class TestRMContainerAllocator {
         racks);
   }
 
+  private ContainerRequestEvent
+      createReq(JobId jobId, int taskAttemptId, int memory, String[] hosts,
+          String[] nodegroups, String[] racks, boolean reduce) {
+    TaskId taskId;
+    if (reduce) {
+      taskId = MRBuilderUtils.newTaskId(jobId, 0, TaskType.REDUCE);
+    } else {
+      taskId = MRBuilderUtils.newTaskId(jobId, 0, TaskType.MAP);
+    }
+    TaskAttemptId attemptId = MRBuilderUtils.newTaskAttemptId(taskId,
+        taskAttemptId);
+    Resource containerNeed = Resource.newInstance(memory, 1);
+
+    return new ContainerRequestWithNodeGroupEvent(attemptId, containerNeed, hosts,
+        nodegroups, racks);
+  }
+
   private ContainerFailedEvent createFailEvent(JobId jobId, int taskAttemptId,
       String host, boolean reduce) {
     TaskId taskId;
@@ -1669,7 +1830,7 @@ public class TestRMContainerAllocator {
     }
     TaskAttemptId attemptId = MRBuilderUtils.newTaskAttemptId(taskId,
         taskAttemptId);
-    return new ContainerFailedEvent(attemptId, host);    
+    return new ContainerFailedEvent(attemptId, host);
   }
   
   private ContainerAllocatorEvent createDeallocateEvent(JobId jobId,
@@ -1695,10 +1856,17 @@ public class TestRMContainerAllocator {
   private void checkAssignments(ContainerRequestEvent[] requests,
       List<TaskAttemptContainerAssignedEvent> assignments,
       boolean checkHostMatch, boolean checkRackMatch) {
+    checkAssignments(requests, assignments, checkHostMatch, false, checkRackMatch);
+  }
+
+  private void checkAssignments(ContainerRequestEvent[] requests,
+      List<TaskAttemptContainerAssignedEvent> assignments,
+      boolean checkHostMatch, boolean checkNodeGroupMatch, 
+      boolean checkRackMatch) {
+
     Assert.assertNotNull("Container not assigned", assignments);
     Assert.assertEquals("Assigned count not correct", requests.length,
         assignments.size());
-
     // check for uniqueness of containerIDs
     Set<ContainerId> containerIds = new HashSet<ContainerId>();
     for (TaskAttemptContainerAssignedEvent assigned : assignments) {
@@ -1716,13 +1884,13 @@ public class TestRMContainerAllocator {
           break;
         }
       }
-      checkAssignment(req, assigned, checkHostMatch, checkRackMatch);
+      checkAssignment(req, assigned, checkHostMatch, checkNodeGroupMatch, checkRackMatch);
     }
   }
 
   private void checkAssignment(ContainerRequestEvent request,
       TaskAttemptContainerAssignedEvent assigned, boolean checkHostMatch,
-      boolean checkRackMatch) {
+      boolean checkNodeGroupMatch, boolean checkRackMatch) {
     Assert.assertNotNull("Nothing assigned to attempt "
         + request.getAttemptID(), assigned);
     Assert.assertEquals("assigned to wrong attempt", request.getAttemptID(),
@@ -1734,11 +1902,26 @@ public class TestRMContainerAllocator {
           assignedNode.toString()) || requestHosts.contains(
           assignedNode.getHost()));
     }
+    if (checkNodeGroupMatch) {
+      Assert.assertTrue("Request type error: not a request with nodegroup.",
+          request instanceof ContainerRequestWithNodeGroupEvent);
+      List<String> requestNodeGroups = Arrays.asList(
+          ((ContainerRequestWithNodeGroupEvent)request).getNodeGroups());
+      NodeId assignedNode = assigned.getContainer().getNodeId();
+      Assert.assertTrue(
+          "Not assigned to requested nodegroup", requestNodeGroups.contains(
+              NetworkTopology.getLastHalf(
+                  RackResolver.resolve(
+                      assignedNode.getHost()).getNetworkLocation())));
+    }
     if (checkRackMatch) {
       List<String> requestRacks = Arrays.asList(request.getRacks());
       NodeId assignedNode = assigned.getContainer().getNodeId();
       String assignedRack =  RackResolver.resolve(
           assignedNode.getHost()).getNetworkLocation();
+      if (request instanceof ContainerRequestWithNodeGroupEvent) {
+        assignedRack = NetworkTopology.getFirstHalf(assignedRack);
+      }
       Assert.assertTrue(
           "Not assigned to requested rack",
           requestRacks.contains(assignedRack));

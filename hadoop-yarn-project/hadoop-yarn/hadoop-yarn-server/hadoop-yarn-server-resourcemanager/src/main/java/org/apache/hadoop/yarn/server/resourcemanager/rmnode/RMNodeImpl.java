@@ -97,7 +97,7 @@ public class RMNodeImpl implements RMNode, EventHandler<RMNodeEvent> {
   private final String nodeAddress; // The containerManager address
   private String httpAddress;
   private volatile ResourceOption resourceOption;
-  private final Node node;
+  protected final Node node;
 
   private String healthReport;
   private long lastHealthReportTime;

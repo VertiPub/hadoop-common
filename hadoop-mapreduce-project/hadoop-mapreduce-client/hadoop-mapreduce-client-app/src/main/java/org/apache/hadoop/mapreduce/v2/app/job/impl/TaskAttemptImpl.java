@@ -103,9 +103,11 @@ import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerRemoteLaunchEvent;
 import org.apache.hadoop.mapreduce.v2.app.rm.ContainerAllocator;
 import org.apache.hadoop.mapreduce.v2.app.rm.ContainerAllocatorEvent;
 import org.apache.hadoop.mapreduce.v2.app.rm.ContainerRequestEvent;
+import org.apache.hadoop.mapreduce.v2.app.rm.ContainerRequestWithNodeGroupEvent;
 import org.apache.hadoop.mapreduce.v2.app.speculate.SpeculatorEvent;
 import org.apache.hadoop.mapreduce.v2.util.MRApps;
 import org.apache.hadoop.net.NetUtils;
+import org.apache.hadoop.net.NetworkTopology;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
@@ -1027,6 +1029,9 @@ public abstract class TaskAttemptImpl implements
     }
   }
 
+  public Configuration getConf() {
+    return conf;
+  }
   @Override
   public float getProgress() {
     readLock.lock();
@@ -1458,12 +1463,37 @@ public abstract class TaskAttemptImpl implements
                 taskAttempt.attemptId, 
                 taskAttempt.resourceCapability));
       } else {
-        taskAttempt.eventHandler.handle(new ContainerRequestEvent(
-            taskAttempt.attemptId, taskAttempt.resourceCapability,
-            taskAttempt.dataLocalHosts.toArray(
-                new String[taskAttempt.dataLocalHosts.size()]),
-            taskAttempt.dataLocalRacks.toArray(
-                new String[taskAttempt.dataLocalRacks.size()])));
+        boolean withNodeGroup = taskAttempt.getConf().getBoolean(
+            YarnConfiguration.NET_TOPOLOGY_WITH_NODEGROUP, false);
+
+        if (withNodeGroup) {
+          Set<String> racks = new HashSet<String>();
+          for (String host : taskAttempt.dataLocalHosts) {
+            if (withNodeGroup) {
+            racks.add(NetworkTopology.getFirstHalf(
+                RackResolver.resolve(host).getNetworkLocation()));
+            } else {
+              racks.add(RackResolver.resolve(host).getNetworkLocation());
+            }
+          }
+          String[] nodegroups = new String[taskAttempt.dataLocalHosts.size()];
+          int i = 0;
+          for (String host : taskAttempt.dataLocalHosts) {
+            nodegroups[i++] = NetworkTopology.getLastHalf(
+                RackResolver.resolve(host).getNetworkLocation());
+          }
+          taskAttempt.eventHandler.handle(
+              new ContainerRequestWithNodeGroupEvent(taskAttempt.attemptId,
+                  taskAttempt.resourceCapability, taskAttempt.dataLocalHosts.toArray(new String[taskAttempt.dataLocalHosts.size()]),
+                  nodegroups, racks.toArray(new String[racks.size()])));
+        } else {
+          taskAttempt.eventHandler.handle(new ContainerRequestEvent(
+              taskAttempt.attemptId, taskAttempt.resourceCapability,
+              taskAttempt.dataLocalHosts.toArray(
+                  new String[taskAttempt.dataLocalHosts.size()]),
+              taskAttempt.dataLocalRacks.toArray(
+                  new String[taskAttempt.dataLocalRacks.size()])));
+        }
       }
     }
   }
