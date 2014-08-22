@@ -19,6 +19,7 @@
 package org.apache.hadoop.mapreduce.v2.app.rm;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -206,7 +207,7 @@ public class RMContainerAllocator extends RMContainerRequestor
       // Constructor of nested class will automatically add outer class
       // as its first parameter, so here we need two parameters rather than
       // one.
-      Constructor<? extends ScheduledRequests> meth = 
+      Constructor<? extends ScheduledRequests> meth =
           scheduledRequestsClass.getDeclaredConstructor(
               new Class[] {RMContainerAllocator.class, 
               RMContainerAllocator.class});

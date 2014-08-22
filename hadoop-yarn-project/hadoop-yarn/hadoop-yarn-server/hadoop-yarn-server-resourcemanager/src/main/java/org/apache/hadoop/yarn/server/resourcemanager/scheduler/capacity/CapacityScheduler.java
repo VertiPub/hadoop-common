@@ -42,6 +42,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.Groups;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.Container;
@@ -1042,9 +1043,9 @@ public class CapacityScheduler extends
   private synchronized void addNode(RMNode nodeManager) {
     AbstractSchedulerElementsFactory schedulerElementsFactory = 
         (AbstractSchedulerElementsFactory) ReflectionUtils.newInstance(
-            conf.getClass(YarnConfiguration.RM_SCHEDULER_ELEMENTS_FACTORY_IMPL,
-            SchedulerElementsFactory.class, 
-            AbstractSchedulerElementsFactory.class), conf);
+                conf.getClass(YarnConfiguration.RM_SCHEDULER_ELEMENTS_FACTORY_IMPL,
+                        SchedulerElementsFactory.class,
+                        AbstractSchedulerElementsFactory.class), conf);
     
     this.nodes.put(nodeManager.getNodeID(),
         schedulerElementsFactory.constructFiCaSchedulerNode(nodeManager, usePortForNodeName));
