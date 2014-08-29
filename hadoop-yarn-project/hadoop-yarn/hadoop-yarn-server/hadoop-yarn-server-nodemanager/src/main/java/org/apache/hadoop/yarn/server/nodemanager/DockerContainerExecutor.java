@@ -89,13 +89,6 @@ public int launchContainer(Container container,
   if (getConf().getBoolean(ApplicationConstants.APPLICATION_MASTER_CONTAINER, false)){
 
     getConf().setBoolean(ApplicationConstants.APPLICATION_MASTER_CONTAINER, false);
-    if (getConf().getBoolean(ApplicationConstants.LAUNCH_APPMASTER_AS_DEFAULT, false)){
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Launching DefaultContainerExecutorAM");
-      }
-      return super.launchContainer(container, nmPrivateContainerScriptPath, nmPrivateTokensPath,
-              userName, appId, containerWorkDir, localDirs, logDirs);
-    }
     if (LOG.isDebugEnabled()) {
       LOG.debug("Launching application master container setting net=host");
     }
