@@ -54,7 +54,7 @@ import java.util.List;
 import static org.apache.hadoop.fs.CreateFlag.CREATE;
 import static org.apache.hadoop.fs.CreateFlag.OVERWRITE;
 
-public class DockerContainerExecutor extends DefaultContainerExecutor {
+public class DockerContainerExecutor extends ContainerExecutor {
 
   private static final Log LOG = LogFactory
         .getLog(DockerContainerExecutor.class);
@@ -75,6 +75,39 @@ DockerContainerExecutor(FileContext lfs) {
 }
 
   @Override
+  public void init() throws IOException {
+
+  }
+
+  @Override
+  public synchronized void startLocalizer(Path nmPrivateContainerTokensPath,
+                                          InetSocketAddress nmAddr, String user, String appId, String locId,
+                                          List<String> localDirs, List<String> logDirs)
+          throws IOException, InterruptedException {
+
+    ContainerLocalizer localizer =
+            new ContainerLocalizer(lfs, user, appId, locId, getPaths(localDirs),
+                    RecordFactoryProvider.getRecordFactory(getConf()));
+
+    createUserLocalDirs(localDirs, user);
+    createUserCacheDirs(localDirs, user);
+    createAppDirs(localDirs, user, appId);
+    createAppLogDirs(appId, logDirs);
+
+    // TODO: Why pick first app dir. The same in LCE why not random?
+    Path appStorageDir = getFirstApplicationDir(localDirs, user, appId);
+
+    String tokenFn = String.format(ContainerLocalizer.TOKEN_FILE_NAME_FMT, locId);
+    Path tokenDst = new Path(appStorageDir, tokenFn);
+    lfs.util().copy(nmPrivateContainerTokensPath, tokenDst);
+    LOG.info("Copying from " + nmPrivateContainerTokensPath + " to " + tokenDst);
+    lfs.setWorkingDirectory(appStorageDir);
+    LOG.info("CWD set to " + appStorageDir + " = " + lfs.getWorkingDirectory());
+    // TODO: DO it over RPC for maintaining similarity?
+    localizer.runLocalization(nmAddr);
+  }
+
+  @Override
 public int launchContainer(Container container,
                            Path nmPrivateContainerScriptPath, Path nmPrivateTokensPath,
                            String userName, String appId, Path containerWorkDir,
@@ -84,16 +117,7 @@ public int launchContainer(Container container,
   String containerArgs = Strings.nullToEmpty(getConf().get(ApplicationConstants.CONTAINER_ARGS));
   String dockerLaunchCommand = getConf().get(ApplicationConstants.DOCKER_LAUNCH_COMMAND,
           ApplicationConstants.DEFAULT_DOCKER_LAUNCH_COMMAND);
-  // This needs to happen because the application master that resides on a separate container would not
-    // be able to speak to a regular docker container without some network bridging.
-  if (getConf().getBoolean(ApplicationConstants.APPLICATION_MASTER_CONTAINER, false)){
 
-    getConf().setBoolean(ApplicationConstants.APPLICATION_MASTER_CONTAINER, false);
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Launching application master container setting net=host");
-    }
-    containerArgs += " --net=host ";
-  }
   FsPermission dirPerm = new FsPermission(APPDIR_PERM);
   ContainerId containerId = container.getContainerId();
 
@@ -211,6 +235,21 @@ public int launchContainer(Container container,
   return 0;
 }
 
+  @Override
+  public boolean signalContainer(String user, String pid, Signal signal) throws IOException {
+    return false;
+  }
+
+  @Override
+  public void deleteAsUser(String user, Path subDir, Path... basedirs) throws IOException, InterruptedException {
+
+  }
+
+  @Override
+  public boolean isContainerProcessAlive(String user, String pid) throws IOException {
+    return false;
+  }
+
   private String toMount(List<String> dirs) {
     StringBuilder builder = new StringBuilder();
     for (String dir: dirs){
@@ -281,4 +320,213 @@ public int launchContainer(Container container,
       lfs.setPermission(dirPath, perms);
     }
   }
+
+  /**
+   * Initialize the local directories for a particular user.
+   * <ul>.mkdir
+   * <li>$local.dir/usercache/$user</li>
+   * </ul>
+   */
+  void createUserLocalDirs(List<String> localDirs, String user)
+          throws IOException {
+    boolean userDirStatus = false;
+    FsPermission userperms = new FsPermission(USER_PERM);
+    for (String localDir : localDirs) {
+      // create $local.dir/usercache/$user and its immediate parent
+      try {
+        createDir(getUserCacheDir(new Path(localDir), user), userperms, true);
+      } catch (IOException e) {
+        LOG.warn("Unable to create the user directory : " + localDir, e);
+        continue;
+      }
+      userDirStatus = true;
+    }
+    if (!userDirStatus) {
+      throw new IOException("Not able to initialize user directories "
+              + "in any of the configured local directories for user " + user);
+    }
+  }
+
+
+  /**
+   * Initialize the local cache directories for a particular user.
+   * <ul>
+   * <li>$local.dir/usercache/$user</li>
+   * <li>$local.dir/usercache/$user/appcache</li>
+   * <li>$local.dir/usercache/$user/filecache</li>
+   * </ul>
+   */
+  void createUserCacheDirs(List<String> localDirs, String user)
+          throws IOException {
+    LOG.info("Initializing user " + user);
+
+    boolean appcacheDirStatus = false;
+    boolean distributedCacheDirStatus = false;
+    FsPermission appCachePerms = new FsPermission(APPCACHE_PERM);
+    FsPermission fileperms = new FsPermission(FILECACHE_PERM);
+
+    for (String localDir : localDirs) {
+      // create $local.dir/usercache/$user/appcache
+      Path localDirPath = new Path(localDir);
+      final Path appDir = getAppcacheDir(localDirPath, user);
+      try {
+        createDir(appDir, appCachePerms, true);
+        appcacheDirStatus = true;
+      } catch (IOException e) {
+        LOG.warn("Unable to create app cache directory : " + appDir, e);
+      }
+      // create $local.dir/usercache/$user/filecache
+      final Path distDir = getFileCacheDir(localDirPath, user);
+      try {
+        createDir(distDir, fileperms, true);
+        distributedCacheDirStatus = true;
+      } catch (IOException e) {
+        LOG.warn("Unable to create file cache directory : " + distDir, e);
+      }
+    }
+    if (!appcacheDirStatus) {
+      throw new IOException("Not able to initialize app-cache directories "
+              + "in any of the configured local directories for user " + user);
+    }
+    if (!distributedCacheDirStatus) {
+      throw new IOException(
+              "Not able to initialize distributed-cache directories "
+                      + "in any of the configured local directories for user "
+                      + user);
+    }
+  }
+
+  /**
+   * Initialize the local directories for a particular user.
+   * <ul>
+   * <li>$local.dir/usercache/$user/appcache/$appid</li>
+   * </ul>
+   * @param localDirs
+   */
+  void createAppDirs(List<String> localDirs, String user, String appId)
+          throws IOException {
+    boolean initAppDirStatus = false;
+    FsPermission appperms = new FsPermission(APPDIR_PERM);
+    for (String localDir : localDirs) {
+      Path fullAppDir = getApplicationDir(new Path(localDir), user, appId);
+      // create $local.dir/usercache/$user/appcache/$appId
+      try {
+        createDir(fullAppDir, appperms, true);
+        initAppDirStatus = true;
+      } catch (IOException e) {
+        LOG.warn("Unable to create app directory " + fullAppDir.toString(), e);
+      }
+    }
+    if (!initAppDirStatus) {
+      throw new IOException("Not able to initialize app directories "
+              + "in any of the configured local directories for app "
+              + appId.toString());
+    }
+  }
+
+
+  /**
+   * Create application log directories on all disks.
+   */
+  void createContainerLogDirs(String appId, String containerId,
+                              List<String> logDirs) throws IOException {
+
+    boolean containerLogDirStatus = false;
+    FsPermission containerLogDirPerms = new FsPermission(LOGDIR_PERM);
+    for (String rootLogDir : logDirs) {
+      // create $log.dir/$appid/$containerid
+      Path appLogDir = new Path(rootLogDir, appId);
+      Path containerLogDir = new Path(appLogDir, containerId);
+      try {
+        createDir(containerLogDir, containerLogDirPerms, true);
+      } catch (IOException e) {
+        LOG.warn("Unable to create the container-log directory : "
+                + appLogDir, e);
+        continue;
+      }
+      containerLogDirStatus = true;
+    }
+    if (!containerLogDirStatus) {
+      throw new IOException(
+              "Not able to initialize container-log directories "
+                      + "in any of the configured local directories for container "
+                      + containerId);
+    }
+  }
+
+  /** Permissions for user dir.
+   * $local.dir/usercache/$user */
+  static final short USER_PERM = (short)0750;
+  /** Permissions for user appcache dir.
+   * $local.dir/usercache/$user/appcache */
+  static final short APPCACHE_PERM = (short)0710;
+  /** Permissions for user filecache dir.
+   * $local.dir/usercache/$user/filecache */
+  static final short FILECACHE_PERM = (short)0710;
+  /** Permissions for user app dir.
+   * $local.dir/usercache/$user/appcache/$appId */
+  static final short APPDIR_PERM = (short)0710;
+  /** Permissions for user log dir.
+   * $logdir/$user/$appId */
+  static final short LOGDIR_PERM = (short)0710;
+
+  private Path getFirstApplicationDir(List<String> localDirs, String user,
+                                      String appId) {
+    return getApplicationDir(new Path(localDirs.get(0)), user, appId);
+  }
+
+  private Path getApplicationDir(Path base, String user, String appId) {
+    return new Path(getAppcacheDir(base, user), appId);
+  }
+
+  private Path getUserCacheDir(Path base, String user) {
+    return new Path(new Path(base, ContainerLocalizer.USERCACHE), user);
+  }
+
+  private Path getAppcacheDir(Path base, String user) {
+    return new Path(getUserCacheDir(base, user),
+            ContainerLocalizer.APPCACHE);
+  }
+
+  private Path getFileCacheDir(Path base, String user) {
+    return new Path(getUserCacheDir(base, user),
+            ContainerLocalizer.FILECACHE);
+  }
+
+  /**
+   * Create application log directories on all disks.
+   */
+  void createAppLogDirs(String appId, List<String> logDirs)
+          throws IOException {
+
+    boolean appLogDirStatus = false;
+    FsPermission appLogDirPerms = new FsPermission(LOGDIR_PERM);
+    for (String rootLogDir : logDirs) {
+      // create $log.dir/$appid
+      Path appLogDir = new Path(rootLogDir, appId);
+      try {
+        createDir(appLogDir, appLogDirPerms, true);
+      } catch (IOException e) {
+        LOG.warn("Unable to create the app-log directory : " + appLogDir, e);
+        continue;
+      }
+      appLogDirStatus = true;
+    }
+    if (!appLogDirStatus) {
+      throw new IOException("Not able to initialize app-log directories "
+              + "in any of the configured local directories for app " + appId);
+    }
+  }
+
+  /**
+   * @return the list of paths of given local directories
+   */
+  private static List<Path> getPaths(List<String> dirs) {
+    List<Path> paths = new ArrayList<Path>(dirs.size());
+    for (int i = 0; i < dirs.size(); i++) {
+      paths.add(new Path(dirs.get(i)));
+    }
+    return paths;
+  }
+
 }
