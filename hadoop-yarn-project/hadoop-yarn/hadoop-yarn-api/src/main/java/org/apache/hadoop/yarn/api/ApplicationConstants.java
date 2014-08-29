@@ -56,12 +56,15 @@ public interface ApplicationConstants {
           "DOCKER_LAUNCH_COMMAND";
 
   public static final String DEFAULT_DOCKER_LAUNCH_COMMAND =
-          "docker -H tcp://0.0.0.0:4243 run -rm -name";
+          "docker -H tcp://0.0.0.0:4243 run --rm";
 
   public static final String APPLICATION_MASTER_CONTAINER =
           "APPLICATION_MASTER_CONTAINER";
   public static final String DEFAULT_CONTAINER_NAME =
           "CONTAINER_DOES_NOT_EXIST";
+
+  public static final String LAUNCH_APPMASTER_AS_DEFAULT =
+          "LAUNCH_APPMASTER_AS_DEFAULT";
 
   /**
    * The environmental variable for APPLICATION_WEB_PROXY_BASE. Set in 
@@ -119,6 +122,7 @@ public interface ApplicationConstants {
    * only
    */
   public static final String MAX_APP_ATTEMPTS_ENV = "MAX_APP_ATTEMPTS";
+
 
   /**
    * Environment for Applications.

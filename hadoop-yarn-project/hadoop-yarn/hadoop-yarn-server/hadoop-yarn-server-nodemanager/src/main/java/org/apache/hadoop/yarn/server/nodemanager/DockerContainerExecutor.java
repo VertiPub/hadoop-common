@@ -87,12 +87,19 @@ public int launchContainer(Container container,
   // This needs to happen because the application master that resides on a separate container would not
     // be able to speak to a regular docker container without some network bridging.
   if (getConf().getBoolean(ApplicationConstants.APPLICATION_MASTER_CONTAINER, false)){
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Launching application master container with Default container executor");
-    }
+
     getConf().setBoolean(ApplicationConstants.APPLICATION_MASTER_CONTAINER, false);
-    return super.launchContainer(container, nmPrivateContainerScriptPath, nmPrivateTokensPath,
-          userName, appId, containerWorkDir, localDirs, logDirs);
+    if (getConf().getBoolean(ApplicationConstants.LAUNCH_APPMASTER_AS_DEFAULT, false)){
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Launching DefaultContainerExecutorAM");
+      }
+      return super.launchContainer(container, nmPrivateContainerScriptPath, nmPrivateTokensPath,
+              userName, appId, containerWorkDir, localDirs, logDirs);
+    }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Launching application master container setting net=host");
+    }
+    containerArgs += " --net=host ";
   }
   FsPermission dirPerm = new FsPermission(APPDIR_PERM);
   ContainerId containerId = container.getContainerId();
@@ -138,7 +145,7 @@ public int launchContainer(Container container,
   StringBuilder commands = new StringBuilder();
   String commandStr = commands.append(dockerLaunchCommand)
           .append(" ")
-          .append(containerIdStr)
+          .append(" --name " + containerIdStr)
           .append(localDirMount)
           .append(logDirMount)
           .append(" ")
