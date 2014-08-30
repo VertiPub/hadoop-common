@@ -307,15 +307,7 @@ public class ContainerLaunch implements Callable<Integer> {
         ret = ExitCode.TERMINATED.getExitCode();
       }
       else {
-       // This needs to happen because the application master that resides on a separate container would not
-        // be able to speak to a regular docker container without some network bridging.
-        if (environment.containsKey(ApplicationConstants.APPLICATION_MASTER_CONTAINER)
-                && environment.get(ApplicationConstants.APPLICATION_MASTER_CONTAINER).equals(Boolean.TRUE.toString())
-                && conf.getBoolean(ApplicationConstants.APPLICATION_MASTER_CONTAINER, false)) {
-          conf.setBoolean(ApplicationConstants.APPLICATION_MASTER_CONTAINER, true);
-          environment.remove(ApplicationConstants.APPLICATION_MASTER_CONTAINER);
-        }
-        exec.activateContainer(containerID, pidFilePath);
+       exec.activateContainer(containerID, pidFilePath);
         ret = exec.launchContainer(container, nmPrivateContainerScriptPath,
                 nmPrivateTokensPath, user, appIdStr, containerWorkDir,
                 localDirs, logDirs);
