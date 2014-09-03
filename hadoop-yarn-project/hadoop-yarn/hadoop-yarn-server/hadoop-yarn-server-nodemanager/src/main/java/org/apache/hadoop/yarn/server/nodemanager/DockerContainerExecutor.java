@@ -110,12 +110,21 @@ public int launchContainer(Container container,
                            String userName, String appId, Path containerWorkDir,
                            List<String> localDirs, List<String> logDirs) throws IOException {
 
-  String containerImageName = getConf().get(YarnConfiguration.NM_DOCKER_IMAGE_NAME,
-    YarnConfiguration.NM_DEFAULT_DOCKER_IMAGE_NAME);
-  String containerArgs = Strings.nullToEmpty(getConf().get(YarnConfiguration.NM_DOCKER_RUN_ARGS));
-  String dockerExecutor = getConf().get(YarnConfiguration.NM_DOCKER_EXECUTOR_NAME,
-    YarnConfiguration.NM_DEFAULT_DOCKER_EXECUTOR_NAME);
-  String dockerRunPreCommand = Strings.nullToEmpty(getConf().get(YarnConfiguration.NM_DOCKER_RUN_PRE_COMMAND));
+  String containerImageName = getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME,
+    YarnConfiguration.NM_DEFAULT_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME);
+
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("containerImageName from conf: " + containerImageName);
+  }
+  containerImageName = container.getLaunchContext().getEnvironment()
+          .get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("containerImageName from launchContext: " + containerImageName);
+  }
+  String containerArgs = Strings.nullToEmpty(getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_RUN_ARGS));
+  String dockerExecutor = getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME,
+    YarnConfiguration.NM_DEFAULT_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME);
+  String dockerRunPreCommand = Strings.nullToEmpty(getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_PRE_COMMAND));
 
   FsPermission dirPerm = new FsPermission(APPDIR_PERM);
   ContainerId containerId = container.getContainerId();
