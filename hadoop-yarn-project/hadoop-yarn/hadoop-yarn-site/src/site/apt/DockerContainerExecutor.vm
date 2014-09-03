@@ -1,0 +1,94 @@
+
+~~ Licensed under the Apache License, Version 2.0 (the "License");
+~~ you may not use this file except in compliance with the License.
+~~ You may obtain a copy of the License at
+~~
+~~   http://www.apache.org/licenses/LICENSE-2.0
+~~
+~~ Unless required by applicable law or agreed to in writing, software
+~~ distributed under the License is distributed on an "AS IS" BASIS,
+~~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+~~ See the License for the specific language governing permissions and
+~~ limitations under the License. See accompanying LICENSE file.
+
+  ---
+  Hadoop Map Reduce Next Generation-${project.version} - Docker Container Executor
+  ---
+  ---
+  ${maven.build.timestamp}
+
+Docker Container Executor
+
+%{toc|section=1|fromDepth=0}
+
+* {Overview}
+  Docker (https://www.docker.io/) is, increasingly, a very popular container technology.
+In context of YARN, the support for Docker will provide a very elegant solution to allow 
+applications to package their software into a Docker container (entire Linux file system 
+incl. custom versions of perl, python etc.) and use it as a blueprint to launch all their 
+YARN containers with requisite software environment. This provides both consistency (all 
+YARN containers will have the same software environment) and isolation (no interference 
+with whatever is installed on the physical machine).
+  The Docker Conatiner Executor supports launching Docker containers from YARN nodemanagers. 
+  Currently it enables the following usage patterns:
+    * Users can launch yarn jobs in isolated filesystems that provide software isolation.
+    * Users can run versions of software that are different than that of Nodemanager(even 
+different versions of Java) in the cluster. Users also can run jobs with software that's 
+not present in the NodeManager node. These jobs can even be launched from different OS-es, 
+however, for Java jobs(such as mapreduce), the location of the JAVA_HOME needs to identical 
+to the host's JAVA_HOME.
+    * Users can customize and provide the software environment(called Docker Images) as part 
+of a YARN configuration. This allows jobs to run in a completely user-defined environment.
+  
+* {Configuration}
+
+   Docker Container Executor runs in non-secure mode of HDFS and YARN. It will not run in 
+   secure mode, and will exit if it detects secure mode. 
+
+   The DockerContainerExecutor requires docker daemon to be installed, and the docker client should be able run containers. It is recommended that the docker images to be used by the jobs be already downloaded in the nodemanagers, to prevent connection timeout errors while running jobs.
+
+The following properties must be set in yarn-site.xml:
+----
+<property>
+  <name>yarn.nodemanager.docker-image.name</name>
+  <value>docker-repository-url/image-name</value>
+  <description>
+     This image is used by all nodemanagers to launch containers.
+  </description>
+</property>
+----
+<property>
+  <name>yarn.nodemanager.docker-run.args</name>
+  <value>--rm --net=host</value>
+  <description>
+     This arguments to pass to the 'docker run' invocation.
+  </description>
+</property>
+----
+<property>
+  <name>yarn.nodemanager.docker-executor.name</name>
+  <value>docker</value>
+  <description>
+     Name or path to the docker executor.
+  </description>
+</property>
+----
+<property>
+  <name>yarn.nodemanager.docker-run.pre-command</name>
+  <value>ln -s /opt/hadoop /opt/hadoop-2.4.1</value>
+  <description>
+     Optional commands to run before invoking the bash script.
+  </description>
+</property>
+----
+
+
+   * Users are expected to pass --rm and --net=host commands as arguments to docker run. --rm ensures that all containers that are killed are cleaned  up. --net=host makes the container share the host's network. This allows all cluster proceses to talk to the containers as if they are same as the host.
+
+   * Users are expected to run this job in a container image whose jvm location is the same as the Nodemanager's JVM.
+  
+   * Users are expected to mount the hadoop installation directory on these containers so that they can access the libraries. When the container runs, the NM will mount the log and local resources directories on to them.
+
+
+* {Working example of yarn launched docker containers.}
+
