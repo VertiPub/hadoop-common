@@ -257,32 +257,24 @@ public class ContainerLaunch implements Callable<Integer> {
           lfs.create(nmPrivateContainerScriptPath,
               EnumSet.of(CREATE, OVERWRITE));
 
-        // Set the token location too.
+        // Set the HADOOP_* prefix environment variables
+        // from the host to the container.
         Map<String, String> orderedEnv = new LinkedHashMap<String, String>();
-        putEnvIfNotNull(orderedEnv,
-                Environment.HADOOP_CONF_DIR.name(),
-                System.getenv(Environment.HADOOP_CONF_DIR.name())
-        );
-        putEnvIfNotNull(orderedEnv,
-                Environment.HADOOP_COMMON_HOME.name(),
-                System.getenv(Environment.HADOOP_COMMON_HOME.name())
-        );
-        putEnvIfNotNull(orderedEnv,
-                Environment.HADOOP_HDFS_HOME.name(),
-                System.getenv(Environment.HADOOP_HDFS_HOME.name())
-        );
-        putEnvIfNotNull(orderedEnv,
-                "HADOOP_MAPRED_HOME",
-                System.getenv("HADOOP_MAPRED_HOME")
-        );
-        putEnvIfNotNull(orderedEnv,
-                "HADOOP_YARN_HOME",
-                System.getenv("HADOOP_YARN_HOME")
-        );
+        Map<String, String> allNMEnv = System.getenv();
+        for(Map.Entry<String, String> entry: allNMEnv.entrySet()){
+          if (entry.getKey().matches("^HADOOP_\\w+")){
+            putEnvIfNotNull(orderedEnv,
+                    entry.getKey(),
+                    entry.getValue()
+            );
+          }
+        }
+
         if (LOG.isDebugEnabled()){
           LOG.debug("Environment: " + orderedEnv);
         }
 
+        // Set the token location too.
         environment.put(
             ApplicationConstants.CONTAINER_TOKEN_FILE_ENV_NAME, 
             new Path(containerWorkDir, 

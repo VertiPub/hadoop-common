@@ -824,6 +824,25 @@ public class YarnConfiguration extends Configuration {
   /** The arguments to pass to the health check script.*/
   public static final String NM_HEALTH_CHECK_SCRIPT_OPTS = 
     NM_PREFIX + "health-checker.script.opts";
+
+  /** The Docker image name(For DockerContainerExecutor).*/
+  public static final String NM_DOCKER_IMAGE_NAME =
+    NM_PREFIX + "docker-image.name";
+  /** Default Docker image name(For DockerContainerExecutor).*/
+  public static final String NM_DEFAULT_DOCKER_IMAGE_NAME =
+          "CONTAINER_DOES_NOT_EXIST";
+  /** Args passed to docker run(For DockerContainerExecutor).*/
+  public static final String NM_DOCKER_RUN_ARGS =
+    NM_PREFIX + "docker-run.args";
+  /** The name of the docker executor (For DockerContainerExecutor).*/
+  public static final String NM_DOCKER_EXECUTOR_NAME =
+    NM_PREFIX + "docker-executor.name";
+  /** The default docker executor (For DockerContainerExecutor).*/
+  public static final String NM_DEFAULT_DOCKER_EXECUTOR_NAME =
+          "docker";
+  /** The command to run before docker_container_executor.sh (For DockerContainerExecutor).*/
+  public static final String NM_DOCKER_RUN_PRE_COMMAND =
+    NM_PREFIX + "docker-run.pre-command";
   
   /** The path to the Linux container executor.*/
   public static final String NM_LINUX_CONTAINER_EXECUTOR_PATH =

@@ -18,7 +18,6 @@
 
 package org.apache.hadoop.yarn.server.nodemanager;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Strings;
 import org.apache.commons.logging.Log;
@@ -29,10 +28,8 @@ import org.apache.hadoop.fs.UnsupportedFileSystemException;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.util.Shell;
-import org.apache.hadoop.util.Shell.ExitCodeException;
 import org.apache.hadoop.util.Shell.ShellCommandExecutor;
 import org.apache.hadoop.util.StringUtils;
-import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
@@ -113,10 +110,12 @@ public int launchContainer(Container container,
                            String userName, String appId, Path containerWorkDir,
                            List<String> localDirs, List<String> logDirs) throws IOException {
 
-  String containerName = getConf().get(ApplicationConstants.CONTAINER_NAME, ApplicationConstants.DEFAULT_CONTAINER_NAME);
-  String containerArgs = Strings.nullToEmpty(getConf().get(ApplicationConstants.CONTAINER_ARGS));
-  String dockerLaunchCommand = getConf().get(ApplicationConstants.DOCKER_LAUNCH_COMMAND,
-          ApplicationConstants.DEFAULT_DOCKER_LAUNCH_COMMAND);
+  String containerImageName = getConf().get(YarnConfiguration.NM_DOCKER_IMAGE_NAME,
+    YarnConfiguration.NM_DEFAULT_DOCKER_IMAGE_NAME);
+  String containerArgs = Strings.nullToEmpty(getConf().get(YarnConfiguration.NM_DOCKER_RUN_ARGS));
+  String dockerExecutor = getConf().get(YarnConfiguration.NM_DOCKER_EXECUTOR_NAME,
+    YarnConfiguration.NM_DEFAULT_DOCKER_EXECUTOR_NAME);
+  String dockerRunPreCommand = Strings.nullToEmpty(getConf().get(YarnConfiguration.NM_DOCKER_RUN_PRE_COMMAND));
 
   FsPermission dirPerm = new FsPermission(APPDIR_PERM);
   ContainerId containerId = container.getContainerId();
@@ -160,7 +159,7 @@ public int launchContainer(Container container,
   String localDirMount = toMount(localDirs);
   String logDirMount = toMount(logDirs);
   StringBuilder commands = new StringBuilder();
-  String commandStr = commands.append(dockerLaunchCommand)
+  String commandStr = commands.append(dockerExecutor)
           .append(" ")
           .append(" --name " + containerIdStr)
           .append(localDirMount)
@@ -168,7 +167,9 @@ public int launchContainer(Container container,
           .append(" ")
           .append(containerArgs)
           .append(" ")
-          .append(containerName)
+          .append(containerImageName)
+          .append(" ")
+          .append(dockerRunPreCommand)
           .toString();
   Path pidFile = getPidFilePath(containerId);
   if (pidFile != null) {

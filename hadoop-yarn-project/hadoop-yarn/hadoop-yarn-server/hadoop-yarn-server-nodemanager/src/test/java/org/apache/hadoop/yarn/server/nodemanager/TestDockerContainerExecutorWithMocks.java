@@ -26,7 +26,6 @@ import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.util.Shell;
-import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
@@ -75,8 +74,8 @@ public class TestDockerContainerExecutorWithMocks {
     conf.set(YarnConfiguration.NM_LINUX_CONTAINER_EXECUTOR_PATH, executorPath);
     conf.set(YarnConfiguration.NM_LOCAL_DIRS, "/tmp/nm-local-dir" + time);
     conf.set(YarnConfiguration.NM_LOG_DIRS, "/tmp/userlogs" + time);
-    conf.set(ApplicationConstants.DOCKER_LAUNCH_COMMAND, DOCKER_LAUNCH_COMMAND);
-    conf.set(ApplicationConstants.CONTAINER_ARGS, DOCKER_LAUNCH_ARGS);
+    conf.set(YarnConfiguration.NM_DOCKER_EXECUTOR_NAME, DOCKER_LAUNCH_COMMAND);
+    conf.set(YarnConfiguration.NM_DOCKER_RUN_ARGS, DOCKER_LAUNCH_ARGS);
     mockExec = new DockerContainerExecutor();
     dirsHandler = new LocalDirsHandlerService();
     dirsHandler.init(conf);
@@ -141,7 +140,7 @@ public class TestDockerContainerExecutorWithMocks {
     expectedCommands.addAll(localDirs);
     expectedCommands.addAll(logDirs);
     String shellScript =  workDir + "/launch_container.sh";
-    expectedCommands.addAll(Arrays.asList(DOCKER_LAUNCH_ARGS, ApplicationConstants.DEFAULT_CONTAINER_NAME,
+    expectedCommands.addAll(Arrays.asList(DOCKER_LAUNCH_ARGS, YarnConfiguration.NM_DEFAULT_DOCKER_IMAGE_NAME,
             "/bin/bash","\"" + shellScript + "\""));
     while(lnr.ready()){
       String line = lnr.readLine();
