@@ -281,11 +281,11 @@ public class ContainerLaunch implements Callable<Integer> {
                 FINAL_CONTAINER_TOKENS_FILE).toUri().getPath());
         // Sanitize the container's environment
         sanitizeEnv(environment, containerWorkDir, appDirs, containerLogDirs,
-                localResources);
+          localResources);
         orderedEnv.putAll(environment);
         // Write out the environment
         writeLaunchEnv(containerScriptOutStream, orderedEnv, localResources,
-                launchContext.getCommands());
+            launchContext.getCommands());
 
         // /////////// End of writing out container-script
 
@@ -472,7 +472,7 @@ public class ContainerLaunch implements Callable<Integer> {
         ConverterUtils.toString(container.getContainerId());
     String processId = null;
     LOG.debug("Accessing pid for container " + containerIdStr
-            + " from pid file " + pidFilePath);
+        + " from pid file " + pidFilePath);
     int sleepCounter = 0;
     final int sleepInterval = 100;
 
