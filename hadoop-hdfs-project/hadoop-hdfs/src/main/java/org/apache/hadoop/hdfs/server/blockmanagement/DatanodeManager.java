@@ -344,13 +344,15 @@ public class DatanodeManager {
     // here we should get node but not datanode only .
     Node client = getDatanodeByHost(targethost);
     if (client == null) {
+
       List<String> hosts = new ArrayList<String> (1);
       hosts.add(targethost);
       String rName = dnsToSwitchMapping.resolve(hosts).get(0);
       if (rName != null)
         client = new NodeBase(rName + NodeBase.PATH_SEPARATOR_STR + targethost);
+      LOG.debug("rname: " + rName + " client " + client);
     }
-    
+    LOG.debug("called from: " + Arrays.toString(Thread.currentThread().getStackTrace()));
     Comparator<DatanodeInfo> comparator = avoidStaleDataNodesForRead ?
         new DFSUtil.DecomStaleComparator(staleInterval) : 
         DFSUtil.DECOM_COMPARATOR;
@@ -359,6 +361,7 @@ public class DatanodeManager {
       networktopology.pseudoSortByDistance(client, b.getLocations());
       // Move decommissioned/stale datanodes to the bottom
       Arrays.sort(b.getLocations(), comparator);
+      LOG.debug("targethost: " + targethost + " block: " + b + " Block locations: " + b.getLocations());
     }
   }
   
