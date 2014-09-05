@@ -263,6 +263,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
     boolean newBlock = (numOfResults==0);
     if ((writer == null || !(writer instanceof DatanodeDescriptor)) && !newBlock) {
       writer = results.get(0).getDatanodeDescriptor();
+      LOG.info("results(0) " + results.get(0));
     }
 
     // Keep a copy of original excludedNodes
@@ -270,10 +271,11 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
         new HashSet<Node>(excludedNodes) : null;
     try {
       if (numOfResults == 0) {
-        LOG.info("Trying to choose local storage " + numOfReplicas);
+
         writer = chooseLocalStorage(writer, excludedNodes, blocksize,
             maxNodesPerRack, results, avoidStaleNodes, storageType)
                 .getDatanodeDescriptor();
+        LOG.info("Trying to choose local storage " + numOfReplicas);
         if (--numOfReplicas == 0) {
           return writer;
         }
@@ -283,6 +285,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
         LOG.info("Trying to choose remote rack "  + numOfReplicas);
         chooseRemoteRack(1, dn0, excludedNodes, blocksize, maxNodesPerRack,
             results, avoidStaleNodes, storageType);
+        LOG.info("Trying to choose remote rack "  + numOfReplicas);
         if (--numOfReplicas == 0) {
           return writer;
         }
@@ -294,9 +297,11 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
           chooseRemoteRack(1, dn0, excludedNodes, blocksize, maxNodesPerRack,
               results, avoidStaleNodes, storageType);
         } else if (newBlock){
+          LOG.info("Choosing local rack: "+ dn1);
           chooseLocalRack(dn1, excludedNodes, blocksize, maxNodesPerRack,
               results, avoidStaleNodes, storageType);
         } else {
+          LOG.info("Choosing local rack: "+ writer);
           chooseLocalRack(writer, excludedNodes, blocksize, maxNodesPerRack,
               results, avoidStaleNodes, storageType);
         }
@@ -480,6 +485,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       boolean avoidStaleNodes,
       StorageType storageType)
           throws NotEnoughReplicasException {
+    LOG.info("Choosing random with scope: " + scope + " exclude : "  + excludedNodes);
     return chooseRandom(1, scope, excludedNodes, blocksize, maxNodesPerRack,
         results, avoidStaleNodes, storageType);
   }

@@ -22,6 +22,8 @@ import java.util.Iterator;
 import java.util.List;
 
 import com.google.common.annotations.VisibleForTesting;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hdfs.StorageType;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
 import org.apache.hadoop.hdfs.server.protocol.DatanodeStorage;
@@ -132,8 +134,9 @@ public class DatanodeStorageInfo {
    * will be processed for this block. See HDFS-1972.
    */
   private boolean blockContentsStale = true;
-
+  static final Log LOG = LogFactory.getLog(DatanodeStorageInfo.class);
   DatanodeStorageInfo(DatanodeDescriptor dn, DatanodeStorage s) {
+    LOG.info("initializing with DatanodeDescriptor: " + dn);
     this.dn = dn;
     this.storageID = s.getStorageID();
     this.storageType = s.getStorageType();
