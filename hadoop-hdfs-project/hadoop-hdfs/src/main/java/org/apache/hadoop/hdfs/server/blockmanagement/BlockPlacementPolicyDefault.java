@@ -252,6 +252,8 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
                                           List<DatanodeStorageInfo> results,
                                           final boolean avoidStaleNodes,
                                           StorageType storageType) {
+    LOG.info("BLOCK* BlockPlacementPolicyDefault.chooseTarget: "
+            + writer + " excluded " +  excludedNodes  + " blocksize " + blocksize +" results: "+ results);
     if (numOfReplicas == 0 || clusterMap.getNumOfLeaves()==0) {
       return writer;
     }
@@ -268,6 +270,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
         new HashSet<Node>(excludedNodes) : null;
     try {
       if (numOfResults == 0) {
+        LOG.info("Trying to choose local storage " + numOfReplicas);
         writer = chooseLocalStorage(writer, excludedNodes, blocksize,
             maxNodesPerRack, results, avoidStaleNodes, storageType)
                 .getDatanodeDescriptor();
@@ -277,6 +280,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       }
       final DatanodeDescriptor dn0 = results.get(0).getDatanodeDescriptor();
       if (numOfResults <= 1) {
+        LOG.info("Trying to choose remote rack "  + numOfReplicas);
         chooseRemoteRack(1, dn0, excludedNodes, blocksize, maxNodesPerRack,
             results, avoidStaleNodes, storageType);
         if (--numOfReplicas == 0) {
@@ -286,6 +290,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       if (numOfResults <= 2) {
         final DatanodeDescriptor dn1 = results.get(1).getDatanodeDescriptor();
         if (clusterMap.isOnSameRack(dn0, dn1)) {
+          LOG.info("On the same rack: " + dn0 + " and " + dn1);
           chooseRemoteRack(1, dn0, excludedNodes, blocksize, maxNodesPerRack,
               results, avoidStaleNodes, storageType);
         } else if (newBlock){
@@ -299,6 +304,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
           return writer;
         }
       }
+      LOG.info("Have to go random, replicas left" + numOfReplicas);
       chooseRandom(numOfReplicas, NodeBase.ROOT, excludedNodes, blocksize,
           maxNodesPerRack, results, avoidStaleNodes, storageType);
     } catch (NotEnoughReplicasException e) {
@@ -346,9 +352,11 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
                                              StorageType storageType)
       throws NotEnoughReplicasException {
     // if no local machine, randomly choose one node
-    if (localMachine == null)
+    if (localMachine == null){
+      LOG.info("Going random as localMachine is null in BlockPlacementPolicyDefault");
       return chooseRandom(NodeBase.ROOT, excludedNodes, blocksize,
           maxNodesPerRack, results, avoidStaleNodes, storageType);
+    }
     if (preferLocalNode && localMachine instanceof DatanodeDescriptor) {
       DatanodeDescriptor localDatanode = (DatanodeDescriptor) localMachine;
       // otherwise try local machine first
