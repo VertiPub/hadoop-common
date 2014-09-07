@@ -836,10 +836,10 @@ public class YarnConfiguration extends Configuration {
     NM_PREFIX + "docker-container-executor.run-args";
   /** The name of the docker executor (For DockerContainerExecutor).*/
   public static final String NM_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME =
-    NM_PREFIX + "docker-container-executorr.exec-name";
+    NM_PREFIX + "docker-container-executor.exec-name";
   /** The default docker executor (For DockerContainerExecutor).*/
   public static final String NM_DEFAULT_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME =
-          "docker";
+          "docker run";
   /** The command to run before docker_container_executor.sh (For DockerContainerExecutor).*/
   public static final String NM_DOCKER_CONTAINER_EXECUTOR_PRE_COMMAND =
     NM_PREFIX + "docker-container-executor.pre-command";

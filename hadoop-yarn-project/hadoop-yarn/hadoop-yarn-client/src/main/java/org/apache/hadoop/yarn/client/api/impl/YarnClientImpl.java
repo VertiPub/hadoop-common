@@ -220,7 +220,8 @@ public class YarnClientImpl extends YarnClient {
     if (isSecurityEnabled() && timelineServiceEnabled) {
       addTimelineDelegationToken(appContext.getAMContainerSpec());
     }
-
+    LOG.info("Docker image: " + request.getApplicationSubmissionContext()
+            .getAMContainerSpec().getEnvironment().get("yarn.nodemanager.docker-container-executor.image-name"));
     //TODO: YARN-1763:Handle RM failovers during the submitApplication call.
     rmClient.submitApplication(request);
 

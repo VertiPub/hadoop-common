@@ -110,12 +110,16 @@ public int launchContainer(Container container,
                            String userName, String appId, Path containerWorkDir,
                            List<String> localDirs, List<String> logDirs) throws IOException {
 
-  String containerImageName = getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME,
-    YarnConfiguration.NM_DEFAULT_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME);
-  String containerArgs = Strings.nullToEmpty(getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_RUN_ARGS));
+  String containerImageName = container.getLaunchContext().getEnvironment().get(
+          YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME);
+  containerImageName = containerImageName == null?
+          getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME) : containerImageName;
+  String containerArgs = Strings.nullToEmpty(
+          getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_RUN_ARGS));
   String dockerExecutor = getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME,
     YarnConfiguration.NM_DEFAULT_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME);
-  String dockerRunPreCommand = Strings.nullToEmpty(getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_PRE_COMMAND));
+  String dockerRunPreCommand = Strings.nullToEmpty(
+          getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_PRE_COMMAND));
 
   FsPermission dirPerm = new FsPermission(APPDIR_PERM);
   ContainerId containerId = container.getContainerId();

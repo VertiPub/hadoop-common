@@ -157,6 +157,7 @@ public class NodeManager implements ContainerManagementProtocol {
   throws YarnException {
 
     for (StartContainerRequest request : requests.getStartContainerRequests()) {
+      LOG.info("Docker image" + request.getContainerLaunchContext().getEnvironment().get("yarn.nodemanager.docker-container-executor.image-name"));
       Token containerToken = request.getContainerToken();
       ContainerTokenIdentifier tokenId = null;
 

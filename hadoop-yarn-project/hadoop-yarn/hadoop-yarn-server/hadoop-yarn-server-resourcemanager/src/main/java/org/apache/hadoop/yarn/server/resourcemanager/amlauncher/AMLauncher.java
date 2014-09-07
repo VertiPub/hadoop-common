@@ -111,6 +111,8 @@ public class AMLauncher implements Runnable {
     StartContainerRequest scRequest =
         StartContainerRequest.newInstance(launchContext,
           masterContainer.getContainerToken());
+    LOG.info("Docker image:" +scRequest.getContainerLaunchContext().getEnvironment()
+            .get("yarn.nodemanager.docker-container-executor.image-name"));
     List<StartContainerRequest> list = new ArrayList<StartContainerRequest>();
     list.add(scRequest);
     StartContainersRequest allRequests =
@@ -188,6 +190,7 @@ public class AMLauncher implements Runnable {
     // Construct the actual Container
     ContainerLaunchContext container = 
         applicationMasterContext.getAMContainerSpec();
+    LOG.info("Docker image: " + container.getEnvironment().get("yarn.nodemanager.docker-container-executor.image-name"));
     LOG.info("Command to launch container "
         + containerID
         + " : "

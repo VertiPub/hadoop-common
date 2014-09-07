@@ -693,6 +693,9 @@ public class ContainerManagerImpl extends CompositeService implements
     Map<ContainerId, SerializedException> failedContainers =
         new HashMap<ContainerId, SerializedException>();
     for (StartContainerRequest request : requests.getStartContainerRequests()) {
+      LOG.info("Docker image" + request.getContainerLaunchContext().getEnvironment()
+              .get("yarn.nodemanager.docker-container-executor.image-name"));
+
       ContainerId containerId = null;
       try {
         ContainerTokenIdentifier containerTokenIdentifier =
@@ -769,7 +772,9 @@ public class ContainerManagerImpl extends CompositeService implements
      * correct RMIdentifier. d) It is not expired.
      */
     authorizeStartRequest(nmTokenIdentifier, containerTokenIdentifier);
- 
+    LOG.info("Docker image" + request.getContainerLaunchContext().getEnvironment()
+            .get("yarn.nodemanager.docker-container-executor.image-name"));
+
     if (containerTokenIdentifier.getRMIdentifer() != nodeStatusUpdater
         .getRMIdentifier()) {
         // Is the container coming from unknown RM
@@ -788,6 +793,8 @@ public class ContainerManagerImpl extends CompositeService implements
     LOG.info("Start request for " + containerIdStr + " by user " + user);
 
     ContainerLaunchContext launchContext = request.getContainerLaunchContext();
+    LOG.info("Docker image" + launchContext.getEnvironment()
+            .get("yarn.nodemanager.docker-container-executor.image-name"));
 
     Map<String, ByteBuffer> serviceData = getAuxServiceMetaData();
     if (launchContext.getServiceData()!=null && 

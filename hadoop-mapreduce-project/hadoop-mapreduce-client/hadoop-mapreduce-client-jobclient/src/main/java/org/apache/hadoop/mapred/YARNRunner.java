@@ -473,7 +473,7 @@ public class YARNRunner implements ClientProtocol {
     acls.put(ApplicationAccessType.MODIFY_APP, jobConf.get(
         MRJobConfig.JOB_ACL_MODIFY_JOB,
         MRJobConfig.DEFAULT_JOB_ACL_MODIFY_JOB));
-
+    environment.put("yarn.nodemanager.docker-container-executor.image-name" , "zhaowh/centos-java");
     // Setup ContainerLaunchContext for AM container
     ContainerLaunchContext amContainer =
         ContainerLaunchContext.newInstance(localResources, environment,
