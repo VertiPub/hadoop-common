@@ -826,24 +826,24 @@ public class YarnConfiguration extends Configuration {
     NM_PREFIX + "health-checker.script.opts";
 
   /** The Docker image name(For DockerContainerExecutor).*/
-  public static final String NM_DOCKER_IMAGE_NAME =
-    NM_PREFIX + "docker-image.name";
+  public static final String NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME =
+    NM_PREFIX + "docker-container-executor.image-name";
   /** Default Docker image name(For DockerContainerExecutor).*/
-  public static final String NM_DEFAULT_DOCKER_IMAGE_NAME =
+  public static final String NM_DEFAULT_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME =
           "CONTAINER_DOES_NOT_EXIST";
   /** Args passed to docker run(For DockerContainerExecutor).*/
-  public static final String NM_DOCKER_RUN_ARGS =
-    NM_PREFIX + "docker-run.args";
+  public static final String NM_DOCKER_CONTAINER_EXECUTOR_RUN_ARGS =
+    NM_PREFIX + "docker-container-executor.run-args";
   /** The name of the docker executor (For DockerContainerExecutor).*/
-  public static final String NM_DOCKER_EXECUTOR_NAME =
-    NM_PREFIX + "docker-executor.name";
+  public static final String NM_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME =
+    NM_PREFIX + "docker-container-executorr.exec-name";
   /** The default docker executor (For DockerContainerExecutor).*/
-  public static final String NM_DEFAULT_DOCKER_EXECUTOR_NAME =
+  public static final String NM_DEFAULT_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME =
           "docker";
   /** The command to run before docker_container_executor.sh (For DockerContainerExecutor).*/
-  public static final String NM_DOCKER_RUN_PRE_COMMAND =
-    NM_PREFIX + "docker-run.pre-command";
-  
+  public static final String NM_DOCKER_CONTAINER_EXECUTOR_PRE_COMMAND =
+    NM_PREFIX + "docker-container-executor.pre-command";
+
   /** The path to the Linux container executor.*/
   public static final String NM_LINUX_CONTAINER_EXECUTOR_PATH =
     NM_PREFIX + "linux-container-executor.path";

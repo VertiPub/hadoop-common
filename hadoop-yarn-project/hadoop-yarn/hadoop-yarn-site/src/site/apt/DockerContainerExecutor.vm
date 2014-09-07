@@ -55,9 +55,12 @@ secure mode.
 the NodeManager, and the Docker client installed and able start Docker
 containers.  To prevent timeouts while starting jobs, the Docker
 images to be used by a job should already be downloaded in the
-NodeManagers. [[HOW DO YOU DO THIS??]]
+NodeManagers. Here's an example of how this can be done:
+----
+sudo docker pull dockerfile/java
+----
 
-   The following properties must [[*MUST* OR *CAN*?  ARE THERE DEFAULTS]] be set in yarn-site.xml:
+   The following properties must be set in yarn-site.xml:
 ----
 <property>
   <name>yarn.nodemanager.docker-image.name</name>
@@ -126,10 +129,14 @@ Register or log in to a Docker registry server, if no server is specified "https
   -p, --password=""    Password
   -u, --username=""    Username
 ----
+
 If you want to login to a self-hosted registry you can specify this by adding the server name.
+
 ----
 docker login localhost:8080
 ----
+
+This needs to be run as part of the NodeManager startup.
 
 * {Job Configuration}
 
@@ -141,11 +148,10 @@ Currently you cannot configure any of the Docker settings with the job configura
    The Docker Images used for YARN containers must meet the following
 requirements:
 
-   * As is usual for Docker, the Docker containers my run a different
+   * As is usual for Docker, the Docker containers may run a different
 version or flavor of Linux than the underlying NodeManager, but the OS
 of the container must be compatible with the kernal of the
-NodeManager.  [[I DON'T REALLY KNOW WHAT I'M TALKING ABOUT -- CHECK
-WITH DINESH.]]
+NodeManager.
 
    * The MapReduce and Tez app frameworks launch a Java process inside
 their YARN containers.  As a result, the Docker image for those
