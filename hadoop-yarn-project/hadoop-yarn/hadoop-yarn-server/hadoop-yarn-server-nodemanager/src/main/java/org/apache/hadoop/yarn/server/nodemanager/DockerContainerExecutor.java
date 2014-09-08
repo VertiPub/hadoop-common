@@ -112,8 +112,10 @@ public int launchContainer(Container container,
 
   String containerImageName = container.getLaunchContext().getEnvironment().get(
           YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME);
+  LOG.info("containerImageName from job conf: " + containerImageName);
   containerImageName = containerImageName == null?
           getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME) : containerImageName;
+  LOG.info("containerImageName from yarn conf: " + containerImageName);
   String containerArgs = Strings.nullToEmpty(
           getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_RUN_ARGS));
   String dockerExecutor = getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME,
