@@ -79,7 +79,7 @@ public class MapReduceChildJVM {
     environment.put(
         "HADOOP_ROOT_LOGGER", 
         getChildLogLevel(conf, task.isMapTask()) + ",console");
-    environment.put("yarn.nodemanager.docker-container-executor.image-name" , "zhaowh/centos-java");
+
     // TODO: The following is useful for instance in streaming tasks. Should be
     // set in ApplicationMaster's env by the RM.
     String hadoopClientOpts = System.getenv("HADOOP_CLIENT_OPTS");
