@@ -537,7 +537,7 @@ public class ClientRMService extends AbstractService implements
     try {
       // call RMAppManager to submit application directly
       LOG.info("Docker image: " + submissionContext.getAMContainerSpec()
-              .getEnvironment().get("yarn.nodemanager.docker-container-executor.image-name"));
+              .getEnvironment().get("yarn.nodemanager.docker-container-executor.image-name") );
       rmAppManager.submitApplication(submissionContext,
           System.currentTimeMillis(), user);
 

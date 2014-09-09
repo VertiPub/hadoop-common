@@ -193,6 +193,8 @@ public class ContainerLaunch implements Callable<Integer> {
       launchContext.setCommands(newCmds);
 
       Map<String, String> environment = launchContext.getEnvironment();
+      LOG.info("Container launchContext Environment: " + environment
+      + " env: " + container.getLaunchContext().getEnvironment());
       // Make a copy of env to iterate & do variable expansion
       for (Entry<String, String> entry : environment.entrySet()) {
         String value = entry.getValue();
@@ -270,9 +272,7 @@ public class ContainerLaunch implements Callable<Integer> {
           }
         }
 
-        if (LOG.isDebugEnabled()){
-          LOG.debug("Environment: " + orderedEnv);
-        }
+
 
         // Set the token location too.
         environment.put(
@@ -283,6 +283,7 @@ public class ContainerLaunch implements Callable<Integer> {
         sanitizeEnv(environment, containerWorkDir, appDirs, containerLogDirs,
                 localResources);
         orderedEnv.putAll(environment);
+        LOG.info("ordered Environment: " + orderedEnv);
         // Write out the environment
         writeLaunchEnv(containerScriptOutStream, orderedEnv, localResources,
                 launchContext.getCommands());
@@ -803,6 +804,7 @@ public class ContainerLaunch implements Callable<Integer> {
     if (environment != null) {
       for (Map.Entry<String,String> env : environment.entrySet()) {
         sb.env(env.getKey().toString(), env.getValue().toString());
+        LOG.info("exporting " + env.getKey().toString() + " = " + env.getValue().toString());
       }
     }
     if (resources != null) {

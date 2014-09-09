@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Vector;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.TaskLog.LogName;
 import org.apache.hadoop.mapreduce.ID;
@@ -36,7 +38,7 @@ import org.apache.hadoop.yarn.conf.YarnConfiguration;
 
 @SuppressWarnings("deprecation")
 public class MapReduceChildJVM {
-
+  public static final Log LOG = LogFactory.getLog(MapReduceChildJVM.class);
   private static String getTaskLogFile(LogName filter) {
     return ApplicationConstants.LOG_DIR_EXPANSION_VAR + Path.SEPARATOR + 
         filter.toString();
@@ -69,6 +71,7 @@ public class MapReduceChildJVM {
       Task task) {
 
     JobConf conf = task.conf;
+    LOG.info("jobconf: " + conf.toString());
     // Add the env variables passed by the user
     String mapredChildEnv = getChildEnv(conf, task.isMapTask());
     MRApps.setEnvFromInputString(environment, mapredChildEnv, conf);
@@ -77,8 +80,8 @@ public class MapReduceChildJVM {
     // This is so that, if the child forks another "bin/hadoop" (common in
     // streaming) it will have the correct loglevel.
     environment.put(
-        "HADOOP_ROOT_LOGGER", 
-        getChildLogLevel(conf, task.isMapTask()) + ",console");
+            "HADOOP_ROOT_LOGGER",
+            getChildLogLevel(conf, task.isMapTask()) + ",console");
 
     // TODO: The following is useful for instance in streaming tasks. Should be
     // set in ApplicationMaster's env by the RM.
@@ -110,7 +113,11 @@ public class MapReduceChildJVM {
     environment.put(
         MRJobConfig.STDERR_LOGFILE_ENV,
         getTaskLogFile(TaskLog.LogName.STDERR)
-        );
+    );
+    LOG.info("Environment: " + environment);
+
+    environment.put("yarn.nodemanager.docker-container-executor.image-name" ,
+            conf.get("yarn.nodemanager.docker-container-executor.image-name"));
   }
 
   private static String getChildJavaOpts(JobConf jobConf, boolean isMapTask) {

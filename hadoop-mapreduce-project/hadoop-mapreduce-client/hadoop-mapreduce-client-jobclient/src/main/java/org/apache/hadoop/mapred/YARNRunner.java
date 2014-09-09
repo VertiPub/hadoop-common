@@ -473,7 +473,10 @@ public class YARNRunner implements ClientProtocol {
     acls.put(ApplicationAccessType.MODIFY_APP, jobConf.get(
         MRJobConfig.JOB_ACL_MODIFY_JOB,
         MRJobConfig.DEFAULT_JOB_ACL_MODIFY_JOB));
-
+    LOG.info("jobconf in AM: " + jobConf.get("yarn.nodemanager.docker-container-executor.image-name")
+            + " conf: " + conf.get("yarn.nodemanager.docker-container-executor.image-name"));
+    environment.put("yarn.nodemanager.docker-container-executor.image-name",
+            jobConf.get("yarn.nodemanager.docker-container-executor.image-name"));
     // Setup ContainerLaunchContext for AM container
     ContainerLaunchContext amContainer =
         ContainerLaunchContext.newInstance(localResources, environment,

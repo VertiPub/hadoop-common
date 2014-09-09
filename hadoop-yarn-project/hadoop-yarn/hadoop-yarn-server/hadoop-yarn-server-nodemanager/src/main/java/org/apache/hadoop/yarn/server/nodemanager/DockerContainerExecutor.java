@@ -19,6 +19,7 @@
 package org.apache.hadoop.yarn.server.nodemanager;
 
 import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -110,12 +111,11 @@ public int launchContainer(Container container,
                            String userName, String appId, Path containerWorkDir,
                            List<String> localDirs, List<String> logDirs) throws IOException {
 
-  String containerImageName = container.getLaunchContext().getEnvironment().get(
-          YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME);
-  LOG.info("containerImageName from job conf: " + containerImageName);
-  containerImageName = containerImageName == null?
-          getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME) : containerImageName;
-  LOG.info("containerImageName from yarn conf: " + containerImageName);
+  String containerImageName = Preconditions.checkNotNull(container.getLaunchContext().getEnvironment().get(
+          YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME));
+  LOG.info("containerImageName from job conf: " + containerImageName
+          + " env " + container.getLaunchContext().getEnvironment());
+
   String containerArgs = Strings.nullToEmpty(
           getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_RUN_ARGS));
   String dockerExecutor = getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME,
