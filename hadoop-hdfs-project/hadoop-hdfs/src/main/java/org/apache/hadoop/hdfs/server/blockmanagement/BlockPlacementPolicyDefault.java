@@ -58,7 +58,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
     + LOG.getClass().getName();
 
   protected boolean considerLoad; 
-  private boolean preferLocalNode = true;
+  private boolean preferLocalNode = false;
   protected NetworkTopology clusterMap;
   private FSClusterStats stats;
   protected long heartbeatInterval;   // interval for DataNode heartbeats
@@ -454,6 +454,9 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
                                           List<DatanodeDescriptor> results,
                                           boolean avoidStaleNodes) 
     throws NotEnoughReplicasException {
+
+    nodes = NodeBase.ROOT; // DLC: anti-locality hack (MT-188)
+
     int numOfAvailableNodes =
       clusterMap.countNumOfAvailableNodes(nodes, excludedNodes.keySet());
     StringBuilder builder = null;
@@ -503,6 +506,8 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
                             List<DatanodeDescriptor> results,
                             boolean avoidStaleNodes)
     throws NotEnoughReplicasException {
+
+    nodes = NodeBase.ROOT; // DLC: anti-locality hack (MT-188)
       
     int numOfAvailableNodes =
       clusterMap.countNumOfAvailableNodes(nodes, excludedNodes.keySet());
