@@ -26,7 +26,7 @@ Docker Container Executor
   Docker (https://www.docker.io/) combines an easy-to-use interface to
 Linux containers with easy-to-construct image files for those
 containers.  In short, Docker launches very light weight "virtual
-machines.
+machines."
 
   The Docker Conatiner Executor (DCE) allows the YARN NodeManager to
 launch YARN containers into Docker containers.  Users can specify the
@@ -37,18 +37,16 @@ containers can include special libraries needed by the application,
 and they can have different versions of Perl, Python, and even Java
 than what is installed on the NodeManager.  Indeed, these containers
 can run a different flavor of Linux than what is running on the
-NodeManager -- although the YARN container will share the kernel of
-the NodeManager, and (for MapReduce and Tez) JAVA_HOME of the YARN
-container must match that of the NodeManager.
+NodeManager.
 
    Docker for YARN provides both consistency (all YARN containers will
 have the same software environment) and isolation (no interference
 with whatever is installed on the physical machine).
-  
+
 * {Cluster Configuration}
 
    Docker Container Executor runs in non-secure mode of HDFS and
-YARN. It will not run in secure mode, and will exit if it detects
+YARN. It will not run in secure mode, and will exit with an error if it detects
 secure mode.
 
    The DockerContainerExecutor requires Docker daemon to be running on
@@ -59,6 +57,8 @@ NodeManagers. Here's an example of how this can be done:
 ----
 sudo docker pull dockerfile/java
 ----
+
+QUESTION: HOW DOES THE ABOVE (docker pull) GET EXECUTED?  IS THIS SOMETHING DONE AT NODE_MANAGER STARTUP TIME?
 
    The following properties must be set in yarn-site.xml:
 ----
@@ -104,7 +104,6 @@ sudo docker pull dockerfile/java
 </property>
 ----
 
-
    Administrators are expected to include both --rm and --net=host in
 yarn.nodemanager.docker-run.args.  --rm ensures that all containers
 that are killed are cleaned up. --net=host makes the container share
@@ -139,11 +138,21 @@ docker login localhost:8080
 
 This needs to be run as part of the NodeManager startup.
 
+QUESTION: DO THESE LOGIN SESSIONS TIMEOUT?  IF SO, THEN MAYBE IT SHOULD BE DONE IN A CRON JOB ON THE NODE MANAGER, RATHER THAN AT STARTUP.
+
 * {Job Configuration}
 
-Currently you cannot configure any of the Docker settings with the job configuration.
-You can provide Mapper, Reducer, and ApplicationMaster environment overrides for the
-docker images, using the following 3 JVM properties respectively:
+   Currently, DCE has only been tested with YARN's MapReduce
+application framework.  It is particularly useful for streaming
+MapReduce jobs, where the executable for the streaming program can be
+distributed via a Docker Image.  DCE should also work with the Tez
+application framework, although that hasn't been tested.  This section
+assumes you're running a MapReduce job with DCE.
+
+Currently you cannot configure any of the Docker settings with the job configuration,
+but you can specify Docker Images for the mapper, reducer, and
+application-master containers.  You do this by setting the following
+properties in your job-configuration file:
   * mapreduce.map.env: You can override the mapper's image by passing 
 yarn.nodemanager.docker-container-executor.image-name=<your_image_name>
 to this JVM property.
@@ -154,24 +163,10 @@ to this JVM property.
 by passing yarn.nodemanager.docker-container-executor.image-name=<your_image_name>
 to this JVM property.
 
+
 * {Docker Image requirements}
 
-   The Docker Images used for YARN containers must meet the following
-requirements:
-
-   * As is usual for Docker, the Docker containers may run a different
-version or flavor of Linux than the underlying NodeManager, but the OS
-of the container must be compatible with the kernal of the
-NodeManager.
-
-   * The MapReduce and Tez app frameworks launch a Java process inside
-their YARN containers.  As a result, the Docker image for those
-containers must have Java installed -- and further, the location of
-JAVA_HOME in this container needs to match the underlying NodeManager.
-Further, the Docker image for those containers must also have Hadoop
-installed in the same location as the NodeManager.
-
-[[OTHER REQUIREMENTS]]
+   The distro and version of Linux in your Docker Image can be quite different from that of your NodeManager.  (Docker does have a few limitations in this regard, but you're not likely to hit them.)  However, if you're using the MapReduce framework, then your image will need to be configured for running Hadoop.  Java must be installed, and it must be installed in the same location as in the underlying NodeManager.  Futher, the Docker image for those containers must also have Hadoop installed in the same location as the NodeManager.
 
 
 * {Working example of yarn launched docker containers.}
@@ -188,8 +183,11 @@ hadoop jar $HADOOP_INSTALLATION_DIR/share/hadoop/mapreduce/hadoop-mapreduce-exam
 -Dmapreduce.map.env="yarn.nodemanager.docker-container-executor.image-name=zhaowh/centos-java" \
 -Dyarn.app.mapreduce.am.env="yarn.nodemanager.docker-container-executor.image-name=zhaowh/centos-java" \
 1000 teragen_out_dir 
+----
+
+QUESTION: DOES ZHAOWH/CENTOS-JAVA ALSO HAVE HADOOP INSTALLED?
+
 
 Once it succeeds, you can check the yarn debug logs to verify that docker indeed has launched containers.
-Alternatively, if you launch your container without the --rm option(yarn.nodemanager.docker-container-executor.run-arg)
-you can see containers that ran by running 'docker ps -a' on the Nodemanager where the containers ran.
-----
+If you are having difficulty and need more diagnostic information, you can temporarily remove the --rm option from yarn.nodemanager.docker-container-executor.run-arg, which will allow you to 
+see the containers that ran by running 'docker ps -a' on your NodeManagers.
