@@ -330,9 +330,12 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
                                              boolean avoidStaleNodes)
     throws NotEnoughReplicasException {
     // if no local machine, randomly choose one node
+/* DLC: temporary hack MT-188
     if (localMachine == null)
+*/
       return chooseRandom(NodeBase.ROOT, excludedNodes, blocksize,
           maxNodesPerRack, results, avoidStaleNodes);
+/* DLC: temporary hack MT-188
     if (preferLocalNode) {
       // otherwise try local machine first
       Node oldNode = excludedNodes.put(localMachine, localMachine);
@@ -349,6 +352,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
     // try a node on local rack
     return chooseLocalRack(localMachine, excludedNodes, blocksize,
         maxNodesPerRack, results, avoidStaleNodes);
+*/
   }
   
   /**
