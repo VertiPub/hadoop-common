@@ -19,9 +19,11 @@
 package org.apache.hadoop.yarn.server.nodemanager;
 
 import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.fs.CommonConfigurationKeys;
 import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.UnsupportedFileSystemException;
@@ -45,6 +47,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 
@@ -59,21 +62,20 @@ public class DockerContainerExecutor extends ContainerExecutor {
 
   private final FileContext lfs;
 
-public DockerContainerExecutor() {
-  try {
-    this.lfs = FileContext.getLocalFSFileContext();
-  } catch (UnsupportedFileSystemException e) {
-    throw new RuntimeException(e);
+  public DockerContainerExecutor() {
+    try {
+      this.lfs = FileContext.getLocalFSFileContext();
+    } catch (UnsupportedFileSystemException e) {
+      throw new RuntimeException(e);
+    }
   }
-}
-
-DockerContainerExecutor(FileContext lfs) {
-  this.lfs = lfs;
-}
 
   @Override
   public void init() throws IOException {
-
+    String auth = getConf().get(CommonConfigurationKeys.HADOOP_SECURITY_AUTHENTICATION);
+    if(auth != null && !auth.equals("simple")){
+      throw new IllegalStateException("DockerContainerExecutor only works with simple authentication mode");
+    }
   }
 
   @Override
@@ -91,16 +93,11 @@ DockerContainerExecutor(FileContext lfs) {
     createAppDirs(localDirs, user, appId);
     createAppLogDirs(appId, logDirs);
 
-    // TODO: Why pick first app dir. The same in LCE why not random?
     Path appStorageDir = getFirstApplicationDir(localDirs, user, appId);
-
     String tokenFn = String.format(ContainerLocalizer.TOKEN_FILE_NAME_FMT, locId);
     Path tokenDst = new Path(appStorageDir, tokenFn);
     lfs.util().copy(nmPrivateContainerTokensPath, tokenDst);
-    LOG.info("Copying from " + nmPrivateContainerTokensPath + " to " + tokenDst);
     lfs.setWorkingDirectory(appStorageDir);
-    LOG.info("CWD set to " + appStorageDir + " = " + lfs.getWorkingDirectory());
-    // TODO: DO it over RPC for maintaining similarity?
     localizer.runLocalization(nmAddr);
   }
 
@@ -109,18 +106,16 @@ public int launchContainer(Container container,
                            Path nmPrivateContainerScriptPath, Path nmPrivateTokensPath,
                            String userName, String appId, Path containerWorkDir,
                            List<String> localDirs, List<String> logDirs) throws IOException {
-
-  String containerImageName = getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME,
-    YarnConfiguration.NM_DEFAULT_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME);
-
-  if (LOG.isDebugEnabled()) {
-    LOG.debug("containerImageName from conf: " + containerImageName);
-  }
-  containerImageName = container.getLaunchContext().getEnvironment()
-          .get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME);
+  String containerImageName = container.getLaunchContext().getEnvironment()
+    .get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME);
   if (LOG.isDebugEnabled()) {
     LOG.debug("containerImageName from launchContext: " + containerImageName);
   }
+  containerImageName = containerImageName == null?
+    getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME)
+    : containerImageName;
+  Preconditions.checkArgument(containerImageName != null,
+            "Container image must not be null");
   String containerArgs = Strings.nullToEmpty(getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_RUN_ARGS));
   String dockerExecutor = getConf().get(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME,
     YarnConfiguration.NM_DEFAULT_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME);
@@ -167,12 +162,15 @@ public int launchContainer(Container container,
 
   String localDirMount = toMount(localDirs);
   String logDirMount = toMount(logDirs);
+  String containerWorkDirMount = toMount(Collections.singletonList(containerWorkDir.toUri().getPath()));
   StringBuilder commands = new StringBuilder();
   String commandStr = commands.append(dockerExecutor)
           .append(" ")
+          .append("run")
           .append(" --name " + containerIdStr)
           .append(localDirMount)
           .append(logDirMount)
+          .append(containerWorkDirMount)
           .append(" ")
           .append(containerArgs)
           .append(" ")
