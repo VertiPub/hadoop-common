@@ -74,6 +74,9 @@ public class TestDistributedShell {
         FifoScheduler.class, ResourceScheduler.class);
     conf.set("yarn.log.dir", "target");
     conf.setBoolean(YarnConfiguration.TIMELINE_SERVICE_ENABLED, true);
+    conf.set(YarnConfiguration.NM_CONTAINER_EXECUTOR, "org.apache.hadoop.yarn.server.nodemanager.DockerContainerExecutor");
+    conf.set(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME, "sequenceiq/hadoop-docker:2.4.1");
+    conf.set(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_RUN_ARGS, "--net=host --rm");
     if (yarnCluster == null) {
       yarnCluster = new MiniYARNCluster(
         TestDistributedShell.class.getSimpleName(), 1, 1, 1, 1, true);
