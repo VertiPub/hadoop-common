@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.google.common.base.Strings;
 import org.junit.Assert;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -77,6 +78,14 @@ public class TestDistributedShell {
     conf.set(YarnConfiguration.NM_CONTAINER_EXECUTOR, "org.apache.hadoop.yarn.server.nodemanager.DockerContainerExecutor");
     conf.set(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME, "sequenceiq/hadoop-docker:2.4.1");
     conf.set(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_RUN_ARGS, "--net=host --rm");
+    String dockerUrl = System.getProperty("docker-service-url");
+    LOG.info("dockerUrl: " + dockerUrl);
+    if (Strings.isNullOrEmpty(dockerUrl)){
+      return;
+    }
+    dockerUrl = " -H " + dockerUrl;
+    String dockerExec = "docker " + dockerUrl;
+    conf.set(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_EXEC_NAME, dockerExec);
     if (yarnCluster == null) {
       yarnCluster = new MiniYARNCluster(
         TestDistributedShell.class.getSimpleName(), 1, 1, 1, 1, true);
