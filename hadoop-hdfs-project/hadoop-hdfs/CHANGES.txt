@@ -14,6 +14,9 @@ Release 2.4.1 - 2014-06-23
 
   BUG FIXES 
 
+    HDFS-7575. Upgrade should generate a unique storage ID for each
+    volume. (Arpit Agarwal)
+
     HD-725. 200-04-05.sc1 hdfs_balancer - Dispatcher thread failed (Chris+raviprak)
 
     HDFS-6462. NFS: fsstat request fails with the secure hdfs (brandonli)
