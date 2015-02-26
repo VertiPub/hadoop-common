@@ -18,7 +18,6 @@
 
 package org.apache.hadoop.yarn.server.nodemanager;
 
-import com.google.common.base.Strings;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -49,9 +48,9 @@ import java.util.List;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 
 /**
  * Mock tests for docker container executor
@@ -219,7 +218,8 @@ public class TestDockerContainerExecutorWithMocks {
     List<String> logDirs = dirsToMount(dirsHandler.getLogDirs());
     List<String> workDirMount = dirsToMount(Collections.singletonList(workDir.toUri().getPath()));
     List<String> expectedCommands =  new ArrayList<String>(
-        Arrays.asList(DOCKER_LAUNCH_COMMAND, "run", "--rm", "--net=host",  "--name", containerId));
+        Arrays.asList(DOCKER_LAUNCH_COMMAND, "run", "--rm", "--net=host",  "--name",
+                containerId, "--memory", "0b", "--cpu-shares", "0", "--user", "nobody"));
     expectedCommands.addAll(localDirs);
     expectedCommands.addAll(logDirs);
     expectedCommands.addAll(workDirMount);

@@ -26,30 +26,22 @@ import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.util.Shell;
-import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
-import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileReader;
 import java.io.IOException;
-import java.io.LineNumberReader;
 import java.io.PrintWriter;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assume.assumeTrue;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -121,7 +113,7 @@ public class TestDockerContainerExecutor {
     exec.setConf(conf);
     appSubmitter = System.getProperty("application.submitter");
     if (appSubmitter == null || appSubmitter.isEmpty()) {
-      appSubmitter = "nobody";
+      appSubmitter = "root";
     }
     shellExec(dockerExec + " pull " + testImage);
 
@@ -147,9 +139,10 @@ public class TestDockerContainerExecutor {
 
   private int runAndBlock(ContainerId cId, Map<String, String> launchCtxEnv, String... cmd) throws IOException {
     String appId = "APP_" + System.currentTimeMillis();
-    Container container = mock(Container.class);
+    Container container = mock(Container.class, RETURNS_DEEP_STUBS);
     ContainerLaunchContext context = mock(ContainerLaunchContext.class);
-
+    when(container.getResource().getMemory()).thenReturn(4194304);
+    when(container.getResource().getVirtualCores()).thenReturn(10);
     when(container.getContainerId()).thenReturn(cId);
     when(container.getLaunchContext()).thenReturn(context);
     when(cId.getApplicationAttemptId().getApplicationId().toString()).thenReturn(appId);
