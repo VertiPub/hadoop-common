@@ -84,6 +84,18 @@ jobs are started with the DockerContainerExecutor.
 </property>
 ----
 
+   Optionally you can set the following property as a default image:
+
+----
+<property>
+  <name>yarn.nodemanager.docker-container-executor.image-name</name>
+  <value>sequenceiq/hadoop-docker:2.4.1</value>
+  <description>
+     This is the default docker image to use if no images are on the jobconf.
+  </description>
+</property>
+----
+
    Administrators should be aware that DCE doesn't currently provide
 user name-space isolation.  This means, in particular, that software
 running as root in the YARN container will have root privileges in the
@@ -169,7 +181,7 @@ HADOOP_MAPRED_HOME, HADOOP_YARN_HOME, and HADOOP_CONF_DIR
 ----
 <property>
  <name>yarn.nodemanager.docker-container-executor.exec-name</name>
-  <value>docker -H=tcp://0.0.0.0:4243</value>
+  <value>/usr/bin/docker -H=tcp://0.0.0.0:4243</value>
   <description>
      Name or path to the Docker client. The tcp socket must be
      where docker daemon is listening.

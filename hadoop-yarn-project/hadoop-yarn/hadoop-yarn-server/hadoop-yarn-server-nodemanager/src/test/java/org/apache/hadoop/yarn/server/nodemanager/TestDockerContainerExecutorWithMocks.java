@@ -219,7 +219,7 @@ public class TestDockerContainerExecutorWithMocks {
     List<String> workDirMount = dirsToMount(Collections.singletonList(workDir.toUri().getPath()));
     List<String> expectedCommands =  new ArrayList<String>(
         Arrays.asList(DOCKER_LAUNCH_COMMAND, "run", "--rm", "--net=host",  "--name",
-                containerId, "--memory", "0b", "--cpu-shares", "0", "--user", "nobody"));
+                containerId, "--memory", "0m", "--cpu-shares", "0", "--user", "nobody"));
     expectedCommands.addAll(localDirs);
     expectedCommands.addAll(logDirs);
     expectedCommands.addAll(workDirMount);
