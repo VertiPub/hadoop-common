@@ -132,11 +132,12 @@ public class SimpleCopyListing extends CopyListing {
             }
             writeToFileListing(fileListWriter, sourceStatus, sourcePathRoot, localFile);
 
-            if (isDirectoryAndNotEmpty(sourceFS, sourceStatus)) {
+            if (sourceStatus.isDirectory()) {
               if (LOG.isDebugEnabled()) {
-                LOG.debug("Traversing non-empty source dir: " + sourceStatus.getPath());
+                LOG.debug("Traversing source dir: " + sourceStatus.getPath());
               }
-              traverseNonEmptyDirectory(fileListWriter, sourceStatus, sourcePathRoot, localFile);
+              traverseDirectory(fileListWriter, sourceFS, sourceStatus,
+                                sourcePathRoot, localFile);
             }
           }
         } else {
@@ -203,34 +204,28 @@ public class SimpleCopyListing extends CopyListing {
             SequenceFile.Writer.compression(SequenceFile.CompressionType.NONE));
   }
 
-  private static boolean isDirectoryAndNotEmpty(FileSystem fileSystem,
-                                    FileStatus fileStatus) throws IOException {
-    return fileStatus.isDirectory() && getChildren(fileSystem, fileStatus).length > 0;
-  }
-
   private static FileStatus[] getChildren(FileSystem fileSystem,
                                          FileStatus parent) throws IOException {
     return fileSystem.listStatus(parent.getPath());
   }
 
-  private void traverseNonEmptyDirectory(SequenceFile.Writer fileListWriter,
-                                         FileStatus sourceStatus,
-                                         Path sourcePathRoot, boolean localFile)
-                                         throws IOException {
-    FileSystem sourceFS = sourcePathRoot.getFileSystem(getConf());
+  private void traverseDirectory(SequenceFile.Writer fileListWriter,
+                                 FileSystem sourceFS,
+                                 FileStatus sourceStatus,
+                                 Path sourcePathRoot,
+                                 boolean localFile)
+                                 throws IOException {
     Stack<FileStatus> pathStack = new Stack<FileStatus>();
     pathStack.push(sourceStatus);
 
     while (!pathStack.isEmpty()) {
       for (FileStatus child: getChildren(sourceFS, pathStack.pop())) {
         if (LOG.isDebugEnabled())
-          LOG.debug("Recording source-path: "
-                    + sourceStatus.getPath() + " for copy.");
+          LOG.debug("Recording source-path: " + child.getPath() + " for copy.");
         writeToFileListing(fileListWriter, child, sourcePathRoot, localFile);
-        if (isDirectoryAndNotEmpty(sourceFS, child)) {
+        if (child.isDirectory()) {
           if (LOG.isDebugEnabled())
-            LOG.debug("Traversing non-empty source dir: "
-                       + sourceStatus.getPath());
+            LOG.debug("Traversing into source dir: " + child.getPath());
           pathStack.push(child);
         }
       }
