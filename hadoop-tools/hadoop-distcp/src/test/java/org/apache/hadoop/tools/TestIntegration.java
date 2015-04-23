@@ -29,13 +29,19 @@ import org.apache.hadoop.mapreduce.JobSubmissionFiles;
 import org.apache.hadoop.tools.util.TestDistCpUtils;
 import org.junit.Assert;
 import org.junit.BeforeClass;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameters;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 
+@RunWith(value = Parameterized.class)
 public class TestIntegration {
   private static final Log LOG = LogFactory.getLog(TestIntegration.class);
 
@@ -44,6 +50,17 @@ public class TestIntegration {
   private static Path listFile;
   private static Path target;
   private static String root;
+  private int numListstatusThreads;
+
+  public TestIntegration(int numListstatusThreads) {
+    this.numListstatusThreads = numListstatusThreads;
+  }
+
+  @Parameters
+  public static Collection<Object[]> data() {
+    Object[][] data = new Object[][] { { 1 }, { 2 }, { 10 } };
+    return Arrays.asList(data);
+  }
 
   private static Configuration getConf() {
     Configuration conf = new Configuration();
@@ -543,6 +560,7 @@ public class TestIntegration {
     options.setSyncFolder(sync);
     options.setDeleteMissing(delete);
     options.setOverwrite(overwrite);
+    options.setNumListstatusThreads(numListstatusThreads);
     try {
       new DistCp(getConf(), options).execute();
     } catch (Exception e) {
