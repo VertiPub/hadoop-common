@@ -155,7 +155,7 @@ public class SimpleCopyListing extends CopyListing {
             }
             writeToFileListing(fileListWriter, sourceStatus,
                                sourcePathRoot, localFile);
-
+            maybePrintStats();
             if (sourceStatus.isDirectory()) {
               if (LOG.isDebugEnabled()) {
                 LOG.debug("Adding source dir for traverse: " + sourceStatus.getPath());
@@ -318,7 +318,6 @@ public class SimpleCopyListing extends CopyListing {
 
     for (FileStatus status : sourceDirs) {
       workers.put(new WorkRequest<FileStatus>(status, 0));
-      maybePrintStats();
     }
 
     while (workers.hasWork()) {
@@ -331,6 +330,7 @@ public class SimpleCopyListing extends CopyListing {
           }
           if (retry == 0) {
             writeToFileListing(fileListWriter, child, sourcePathRoot, localFile);
+            maybePrintStats();
           }
           if (retry < maxRetries) {
             if (child.isDirectory()) {
@@ -338,7 +338,6 @@ public class SimpleCopyListing extends CopyListing {
                 LOG.debug("Traversing into source dir: " + child.getPath());
               }
               workers.put(new WorkRequest<FileStatus>(child, retry));
-              maybePrintStats();
             }
           } else {
             LOG.error("Giving up on " + child.getPath() +
