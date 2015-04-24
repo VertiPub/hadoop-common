@@ -45,6 +45,9 @@ Release 2.4.1 - 2014-06-23
     in AbstractDelegationTokenSecretManager. (Suresh Srinivas via Arpit
     Agarwal)
 
+    HADOOP-11876. Refactor code to make it more readable, minor
+    maybePrintStats bug (Zoran Dimitrijevic via raviprak)
+
 Release 2.4.0 - 2014-04-07 
 
   INCOMPATIBLE CHANGES

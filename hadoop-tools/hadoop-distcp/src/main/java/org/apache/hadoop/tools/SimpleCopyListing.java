@@ -155,7 +155,6 @@ public class SimpleCopyListing extends CopyListing {
             }
             writeToFileListing(fileListWriter, sourceStatus,
                                sourcePathRoot, localFile);
-            maybePrintStats();
             if (sourceStatus.isDirectory()) {
               if (LOG.isDebugEnabled()) {
                 LOG.debug("Adding source dir for traverse: " + sourceStatus.getPath());
@@ -274,11 +273,12 @@ public class SimpleCopyListing extends CopyListing {
           }
         }
         result = new WorkReport<FileStatus[]>(
-            fileSystem.listStatus(parent.getPath()), 0, true);
+            fileSystem.listStatus(parent.getPath()), retry, true);
       } catch (FileNotFoundException fnf) {
         LOG.error("FileNotFoundException exception in listStatus: " +
                   fnf.getMessage());
-        result = new WorkReport<FileStatus[]>(new FileStatus[0], 0, true, fnf);
+        result = new WorkReport<FileStatus[]>(new FileStatus[0], retry, true,
+                                              fnf);
       } catch (Exception e) {
         LOG.error("Exception in listStatus. Will send for retry.");
         FileStatus[] parentList = new FileStatus[1];
@@ -328,9 +328,8 @@ public class SimpleCopyListing extends CopyListing {
           if (LOG.isDebugEnabled()) {
             LOG.debug("Recording source-path: " + child.getPath() + " for copy.");
           }
-          if (retry == 0) {
+          if (workResult.getSuccess()) {
             writeToFileListing(fileListWriter, child, sourcePathRoot, localFile);
-            maybePrintStats();
           }
           if (retry < maxRetries) {
             if (child.isDirectory()) {
@@ -377,6 +376,7 @@ public class SimpleCopyListing extends CopyListing {
       totalDirs++;
     }
     totalPaths++;
+    maybePrintStats();
   }
 
   private static final ByteArrayOutputStream buffer = new ByteArrayOutputStream(64);
