@@ -77,7 +77,7 @@ public class TestDFSUpgradeFromImage {
     long checksum;
   }
   
-  private static final Configuration upgradeConf;
+  static final Configuration upgradeConf;
   
   static {
     upgradeConf = new HdfsConfiguration();
@@ -87,12 +87,16 @@ public class TestDFSUpgradeFromImage {
     }
   }
   
+  public interface ClusterVerifier {
+    public void verifyClusterPostUpgrade(final MiniDFSCluster cluster) throws IOException;
+  }
+
   final LinkedList<ReferenceFileInfo> refList = new LinkedList<ReferenceFileInfo>();
   Iterator<ReferenceFileInfo> refIter;
   
   boolean printChecksum = false;
   
-  private void unpackStorage(String tarFileName)
+  void unpackStorage(String tarFileName)
       throws IOException {
     String tarFile = System.getProperty("test.cache.data", "build/test/cache")
         + "/" + tarFileName;
@@ -115,7 +119,7 @@ public class TestDFSUpgradeFromImage {
       if (line.length() <= 0 || line.startsWith("#")) {
         continue;
       }
-      String[] arr = line.split("\\s+\t\\s+");
+      String[] arr = line.split("\\s+");
       if (arr.length < 1) {
         continue;
       }
@@ -284,7 +288,7 @@ public class TestDFSUpgradeFromImage {
   public void testUpgradeFromRel22Image() throws IOException {
     unpackStorage(HADOOP22_IMAGE);
     upgradeAndVerify(new MiniDFSCluster.Builder(upgradeConf).
-        numDataNodes(4));
+        numDataNodes(4), null);
   }
   
   /**
@@ -312,7 +316,7 @@ public class TestDFSUpgradeFromImage {
     // Upgrade should now fail
     try {
       upgradeAndVerify(new MiniDFSCluster.Builder(upgradeConf).
-          numDataNodes(4));
+          numDataNodes(4), null);
       fail("Upgrade did not fail with bad MD5");
     } catch (IOException ioe) {
       String msg = StringUtils.stringifyException(ioe);
@@ -435,7 +439,7 @@ public class TestDFSUpgradeFromImage {
     } while (dirList.hasMore());
   }
   
-  private void upgradeAndVerify(MiniDFSCluster.Builder bld)
+  void upgradeAndVerify(MiniDFSCluster.Builder bld, ClusterVerifier verifier)
       throws IOException {
     MiniDFSCluster cluster = null;
     try {
@@ -454,6 +458,10 @@ public class TestDFSUpgradeFromImage {
       }
       recoverAllLeases(dfsClient, new Path("/"));
       verifyFileSystem(dfs);
+
+      if (verifier != null) {
+        verifier.verifyClusterPostUpgrade(cluster);
+      }
     } finally {
       if (cluster != null) { cluster.shutdown(); }
     } 
@@ -473,6 +481,6 @@ public class TestDFSUpgradeFromImage {
         "data1");
     upgradeAndVerify(new MiniDFSCluster.Builder(conf).
           numDataNodes(1).enableManagedDfsDirsRedundancy(false).
-          manageDataDfsDirs(false));
+          manageDataDfsDirs(false), null);
   }
 }
