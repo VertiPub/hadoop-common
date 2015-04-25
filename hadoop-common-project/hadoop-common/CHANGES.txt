@@ -12,6 +12,9 @@ Release 2.4.1 - 2014-06-23
     HADOOP-10466. Lower the log level in UserGroupInformation.  (Nicolas
     Liochon via szetszwo)
 
+    HADOOP-11827. Speed-up distcp buildListing() using threadpool
+    (Zoran Dimitrijevic via raviprak)
+
   OPTIMIZATIONS
 
     HADOOP-11785. Reduce the number of listStatus operation in distcp
@@ -41,6 +44,9 @@ Release 2.4.1 - 2014-06-23
     HADOOP-10562. Namenode exits on exception without printing stack trace
     in AbstractDelegationTokenSecretManager. (Suresh Srinivas via Arpit
     Agarwal)
+
+    HADOOP-11876. Refactor code to make it more readable, minor
+    maybePrintStats bug (Zoran Dimitrijevic via raviprak)
 
 Release 2.4.0 - 2014-04-07 
 
