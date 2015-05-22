@@ -87,8 +87,8 @@ public class LinuxContainerExecutor extends ContainerExecutor {
     if (conf.get(YarnConfiguration.NM_CONTAINER_EXECUTOR_SCHED_PRIORITY) != null) {
      containerSchedPriorityIsSet = true;
      containerSchedPriorityAdjustment = conf
-         .getInt(YarnConfiguration.NM_CONTAINER_EXECUTOR_SCHED_PRIORITY, 
-         YarnConfiguration.DEFAULT_NM_CONTAINER_EXECUTOR_SCHED_PRIORITY);
+         .getInt(YarnConfiguration.NM_CONTAINER_EXECUTOR_SCHED_PRIORITY,
+             YarnConfiguration.DEFAULT_NM_CONTAINER_EXECUTOR_SCHED_PRIORITY);
     }
     nonsecureLocalUser = conf.get(
         YarnConfiguration.NM_NONSECURE_MODE_LOCAL_USER_KEY,
@@ -556,7 +556,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
   }
   
   @Override
-  public boolean isContainerProcessAlive(ContainerLivenessContext ctx)
+  public boolean isContainerAlive(ContainerLivenessContext ctx)
       throws IOException {
     String user = ctx.getUser();
     String pid = ctx.getPid();

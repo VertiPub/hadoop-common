@@ -159,7 +159,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @return true if container is still alive
    * @throws IOException
    */
-  public abstract boolean isContainerProcessAlive(ContainerLivenessContext ctx)
+  public abstract boolean isContainerAlive(ContainerLivenessContext ctx)
       throws IOException;
 
   /**
@@ -195,7 +195,7 @@ public abstract class ContainerExecutor implements Configurable {
         .setUser(user)
         .setPid(pid)
         .build();
-    while(isContainerProcessAlive(livenessContext)) {
+    while(isContainerAlive(livenessContext)) {
       Thread.sleep(1000);
     }
 
