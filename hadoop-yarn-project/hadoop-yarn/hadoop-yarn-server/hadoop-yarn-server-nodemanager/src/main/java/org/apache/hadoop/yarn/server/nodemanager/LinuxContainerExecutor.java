@@ -60,6 +60,11 @@ import org.apache.hadoop.yarn.server.nodemanager.util.DefaultLCEResourcesHandler
 import org.apache.hadoop.yarn.server.nodemanager.util.LCEResourcesHandler;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 
+/** Container execution for Linux. Provides linux-specific localization
+ * mechanisms, resource management via cgroups and can switch between multiple
+ * container runtimes - e.g Standard "Process Tree", Docker, Appc
+ */
+
 public class LinuxContainerExecutor extends ContainerExecutor {
 
   private static final Log LOG = LogFactory
