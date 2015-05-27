@@ -181,6 +181,11 @@ http://maven.apache.org/xsd/maven-4.0.0.xsd">
       <scope>compile</scope>
     </dependency>
     <dependency>
+      <groupId>com.twitter</groupId>
+      <artifactId>hpack</artifactId>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
       <groupId>xerces</groupId>
       <artifactId>xercesImpl</artifactId>
       <scope>compile</scope>
@@ -391,6 +396,21 @@ http://maven.apache.org/xsd/maven-4.0.0.xsd">
             <exclude>src/main/webapps/static/dust-helpers-1.1.1.min.js</exclude>
             <exclude>src/main/webapps/static/jquery-1.10.2.min.js</exclude>
           </excludes>
+        </configuration>
+      </plugin>
+      <plugin>
+        <artifactId>maven-clean-plugin</artifactId>
+        <configuration>
+          <filesets>
+            <fileset>
+              <directory>src/site/resources</directory>
+              <includes>
+                <include>configuration.xsl</include>
+                <include>hdfs-default.xml</include>
+              </includes>
+              <followSymlinks>false</followSymlinks>
+            </fileset>
+          </filesets>
         </configuration>
       </plugin>
     </plugins>

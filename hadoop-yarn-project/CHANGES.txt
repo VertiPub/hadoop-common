@@ -4,6 +4,9 @@ Release 2.8.0 - UNRELEASED
 
   INCOMPATIBLE CHANGES
 
+    YARN-2336. Fair scheduler's REST API returns a missing '[' bracket JSON for
+    deep queue tree. (Kenji Kikushima and Akira Ajisaka via ozawa)
+
   NEW FEATURES
 
     YARN-3345. Add non-exclusive node label API. (Wangda Tan via jianhe)
@@ -68,6 +71,9 @@ Release 2.8.0 - UNRELEASED
 
     YARN-3541. Add version info on timeline service / generic history web UI
     and REST API. (Zhijie Shen via xgong)
+
+    YARN-160. Enhanced NodeManager to automatically obtain cpu/memory values from
+    underlying OS when configured to do so. (Varun Vasudev via vinodkv)
 
   IMPROVEMENTS
 
@@ -210,6 +216,9 @@ Release 2.8.0 - UNRELEASED
 
     YARN-3684. Changed ContainerExecutor's primary lifecycle methods to use a more
     extensible mechanism of context objects. (Sidharta Seethana via vinodkv)
+
+    YARN-3594. WintuilsProcessStubExecutor.startStreamReader leaks streams.
+    (Lars Francke via junping_du)
 
   OPTIMIZATIONS
 
@@ -387,6 +396,11 @@ Release 2.8.0 - UNRELEASED
     YARN-3654. ContainerLogsPage web UI should not have meta-refresh. (Xuan Gong
     via jianhe)
 
+    YARN-3707. RM Web UI queue filter doesn't work. (Wangda Tan via jianhe)
+
+    YARN-3632. Ordering policy should be allowed to reorder an application when
+    demand changes. (Craig Welch via jianhe)
+
 Release 2.7.1 - UNRELEASED
 
   INCOMPATIBLE CHANGES
@@ -505,6 +519,15 @@ Release 2.7.1 - UNRELEASED
 
     YARN-3675. FairScheduler: RM quits when node removal races with 
     continuous-scheduling on the same node. (Anubhav Dhoot via kasha)
+
+    YARN-3701. Isolating the error of generating a single app report when 
+    getting all apps from generic history service. (Zhijie Shen via xgong)
+
+    YARN-2238. filtering on UI sticks even if I move away from the page.
+    (Jian He via xgong)
+
+    YARN-3686. CapacityScheduler should trim default_node_label_expression. 
+    (Sunil G via wangda)
 
 Release 2.7.0 - 2015-04-20
 

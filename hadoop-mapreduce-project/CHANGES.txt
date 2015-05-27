@@ -9,6 +9,9 @@ Release 2.8.0 - UNRELEASED
    MAPREDUCE-6284. Add Task Attempt State API to MapReduce Application
    Master REST API. (Ryu Kobayashi via ozawa)
 
+   MAPREDUCE-6364. Add a "Kill" link to Task Attempts page. (Ryu Kobayashi
+   via ozawa)
+
   IMPROVEMENTS
 
     MAPREDUCE-6291. Correct mapred queue usage command.
@@ -166,6 +169,9 @@ Release 2.8.0 - UNRELEASED
     MAPREDUCE-6273. HistoryFileManager should check whether summaryFile exists to 
     avoid FileNotFoundException causing HistoryFileInfo into MOVE_FAILED state.
     (zhihai xu via devaraj)
+
+    MAPREDUCE-6204. TestJobCounters should use new properties instead of
+    JobConf.MAPRED_TASK_JAVA_OPTS. (Sam Liu via ozawa)
 
 Release 2.7.1 - UNRELEASED
 
