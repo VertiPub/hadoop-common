@@ -139,6 +139,9 @@ public class PrivilegedOperationExecutor {
     ShellCommandExecutor exec = new ShellCommandExecutor(fullCommandArray,
         workingDir, env);
 
+    LOG.warn("command array:");
+    LOG.warn(Arrays.toString(fullCommandArray));
+
     try {
       exec.execute();
       if (LOG.isDebugEnabled()) {

@@ -232,15 +232,23 @@ public class LinuxContainerExecutor extends ContainerExecutor {
     }
 
     try {
-      linuxContainerRuntime = new DelegatingLinuxContainerRuntime();
-      linuxContainerRuntime.initialize(conf);
+      LinuxContainerRuntime runtime = new DelegatingLinuxContainerRuntime();
+      runtime.initialize(conf);
+
+      setLinuxContainerRuntime(runtime);
     } catch (ContainerExecutionException e) {
      throw new IOException("Failed to initialize linux container runtime(s)!");
     }
 
     resourcesHandler.init(this);
   }
-  
+
+  @VisibleForTesting
+  void setLinuxContainerRuntime(LinuxContainerRuntime linuxContainerRuntime) {
+    this.linuxContainerRuntime = linuxContainerRuntime;
+  }
+
+
   @Override
   public void startLocalizer(LocalizerStartContext ctx)
       throws IOException, InterruptedException {
@@ -374,9 +382,17 @@ public class LinuxContainerExecutor extends ContainerExecutor {
     try {
       Path pidFilePath = getPidFilePath(containerId);
       if (pidFilePath != null) {
+        List<String> prefixCommands= new ArrayList<>();
         ContainerRuntimeContext.Builder builder = new ContainerRuntimeContext
-            .Builder(container)
-            .setExecutionAttribute(RUN_AS_USER, runAsUser)
+            .Builder(container);
+
+        addSchedPriorityCommand(prefixCommands);
+        if (prefixCommands.size() > 0) {
+          builder.setExecutionAttribute(CONTAINER_LAUNCH_PREFIX_COMMANDS,
+              prefixCommands);
+        }
+
+        builder.setExecutionAttribute(RUN_AS_USER, runAsUser)
             .setExecutionAttribute(USER, user)
             .setExecutionAttribute(COMMAND,
                 Commands.LAUNCH_CONTAINER.getValue())

@@ -49,6 +49,9 @@ import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerDiagnosticsUpdateEvent;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.LinuxContainerRuntime;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.StandardLinuxContainerRuntime;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerSignalContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerStartContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.DeletionAsUserContext;
@@ -66,6 +69,7 @@ public class TestLinuxContainerExecutorWithMocks {
       .getLog(TestLinuxContainerExecutorWithMocks.class);
 
   private LinuxContainerExecutor mockExec = null;
+  private LinuxContainerRuntime linuxContainerRuntime = null;
   private final File mockParamFile = new File("./params.txt");
   private LocalDirsHandlerService dirsHandler;
   
@@ -89,7 +93,7 @@ public class TestLinuxContainerExecutorWithMocks {
   }
   
   @Before
-  public void setup() {
+  public void setup() throws ContainerExecutionException {
     assumeTrue(!Path.WINDOWS);
     File f = new File("./src/test/resources/mock-container-executor");
     if(!FileUtil.canExecute(f)) {
@@ -97,11 +101,16 @@ public class TestLinuxContainerExecutorWithMocks {
     }
     String executorPath = f.getAbsolutePath();
     Configuration conf = new Configuration();
+    linuxContainerRuntime = new
+        StandardLinuxContainerRuntime();
+
     conf.set(YarnConfiguration.NM_LINUX_CONTAINER_EXECUTOR_PATH, executorPath);
-    mockExec = new LinuxContainerExecutor();
     dirsHandler = new LocalDirsHandlerService();
     dirsHandler.init(conf);
+    linuxContainerRuntime.initialize(conf);
+    mockExec = new LinuxContainerExecutor();
     mockExec.setConf(conf);
+    mockExec.setLinuxContainerRuntime(linuxContainerRuntime);
   }
 
   @After
@@ -241,7 +250,10 @@ public class TestLinuxContainerExecutorWithMocks {
     conf.set(YarnConfiguration.NM_LOCAL_DIRS, "file:///bin/echo");
     conf.set(YarnConfiguration.NM_LOG_DIRS, "file:///dev/null");
 
-    mockExec = spy(new LinuxContainerExecutor());
+    LinuxContainerExecutor exec = new LinuxContainerExecutor();
+
+    exec.setLinuxContainerRuntime(linuxContainerRuntime);
+    mockExec = spy(exec);
     doAnswer(
         new Answer() {
           @Override
