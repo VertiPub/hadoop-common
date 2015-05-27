@@ -20,10 +20,11 @@
 
 package org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntimeContext;
@@ -33,6 +34,8 @@ import java.util.Map;
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 public class DelegatingLinuxContainerRuntime implements LinuxContainerRuntime {
+  private static final Log LOG = LogFactory
+      .getLog(DelegatingLinuxContainerRuntime.class);
   private StandardLinuxContainerRuntime standardLinuxContainerRuntime;
   private DockerLinuxContainerRuntime dockerLinuxContainerRuntime;
 
@@ -47,12 +50,20 @@ public class DelegatingLinuxContainerRuntime implements LinuxContainerRuntime {
 
   private LinuxContainerRuntime pickContainerRuntime(Container container) {
     Map<String, String> env = container.getLaunchContext().getEnvironment();
+    LinuxContainerRuntime runtime;
 
     if (DockerLinuxContainerRuntime.isDockerContainerRequested(env)){
-      return dockerLinuxContainerRuntime;
+      runtime = dockerLinuxContainerRuntime;
+    } else  {
+      runtime = standardLinuxContainerRuntime;
     }
 
-    return standardLinuxContainerRuntime;
+    if (LOG.isInfoEnabled()) {
+      LOG.info("Using container runtime: " + runtime.getClass()
+          .getSimpleName());
+    }
+
+    return runtime;
   }
 
   @Override

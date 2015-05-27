@@ -24,6 +24,8 @@ import org.apache.hadoop.yarn.exceptions.YarnException;
 
 public class PrivilegedOperationException extends YarnException {
   private static final long serialVersionUID = 1L;
+  private Integer exitCode;
+  private String output;
 
   public PrivilegedOperationException() {
     super();
@@ -33,11 +35,32 @@ public class PrivilegedOperationException extends YarnException {
     super(message);
   }
 
+  public PrivilegedOperationException(String message, Integer exitCode,
+      String output) {
+    super(message);
+    this.exitCode = exitCode;
+    this.output = output;
+  }
+
   public PrivilegedOperationException(Throwable cause) {
     super(cause);
   }
 
+  public PrivilegedOperationException(Throwable cause, Integer exitCode, String
+      output) {
+    super(cause);
+    this.exitCode = exitCode;
+    this.output = output;
+  }
   public PrivilegedOperationException(String message, Throwable cause) {
     super(message, cause);
+  }
+
+  public Integer getExitCode() {
+    return exitCode;
+  }
+
+  public String getOutput() {
+    return output;
   }
 }

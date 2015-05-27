@@ -32,6 +32,8 @@ import org.apache.hadoop.yarn.exceptions.YarnException;
 @InterfaceStability.Unstable
 public class ContainerExecutionException extends YarnException {
   private static final long serialVersionUID = 1L;
+  private Integer exitCode;
+  private String output;
 
   public ContainerExecutionException() {
     super();
@@ -45,7 +47,29 @@ public class ContainerExecutionException extends YarnException {
     super(cause);
   }
 
+  public ContainerExecutionException(String message, Integer exitCode, String
+      output) {
+    super(message);
+    this.exitCode = exitCode;
+    this.output = output;
+  }
+
+  public ContainerExecutionException(Throwable cause, Integer exitCode, String
+      output) {
+    super(cause);
+    this.exitCode = exitCode;
+    this.output = output;
+  }
+
   public ContainerExecutionException(String message, Throwable cause) {
     super(message, cause);
+  }
+
+  public Integer getExitCode() {
+    return exitCode;
+  }
+
+  public String getOutput() {
+    return output;
   }
 }

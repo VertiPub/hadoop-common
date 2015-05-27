@@ -31,15 +31,15 @@ import java.util.Map;
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
-  public static final boolean isDockerContainerRequested(
+  public static boolean isDockerContainerRequested(
       Map<String, String> env) {
-    String type = env.get("yarn.container.type");
-
-    if (type != null && type.equals("docker")) {
-      return true;
+    if (env == null) {
+      return false;
     }
 
-    return false;
+    String type = env.get("yarn.container.type");
+
+    return type != null && type.equals("docker");
   }
 
   @Override

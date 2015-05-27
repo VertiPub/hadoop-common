@@ -25,7 +25,7 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.Contai
 
 import java.util.List;
 
-public class LinuxContainerRuntimeConstants {
+public final class LinuxContainerRuntimeConstants {
   private LinuxContainerRuntimeConstants() {
   }
 
@@ -41,18 +41,18 @@ public class LinuxContainerRuntimeConstants {
       Attribute.attribute(String.class, "appid");
   public static final Attribute<String> CONTAINER_ID_STR = Attribute
       .attribute(String.class, "container_id_str");
-  public static final Attribute<String> CONTAINER_WORK_DIR = Attribute
-      .attribute(String.class, "container_work_dir");
+  public static final Attribute<Path> CONTAINER_WORK_DIR = Attribute
+      .attribute(Path.class, "container_work_dir");
   public static final Attribute<Path> NM_PRIVATE_CONTAINER_SCRIPT_PATH =
       Attribute.attribute(Path.class, "nm_private_container_script_path");
   public static final Attribute<Path> NM_PRIVATE_TOKENS_PATH = Attribute
       .attribute(Path.class, "nm_private_tokens_path");
   public static final Attribute<Path> PID_FILE_PATH = Attribute.attribute(
       Path.class, "pid_file_path");
-  public static final Attribute<String> LOCAL_DIRS = Attribute.attribute(
-      String.class, "local_dirs");
-  public static final Attribute<String> LOG_DIRS = Attribute.attribute(
-      String.class, "log_dirs");
+  public static final Attribute<List> LOCAL_DIRS = Attribute.attribute(
+      List.class, "local_dirs");
+  public static final Attribute<List> LOG_DIRS = Attribute.attribute(
+      List.class, "log_dirs");
   public static final Attribute<String> RESOURCES_OPTIONS = Attribute.attribute(
       String.class, "resources_options");
   public static final Attribute<String> TC_COMMAND_FILE = Attribute.attribute(

@@ -152,7 +152,8 @@ public class PrivilegedOperationExecutor {
           .append(System.lineSeparator()).append(exec.getOutput()).toString();
 
       LOG.warn(logLine);
-      throw new PrivilegedOperationException(e);
+      throw new PrivilegedOperationException(e, e.getExitCode(),
+          exec.getOutput());
     } catch (IOException e) {
       LOG.warn("IOException executing command: ", e);
       throw new PrivilegedOperationException(e);

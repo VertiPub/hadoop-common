@@ -46,10 +46,14 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Cont
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperation;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperationException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperationExecutor;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.DelegatingLinuxContainerRuntime;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.LinuxContainerRuntime;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.ContainerLocalizer;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandler;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerModule;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntimeContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerLivenessContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerReacquisitionContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerSignalContext;
@@ -59,6 +63,8 @@ import org.apache.hadoop.yarn.server.nodemanager.executor.LocalizerStartContext;
 import org.apache.hadoop.yarn.server.nodemanager.util.DefaultLCEResourcesHandler;
 import org.apache.hadoop.yarn.server.nodemanager.util.LCEResourcesHandler;
 import org.apache.hadoop.yarn.util.ConverterUtils;
+
+import static org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.LinuxContainerRuntimeConstants.*;
 
 /** Container execution for Linux. Provides linux-specific localization
  * mechanisms, resource management via cgroups and can switch between multiple
@@ -78,6 +84,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
   private int containerSchedPriorityAdjustment = 0;
   private boolean containerLimitUsers;
   private ResourceHandler resourceHandlerChain;
+  private LinuxContainerRuntime linuxContainerRuntime;
 
   @Override
   public void setConf(Configuration conf) {
@@ -210,8 +217,9 @@ public class LinuxContainerExecutor extends ContainerExecutor {
           + " (error=" + exitCode + ")", e);
     }
 
+    Configuration conf = super.getConf();
+
     try {
-      Configuration conf = super.getConf();
 
       resourceHandlerChain = ResourceHandlerModule
           .getConfiguredResourceHandlerChain(conf);
@@ -221,6 +229,13 @@ public class LinuxContainerExecutor extends ContainerExecutor {
     } catch (ResourceHandlerException e) {
       LOG.error("Failed to bootstrap configured resource subsystems! ", e);
       throw new IOException("Failed to bootstrap configured resource subsystems!");
+    }
+
+    try {
+      linuxContainerRuntime = new DelegatingLinuxContainerRuntime();
+      linuxContainerRuntime.initialize(conf);
+    } catch (ContainerExecutionException e) {
+     throw new IOException("Failed to initialize linux container runtime(s)!");
     }
 
     resourcesHandler.init(this);
@@ -356,48 +371,41 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       throw new IOException("ResourceHandlerChain.preStart() failed!");
     }
 
-    ShellCommandExecutor shExec = null;
-
     try {
       Path pidFilePath = getPidFilePath(containerId);
       if (pidFilePath != null) {
-        List<String> command = new ArrayList<String>();
-        addSchedPriorityCommand(command);
-        command.addAll(Arrays.asList(
-            containerExecutorExe, runAsUser, user, Integer
-                .toString(Commands.LAUNCH_CONTAINER.getValue()), appId,
-            containerIdStr, containerWorkDir.toString(),
-            nmPrivateContainerScriptPath.toUri().getPath().toString(),
-            nmPrivateTokensPath.toUri().getPath().toString(),
-            pidFilePath.toString(),
-            StringUtils.join(",", localDirs),
-            StringUtils.join(",", logDirs),
-            resourcesOptions));
+        ContainerRuntimeContext.Builder builder = new ContainerRuntimeContext
+            .Builder(container)
+            .setExecutionAttribute(RUN_AS_USER, runAsUser)
+            .setExecutionAttribute(USER, user)
+            .setExecutionAttribute(COMMAND,
+                Commands.LAUNCH_CONTAINER.getValue())
+            .setExecutionAttribute(APPID, appId)
+            .setExecutionAttribute(CONTAINER_ID_STR, containerIdStr)
+            .setExecutionAttribute(CONTAINER_WORK_DIR, containerWorkDir)
+            .setExecutionAttribute(NM_PRIVATE_CONTAINER_SCRIPT_PATH,
+                nmPrivateContainerScriptPath)
+            .setExecutionAttribute(NM_PRIVATE_TOKENS_PATH, nmPrivateTokensPath)
+            .setExecutionAttribute(PID_FILE_PATH, pidFilePath)
+            .setExecutionAttribute(LOCAL_DIRS, localDirs)
+            .setExecutionAttribute(LOG_DIRS, logDirs)
+            .setExecutionAttribute(RESOURCES_OPTIONS, resourcesOptions);
 
         if (tcCommandFile != null) {
-            command.add(tcCommandFile);
+          builder.setExecutionAttribute(TC_COMMAND_FILE, tcCommandFile);
         }
 
-        String[] commandArray = command.toArray(new String[command.size()]);
-        shExec = new ShellCommandExecutor(commandArray, null, // NM's cwd
-            container.getLaunchContext().getEnvironment()); // sanitized env
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("launchContainer: " + Arrays.toString(commandArray));
-        }
-        shExec.execute();
-        if (LOG.isDebugEnabled()) {
-          logOutput(shExec.getOutput());
-        }
+        linuxContainerRuntime.launchContainer(builder.build());
       } else {
         LOG.info("Container was marked as inactive. Returning terminated error");
         return ExitCode.TERMINATED.getExitCode();
       }
-    } catch (ExitCodeException e) {
-      int exitCode = shExec.getExitCode();
+    } catch (ContainerExecutionException e) {
+      int exitCode = e.getExitCode();
       LOG.warn("Exit code from container " + containerId + " is : " + exitCode);
       // 143 (SIGTERM) and 137 (SIGKILL) exit codes means the container was
       // terminated/killed forcefully. In all other cases, log the
-      // container-executor's output
+      // output
       if (exitCode != ExitCode.FORCE_KILLED.getExitCode()
           && exitCode != ExitCode.TERMINATED.getExitCode()) {
         LOG.warn("Exception from container-launch with container ID: "
@@ -412,8 +420,8 @@ public class LinuxContainerExecutor extends ContainerExecutor {
         }
         builder.append("Stack trace: "
             + StringUtils.stringifyException(e) + "\n");
-        if (!shExec.getOutput().isEmpty()) {
-          builder.append("Shell output: " + shExec.getOutput() + "\n");
+        if (!e.getOutput().isEmpty()) {
+          builder.append("Shell output: " + e.getOutput() + "\n");
         }
         String diagnostics = builder.toString();
         logOutput(diagnostics);
@@ -436,10 +444,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
             "containerId: " + containerId + ". Exception: " + e);
       }
     }
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Output from LinuxContainerExecutor's launchContainer follows:");
-      logOutput(shExec.getOutput());
-    }
+
     return 0;
   }
 
