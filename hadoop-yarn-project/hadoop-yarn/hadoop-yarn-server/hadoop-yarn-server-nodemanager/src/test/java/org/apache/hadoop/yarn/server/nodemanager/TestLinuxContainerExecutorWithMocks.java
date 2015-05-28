@@ -353,8 +353,16 @@ public class TestLinuxContainerExecutorWithMocks {
         LinuxContainerExecutor.Commands.SIGNAL_CONTAINER.getValue());
     ContainerExecutor.Signal signal = ContainerExecutor.Signal.QUIT;
     String sigVal = String.valueOf(signal.getValue());
+
+    Container container = mock(Container.class);
+    ContainerId cId = mock(ContainerId.class);
+    ContainerLaunchContext context = mock(ContainerLaunchContext.class);
+
+    when(container.getContainerId()).thenReturn(cId);
+    when(container.getLaunchContext()).thenReturn(context);
     
     mockExec.signalContainer(new ContainerSignalContext.Builder()
+        .setContainer(container)
         .setUser(appSubmitter)
         .setPid("1000")
         .setSignal(signal)
