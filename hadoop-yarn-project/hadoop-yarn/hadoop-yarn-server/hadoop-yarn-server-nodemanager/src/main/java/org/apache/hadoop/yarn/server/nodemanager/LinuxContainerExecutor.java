@@ -431,8 +431,8 @@ public class LinuxContainerExecutor extends ContainerExecutor {
         builder.append("Exception from container-launch.\n");
         builder.append("Container id: " + containerId + "\n");
         builder.append("Exit code: " + exitCode + "\n");
-        if (!Optional.fromNullable(e.getMessage()).or("").isEmpty()) {
-          builder.append("Exception message: " + e.getMessage() + "\n");
+        if (!Optional.fromNullable(e.getErrorOutput()).or("").isEmpty()) {
+          builder.append("Exception message: " + e.getErrorOutput() + "\n");
         }
         builder.append("Stack trace: "
             + StringUtils.stringifyException(e) + "\n");

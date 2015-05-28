@@ -76,9 +76,13 @@ public class StandardLinuxContainerRuntime implements LinuxContainerRuntime {
         ctx.getExecutionAttribute(PID_FILE_PATH).toString(),
         StringUtils.join(",", ctx.getExecutionAttribute(LOCAL_DIRS)),
         StringUtils.join(",", ctx.getExecutionAttribute(LOG_DIRS)),
-        ctx.getExecutionAttribute(RESOURCES_OPTIONS),
-        ctx.getExecutionAttribute(TC_COMMAND_FILE)
-    );
+        ctx.getExecutionAttribute(RESOURCES_OPTIONS));
+
+    String tcCommandFile = ctx.getExecutionAttribute(TC_COMMAND_FILE);
+
+    if (tcCommandFile != null) {
+      launchOp.appendArgs(tcCommandFile);
+    }
 
     //List<String> -> stored as List -> fetched/converted to List<String>
     //we can't do better here thanks to type-erasure
@@ -94,10 +98,10 @@ public class StandardLinuxContainerRuntime implements LinuxContainerRuntime {
             launchOp, null, container.getLaunchContext().getEnvironment(),
             false);
     } catch (PrivilegedOperationException e) {
-      LOG.warn("Launch container failed. Unknown exit code. Exception", e);
+      LOG.warn("Launch container failed. Exception: ", e);
 
       throw new ContainerExecutionException("Launch container failed", e
-          .getExitCode(), e.getOutput());
+          .getExitCode(), e.getOutput(), e.getErrorOutput());
     }
   }
 

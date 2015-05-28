@@ -49,6 +49,8 @@ import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerDiagnosticsUpdateEvent;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperation;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperationExecutor;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.LinuxContainerRuntime;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.StandardLinuxContainerRuntime;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
@@ -69,7 +71,6 @@ public class TestLinuxContainerExecutorWithMocks {
       .getLog(TestLinuxContainerExecutorWithMocks.class);
 
   private LinuxContainerExecutor mockExec = null;
-  private LinuxContainerRuntime linuxContainerRuntime = null;
   private final File mockParamFile = new File("./params.txt");
   private LocalDirsHandlerService dirsHandler;
   
@@ -101,12 +102,13 @@ public class TestLinuxContainerExecutorWithMocks {
     }
     String executorPath = f.getAbsolutePath();
     Configuration conf = new Configuration();
-    linuxContainerRuntime = new
+    LinuxContainerRuntime linuxContainerRuntime = new
         StandardLinuxContainerRuntime();
 
     conf.set(YarnConfiguration.NM_LINUX_CONTAINER_EXECUTOR_PATH, executorPath);
     dirsHandler = new LocalDirsHandlerService();
     dirsHandler.init(conf);
+    PrivilegedOperationExecutor.initializeInstance(conf);
     linuxContainerRuntime.initialize(conf);
     mockExec = new LinuxContainerExecutor();
     mockExec.setConf(conf);
@@ -237,7 +239,8 @@ public class TestLinuxContainerExecutorWithMocks {
   
   
   @Test
-  public void testContainerLaunchError() throws IOException {
+  public void testContainerLaunchError()
+      throws IOException, ContainerExecutionException {
 
     // reinitialize executer
     File f = new File("./src/test/resources/mock-container-executer-with-error");
@@ -251,7 +254,11 @@ public class TestLinuxContainerExecutorWithMocks {
     conf.set(YarnConfiguration.NM_LOG_DIRS, "file:///dev/null");
 
     LinuxContainerExecutor exec = new LinuxContainerExecutor();
+    LinuxContainerRuntime linuxContainerRuntime = new
+        StandardLinuxContainerRuntime();
 
+    PrivilegedOperationExecutor.initializeInstance(conf);
+    linuxContainerRuntime.initialize(conf);
     exec.setLinuxContainerRuntime(linuxContainerRuntime);
     mockExec = spy(exec);
     doAnswer(
@@ -308,6 +315,7 @@ public class TestLinuxContainerExecutorWithMocks {
     Path pidFile = new Path(workDir, "pid.txt");
 
     mockExec.activateContainer(cId, pidFile);
+
     int ret = mockExec.launchContainer(new ContainerStartContext.Builder()
         .setContainer(container)
         .setNmPrivateContainerScriptPath(scriptPath)

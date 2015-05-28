@@ -34,6 +34,7 @@ public class ContainerExecutionException extends YarnException {
   private static final long serialVersionUID = 1L;
   private Integer exitCode;
   private String output;
+  private String errorOutput;
 
   public ContainerExecutionException() {
     super();
@@ -48,17 +49,19 @@ public class ContainerExecutionException extends YarnException {
   }
 
   public ContainerExecutionException(String message, Integer exitCode, String
-      output) {
+      output, String errorOutput) {
     super(message);
     this.exitCode = exitCode;
     this.output = output;
+    this.errorOutput = errorOutput;
   }
 
   public ContainerExecutionException(Throwable cause, Integer exitCode, String
-      output) {
+      output, String errorOutput) {
     super(cause);
     this.exitCode = exitCode;
     this.output = output;
+    this.errorOutput = errorOutput;
   }
 
   public ContainerExecutionException(String message, Throwable cause) {
@@ -72,4 +75,9 @@ public class ContainerExecutionException extends YarnException {
   public String getOutput() {
     return output;
   }
+
+  public String getErrorOutput() {
+    return errorOutput;
+  }
+
 }

@@ -20,6 +20,7 @@
 
 package org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -75,13 +76,23 @@ public class PrivilegedOperationExecutor {
     if (instance == null) {
       synchronized (PrivilegedOperationExecutor.class) {
         if (instance == null) {
-          instance = new PrivilegedOperationExecutor(conf);
+          initializeInstance(conf);
         }
       }
     }
 
     return instance;
   }
+
+  //It looks like there are test cases that want to switch between
+  // 'container-executor's - so we'll need a way to initialize and 'reset' this
+  // instance somehow.
+  @VisibleForTesting
+  public static void initializeInstance(Configuration conf) {
+    instance = new PrivilegedOperationExecutor(conf);
+  }
+
+
 
   /**
    * @param prefixCommands in some cases ( e.g priorities using nice ),
@@ -101,7 +112,13 @@ public class PrivilegedOperationExecutor {
     }
 
     fullCommand.add(containerExecutorExe);
-    fullCommand.add(operation.getOperationType().getOption());
+
+    String cliSwitch = operation.getOperationType().getOption();
+
+    if (!cliSwitch.isEmpty()) {
+      fullCommand.add(cliSwitch);
+    }
+
     fullCommand.addAll(operation.getArguments());
 
     String[] fullCommandArray =
@@ -155,8 +172,11 @@ public class PrivilegedOperationExecutor {
           .append(System.lineSeparator()).append(exec.getOutput()).toString();
 
       LOG.warn(logLine);
+
+      //stderr from shell executor seems to be stuffed into the exception
+      //'message' - so, we have to extract it and set it as the error out
       throw new PrivilegedOperationException(e, e.getExitCode(),
-          exec.getOutput());
+          exec.getOutput(), e.getMessage());
     } catch (IOException e) {
       LOG.warn("IOException executing command: ", e);
       throw new PrivilegedOperationException(e);
