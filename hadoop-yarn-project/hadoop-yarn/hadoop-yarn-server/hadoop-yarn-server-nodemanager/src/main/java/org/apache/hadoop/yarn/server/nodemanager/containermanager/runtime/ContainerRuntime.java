@@ -24,7 +24,9 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 
 /** An abstraction for various container runtime implementations. Examples
- * include Process Tree, Docker, Appc runtimes etc .,
+ * include Process Tree, Docker, Appc runtimes etc., These implementations
+ * are meant for low-level OS container support - dependencies on
+ * higher-level nodemananger constructs should be avoided.
  */
 
 @InterfaceAudience.Private
