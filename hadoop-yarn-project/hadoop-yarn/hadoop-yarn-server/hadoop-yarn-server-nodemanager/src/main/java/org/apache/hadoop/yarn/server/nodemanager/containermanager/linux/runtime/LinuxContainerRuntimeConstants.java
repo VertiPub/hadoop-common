@@ -21,6 +21,7 @@
 package org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime;
 
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.yarn.server.nodemanager.ContainerExecutor;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntimeContext.Attribute;
 
 import java.util.List;
@@ -59,4 +60,9 @@ public final class LinuxContainerRuntimeConstants {
       String.class, "tc_command_file");
   public static final Attribute<String> CGROUP_RELATIVE_PATH = Attribute
       .attribute(String.class, "cgroup_relative_path");
+
+  public static final Attribute<String> PID = Attribute.attribute(
+      String.class, "pid");
+  public static final Attribute<ContainerExecutor.Signal> SIGNAL = Attribute
+      .attribute(ContainerExecutor.Signal.class, "signal");
 }

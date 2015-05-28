@@ -31,6 +31,7 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileg
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperationException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperationExecutor;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntime;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntimeContext;
 
 import java.util.List;
@@ -108,7 +109,30 @@ public class StandardLinuxContainerRuntime implements LinuxContainerRuntime {
   @Override
   public void signalContainer(ContainerRuntimeContext ctx)
       throws ContainerExecutionException {
+    Container container = ctx.getContainer();
+    PrivilegedOperation signalOp = new PrivilegedOperation(
+        PrivilegedOperation.OperationType.SIGNAL_CONTAINER, (String) null);
 
+    signalOp.appendArgs(ctx.getExecutionAttribute(RUN_AS_USER),
+        ctx.getExecutionAttribute(USER),
+        ctx.getExecutionAttribute(COMMAND).toString(),
+        ctx.getExecutionAttribute(PID),
+        Integer.toString(ctx.getExecutionAttribute(SIGNAL).getValue())
+    );
+
+    try {
+      PrivilegedOperationExecutor executor = PrivilegedOperationExecutor
+          .getInstance(conf);
+
+      executor.executePrivilegedOperation(null,
+          signalOp, null, container.getLaunchContext().getEnvironment(),
+          false);
+    } catch (PrivilegedOperationException e) {
+      LOG.warn("Signal container failed. Exception: ", e);
+
+      throw new ContainerExecutionException("Signal container failed", e
+          .getExitCode(), e.getOutput(), e.getErrorOutput());
+    }
   }
 
   @Override

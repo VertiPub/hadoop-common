@@ -53,6 +53,7 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resource
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerModule;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntime;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntimeContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerLivenessContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerReacquisitionContext;
@@ -498,6 +499,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
   @Override
   public boolean signalContainer(ContainerSignalContext ctx)
       throws IOException {
+    Container container = ctx.getContainer();
     String user = ctx.getUser();
     String pid = ctx.getPid();
     Signal signal = ctx.getSignal();
@@ -505,30 +507,29 @@ public class LinuxContainerExecutor extends ContainerExecutor {
     verifyUsernamePattern(user);
     String runAsUser = getRunAsUser(user);
 
-    String[] command =
-        new String[] { containerExecutorExe,
-                   runAsUser,
-                   user,
-                   Integer.toString(Commands.SIGNAL_CONTAINER.getValue()),
-                   pid,
-                   Integer.toString(signal.getValue()) };
-    ShellCommandExecutor shExec = new ShellCommandExecutor(command);
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("signalContainer: " + Arrays.toString(command));
-    }
+    ContainerRuntimeContext runtimeContext = new ContainerRuntimeContext
+        .Builder(container)
+        .setExecutionAttribute(RUN_AS_USER, runAsUser)
+        .setExecutionAttribute(USER, user)
+        .setExecutionAttribute(COMMAND,
+            Commands.SIGNAL_CONTAINER.getValue())
+        .setExecutionAttribute(PID, pid)
+        .setExecutionAttribute(SIGNAL, signal)
+        .build();
+
     try {
-      shExec.execute();
-    } catch (ExitCodeException e) {
-      int ret_code = shExec.getExitCode();
-      if (ret_code == ResultCode.INVALID_CONTAINER_PID.getValue()) {
+      linuxContainerRuntime.signalContainer(runtimeContext);
+    } catch (ContainerExecutionException e) {
+      int retCode = e.getExitCode();
+      if (retCode == ResultCode.INVALID_CONTAINER_PID.getValue()) {
         return false;
       }
       LOG.warn("Error in signalling container " + pid + " with " + signal
-          + "; exit = " + ret_code, e);
-      logOutput(shExec.getOutput());
+          + "; exit = " + retCode, e);
+      logOutput(e.getOutput());
       throw new IOException("Problem signalling container " + pid + " with "
-          + signal + "; output: " + shExec.getOutput() + " and exitCode: "
-          + ret_code, e);
+          + signal + "; output: " + e.getOutput() + " and exitCode: "
+          + retCode, e);
     }
     return true;
   }
@@ -586,9 +587,11 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       throws IOException {
     String user = ctx.getUser();
     String pid = ctx.getPid();
+    Container container = ctx.getContainer();
 
     // Send a test signal to the process as the user to see if it's alive
     return signalContainer(new ContainerSignalContext.Builder()
+        .setContainer(container)
         .setUser(user)
         .setPid(pid)
         .setSignal(Signal.NULL)

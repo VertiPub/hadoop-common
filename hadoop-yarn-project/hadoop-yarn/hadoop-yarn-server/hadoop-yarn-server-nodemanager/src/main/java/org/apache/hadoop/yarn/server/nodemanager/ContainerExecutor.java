@@ -174,6 +174,7 @@ public abstract class ContainerExecutor implements Configurable {
    */
   public int reacquireContainer(ContainerReacquisitionContext ctx)
       throws IOException, InterruptedException {
+    Container container = ctx.getContainer();
     String user = ctx.getUser();
     ContainerId containerId = ctx.getContainerId();
 
@@ -193,6 +194,7 @@ public abstract class ContainerExecutor implements Configurable {
     LOG.info("Reacquiring " + containerId + " with pid " + pid);
     ContainerLivenessContext livenessContext = new ContainerLivenessContext
         .Builder()
+        .setContainer(container)
         .setUser(user)
         .setPid(pid)
         .build();
@@ -492,6 +494,7 @@ public abstract class ContainerExecutor implements Configurable {
       try {
         Thread.sleep(delay);
         containerExecutor.signalContainer(new ContainerSignalContext.Builder()
+            .setContainer(container)
             .setUser(user)
             .setPid(pid)
             .setSignal(signal)
