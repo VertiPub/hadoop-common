@@ -90,7 +90,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
   }
 
   String getRunAsUser(String user) {
-    return UserGroupInformation.isSecurityEnabled() ? user : nonsecureLocalUser;
+    return user;
   }
 
 
