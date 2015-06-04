@@ -49,6 +49,7 @@ static void display_usage(FILE *stream) {
       "       container-executor --tc-modify-state <command-file>\n" \
       "       container-executor --tc-read-state <command-file>\n" \
       "       container-executor --tc-read-stats <command-file>\n" \
+      "       container-executor --run-docker <command-file>\n" \
       "       container-executor <user> <yarn-user> <command> <command-args>\n"  \
       "       where command and command-args: \n" \
       "            initialize container:  %2d appid tokens nm-local-dirs nm-log-dirs cmd app...\n" \
@@ -58,7 +59,7 @@ static void display_usage(FILE *stream) {
       "            delete as user:        %2d relative-path\n" ;
 
 
-  fprintf(stream, usage_template, INITIALIZE_CONTAINER, LAUNCH_CONTAINER,
+  fprintf(stream, usage_template, INITIALIZE_CONTAINER, LAUNCH_CONTAINER, LAUNCH_DOCKER_CONTAINER,
           SIGNAL_CONTAINER, DELETE_AS_USER);
 }
 
@@ -160,6 +161,7 @@ static struct {
   const char *dir_to_be_deleted;
   int container_pid;
   int signal;
+  const char *docker_command_file;
 } cmd_input;
 
 static int validate_run_as_user_commands(int argc, char **argv, int *operation);
@@ -227,6 +229,16 @@ static int validate_arguments(int argc, char **argv , int *operation) {
     return 0;
   }
 
+  if (strcmp("--run-docker", argv[1]) == 0) {
+    if (argc != 3) {
+      display_usage(stdout);
+      return INVALID_ARGUMENT_NUMBER;
+    }
+    optind++;
+    cmd_input.docker_command_file = argv[optind++];
+    *operation = RUN_DOCKER;
+    return 0;
+  }
   /* Now we have to validate 'run as user' operations that don't use
     a 'long option' - we should fix this at some point. The validation/argument
     parsing here is extensive enough that it done in a separate function */
@@ -267,6 +279,27 @@ static int validate_run_as_user_commands(int argc, char **argv, int *operation) 
     cmd_input.log_dirs = argv[optind++];// good log dirs as a comma separated list
 
     *operation = RUN_AS_USER_INITIALIZE_CONTAINER;
+    return 0;
+ case LAUNCH_DOCKER_CONTAINER:
+    //kill me now.
+    if (!(argc == 13 || argc == 14)) {
+      fprintf(ERRORFILE, "Wrong number of arguments (%d vs 13 or 14) for launch container\n",
+       argc);
+      fflush(ERRORFILE);
+      return INVALID_ARGUMENT_NUMBER;
+    }
+
+    cmd_input.app_id = argv[optind++];
+    cmd_input.container_id = argv[optind++];
+    cmd_input.current_dir = argv[optind++];
+    cmd_input.script_file = argv[optind++];
+    cmd_input.cred_file = argv[optind++];
+    cmd_input.pid_file = argv[optind++];
+    cmd_input.local_dirs = argv[optind++];// good local dirs as a comma separated list
+    cmd_input.log_dirs = argv[optind++];// good log dirs as a comma separated list
+    cmd_input.docker_command_file = argv[optind++];
+
+    *operation = RUN_AS_USER_LAUNCH_DOCKER_CONTAINER;
     return 0;
 
   case LAUNCH_CONTAINER:
@@ -385,6 +418,9 @@ int main(int argc, char **argv) {
   case TRAFFIC_CONTROL_READ_STATS:
     exit_code = traffic_control_read_stats(cmd_input.traffic_control_command_file);
     break;
+  case RUN_DOCKER:
+    exit_code = run_docker(cmd_input.docker_command_file);
+    break;
   case RUN_AS_USER_INITIALIZE_CONTAINER:
     exit_code = set_user(cmd_input.run_as_user_name);
     if (exit_code != 0) {
@@ -398,6 +434,24 @@ int main(int argc, char **argv) {
                             extract_values(cmd_input.log_dirs),
                             argv + optind);
     break;
+  case RUN_AS_USER_LAUNCH_DOCKER_CONTAINER:
+
+      exit_code = set_user(cmd_input.run_as_user_name);
+      if (exit_code != 0) {
+        break;
+      }
+
+      exit_code = launch_docker_container_as_user(cmd_input.yarn_user_name,
+                      cmd_input.app_id,
+                      cmd_input.container_id,
+                      cmd_input.current_dir,
+                      cmd_input.script_file,
+                      cmd_input.cred_file,
+                      cmd_input.pid_file,
+                      extract_values(cmd_input.local_dirs),
+                      extract_values(cmd_input.log_dirs),
+                      cmd_input.docker_command_file);
+      break;
   case RUN_AS_USER_LAUNCH_CONTAINER:
     if (cmd_input.traffic_control_command_file != NULL) {
       //apply tc rules before switching users and launching the container

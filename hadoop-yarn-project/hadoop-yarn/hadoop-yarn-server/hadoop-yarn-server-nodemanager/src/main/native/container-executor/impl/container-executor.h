@@ -25,6 +25,7 @@ enum command {
   LAUNCH_CONTAINER = 1,
   SIGNAL_CONTAINER = 2,
   DELETE_AS_USER = 3,
+  LAUNCH_DOCKER_CONTAINER = 4
 };
 
 enum errorcodes {
@@ -67,7 +68,9 @@ enum operations {
   RUN_AS_USER_INITIALIZE_CONTAINER = 6,
   RUN_AS_USER_LAUNCH_CONTAINER = 7,
   RUN_AS_USER_SIGNAL_CONTAINER = 8,
-  RUN_AS_USER_DELETE = 9
+  RUN_AS_USER_DELETE = 9,
+  RUN_AS_USER_LAUNCH_DOCKER_CONTAINER = 10,
+  RUN_DOCKER = 11
 };
 
 #define NM_GROUP_KEY "yarn.nodemanager.linux-container-executor.group"
@@ -79,6 +82,7 @@ enum operations {
 #define MIN_USERID_KEY "min.user.id"
 #define BANNED_USERS_KEY "banned.users"
 #define ALLOWED_SYSTEM_USERS_KEY "allowed.system.users"
+#define DOCKER_BINARY_KEY "docker.binary"
 #define TMP_DIR "tmp"
 
 extern struct passwd *user_detail;
@@ -108,6 +112,13 @@ int check_executor_permissions(char *executable_file);
 int initialize_app(const char *user, const char *app_id,
                    const char *credentials, char* const* local_dirs,
                    char* const* log_dirs, char* const* args);
+
+int launch_docker_container_as_user(const char * user, const char *app_id,
+                              const char *container_id, const char *work_dir,
+                              const char *script_name, const char *cred_file,
+                              const char *pid_file, char* const* local_dirs,
+                              char* const* log_dirs,
+                              const char *command_file);
 
 /*
  * Function used to launch a container as the provided user. It does the following :
@@ -241,3 +252,9 @@ int traffic_control_read_state(char *command_file);
  * calling process.
  */
 int traffic_control_read_stats(char *command_file);
+
+
+/**
+ * Run a docker command passing the command file as an argument
+ */
+int run_docker(const char *command_file);
