@@ -112,6 +112,10 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
     exclusionSet.add(ApplicationConstants.Environment.HADOOP_HDFS_HOME.name());
     exclusionSet.add(ApplicationConstants.Environment.HADOOP_CONF_DIR.name());
     exclusionSet.add(ApplicationConstants.Environment.JAVA_HOME.name());
+    exclusionSet.add(ENV_CONTAINER_TYPE);
+    exclusionSet.add(ENV_DOCKER_CONTAINER_IMAGE);
+    exclusionSet.add(ENV_DOCKER_CONTAINER_IMAGE_FILE);
+    exclusionSet.add(ENV_DOCKER_CONTAINER_DISABLE_RUN_OVERRIDE);
 
     if (environment != null) {
       for (Map.Entry<String,String> env : environment.entrySet()) {
@@ -232,7 +236,7 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
 
     String resourcesOpts = ctx.getExecutionAttribute(RESOURCES_OPTIONS);
 
-    addCGroupParentIfRequired(resourcesOpts, containerIdStr, runCommand);
+    //addCGroupParentIfRequired(resourcesOpts, containerIdStr, runCommand);
 
     try {
       //hack - we'll need to overwrite the launch script, for the time being
