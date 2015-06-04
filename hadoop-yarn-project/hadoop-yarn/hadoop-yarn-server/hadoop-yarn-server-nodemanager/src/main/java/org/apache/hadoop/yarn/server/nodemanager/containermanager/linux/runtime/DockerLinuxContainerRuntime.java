@@ -25,12 +25,8 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileAlreadyExistsException;
 import org.apache.hadoop.fs.FileContext;
-import org.apache.hadoop.fs.ParentNotDirectoryException;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.UnsupportedFileSystemException;
-import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
@@ -39,13 +35,15 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.Conta
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperation;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperationException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperationExecutor;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.CGroupsHandler;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerException;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerModule;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.docker.DockerClient;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.docker.DockerRunCommand;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntimeContext;
 
 import java.io.ByteArrayOutputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
@@ -69,6 +67,10 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
       "yarn.container-runtime.type";
   private static final String ENV_DOCKER_CONTAINER_IMAGE =
       "yarn.container-runtime.docker.image";
+  private static final String ENV_DOCKER_CONTAINER_IMAGE_FILE =
+      "yarn.container-runtime.docker.image-file";
+  private static final String ENV_DOCKER_CONTAINER_DISABLE_RUN_OVERRIDE =
+      "yarn.container-runtime.docker.run.override.disable";
 
   private Configuration conf;
   private DockerClient dockerClient;
@@ -94,10 +96,10 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
   @Override
   public void prepareContainer(ContainerRuntimeContext ctx)
       throws ContainerExecutionException {
-      //TOOD: optionally load from HDFS
+
   }
 
-
+  //hack
   public void overwriteLaunchScript(OutputStream out,
       Map<String, String> environment, Map<Path, List<String>> resources,
       List<String> command) throws IOException {
@@ -153,7 +155,6 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
     }
   }
 
-
   @Override
   public void launchContainer(ContainerRuntimeContext ctx)
       throws ContainerExecutionException {
@@ -179,7 +180,6 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
     @SuppressWarnings("unchecked")
     Map<Path, List<String>> localizedResources = ctx.getExecutionAttribute(
         LOCALIZED_RESOURCES);
-
     DockerRunCommand runCommand = new DockerRunCommand(containerIdStr,
         runAsUser, imageName)
         .removeContainerOnExit()
@@ -194,6 +194,37 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
       runCommand.addMountLocation(dir, dir);
     }
 
+    String resourcesOpts = ctx.getExecutionAttribute(RESOURCES_OPTIONS);
+
+    if (resourcesOpts.equals(
+      (PrivilegedOperation.CGROUP_ARG_PREFIX + PrivilegedOperation
+          .CGROUP_ARG_NO_TASKS))) {
+      if (LOG.isInfoEnabled()) {
+        LOG.info("no resource restrictions specified. not using docker's "
+            + "cgroup options");
+      }
+    } else {
+      if (LOG.isInfoEnabled()) {
+        LOG.info("using docker's cgroups options");
+      }
+
+      try {
+        CGroupsHandler cGroupsHandler = ResourceHandlerModule
+            .getCGroupsHandler(conf);
+        String cGroupPath = "/" + cGroupsHandler.getRelativePathForCGroup(
+            containerIdStr);
+
+        if (LOG.isInfoEnabled()) {
+          LOG.info("using cgroup parent: " + cGroupPath);
+        }
+
+        runCommand.setCGroupParent(cGroupPath);
+      } catch (ResourceHandlerException e) {
+        LOG.warn("unable to use cgroups handler. Exception: ", e);
+        throw new ContainerExecutionException(e);
+      }
+    }
+
     try {
       //hack - we'll need to overwrite the launch script, for the time being
       Path nmPrivateContainerScriptPath = ctx.getExecutionAttribute(
@@ -205,12 +236,22 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
       overwriteLaunchScript(containerScriptOutStream, environment,
           localizedResources, container.getLaunchContext().getCommands());
 
-      List<String> overrideCommands = new ArrayList<>();
-      Path launchDst =
-          new Path(containerWorkDir, ContainerLaunch.CONTAINER_SCRIPT);
+      String disableOverride = environment.get(
+          ENV_DOCKER_CONTAINER_DISABLE_RUN_OVERRIDE);
 
-      overrideCommands.add("bash");
-      overrideCommands.add(launchDst.toUri().getPath());
+      if (disableOverride != null && disableOverride.equals("true")) {
+        if (LOG.isInfoEnabled()) {
+          LOG.info("command override disabled");
+        }
+      } else {
+        List<String> overrideCommands = new ArrayList<>();
+        Path launchDst =
+            new Path(containerWorkDir, ContainerLaunch.CONTAINER_SCRIPT);
+
+        overrideCommands.add("bash");
+        overrideCommands.add(launchDst.toUri().getPath());
+        runCommand.setOverrideCommandWithArgs(overrideCommands);
+      }
 
       String commandFile = dockerClient.writeCommandToTempFile(runCommand,
           containerIdStr);
@@ -250,7 +291,29 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
   @Override
   public void signalContainer(ContainerRuntimeContext ctx)
       throws ContainerExecutionException {
+    Container container = ctx.getContainer();
+    PrivilegedOperation signalOp = new PrivilegedOperation(
+        PrivilegedOperation.OperationType.SIGNAL_CONTAINER, (String) null);
 
+    signalOp.appendArgs(ctx.getExecutionAttribute(RUN_AS_USER),
+        ctx.getExecutionAttribute(USER),
+        Integer.toString(Commands.SIGNAL_CONTAINER.getValue()),
+        ctx.getExecutionAttribute(PID),
+        Integer.toString(ctx.getExecutionAttribute(SIGNAL).getValue()));
+
+    try {
+      PrivilegedOperationExecutor executor = PrivilegedOperationExecutor
+          .getInstance(conf);
+
+      executor.executePrivilegedOperation(null,
+          signalOp, null, container.getLaunchContext().getEnvironment(),
+          false);
+    } catch (PrivilegedOperationException e) {
+      LOG.warn("Signal container failed. Exception: ", e);
+
+      throw new ContainerExecutionException("Signal container failed", e
+          .getExitCode(), e.getOutput(), e.getErrorOutput());
+    }
   }
 
   @Override

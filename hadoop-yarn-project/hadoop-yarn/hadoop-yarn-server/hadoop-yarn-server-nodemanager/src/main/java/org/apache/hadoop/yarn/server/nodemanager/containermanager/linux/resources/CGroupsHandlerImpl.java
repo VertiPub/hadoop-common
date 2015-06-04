@@ -273,7 +273,7 @@ class CGroupsHandlerImpl implements CGroupsHandler {
 
   @Override
   public String getRelativePathForCGroup(String cGroupId) {
-    return new StringBuffer('/').append(cGroupPrefix).append("/")
+    return new StringBuffer(cGroupPrefix).append("/")
         .append(cGroupId).toString();
   }
 

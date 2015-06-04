@@ -48,7 +48,8 @@ public class PrivilegedOperation {
     TC_MODIFY_STATE("--tc-modify-state"),
     TC_READ_STATE("--tc-read-state"),
     TC_READ_STATS("--tc-read-stats"),
-    ADD_PID_TO_CGROUP(""); //no CLI switch supported yet.
+    ADD_PID_TO_CGROUP(""), //no CLI switch supported yet.
+    RUN_DOCKER_CMD("--run-docker");
 
     private final String option;
 
@@ -62,6 +63,7 @@ public class PrivilegedOperation {
   }
 
   public static final String CGROUP_ARG_PREFIX = "cgroups=";
+  public static final String CGROUP_ARG_NO_TASKS = "none";
 
   private final OperationType opType;
   private final List<String> args;

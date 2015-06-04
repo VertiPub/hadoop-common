@@ -226,7 +226,7 @@ public class PrivilegedOperationExecutor {
 
     StringBuffer finalOpArg = new StringBuffer(PrivilegedOperation
         .CGROUP_ARG_PREFIX);
-    boolean noneArgsOnly = true;
+    boolean noTasks = true;
 
     for (PrivilegedOperation op : ops) {
       if (!op.getOperationType()
@@ -251,23 +251,24 @@ public class PrivilegedOperationExecutor {
         throw new PrivilegedOperationException("Invalid argument: " + arg);
       }
 
-      if (tasksFile.equals("none")) {
+      if (tasksFile.equals(PrivilegedOperation.CGROUP_ARG_NO_TASKS)) {
         //Don't append to finalOpArg
         continue;
       }
 
-      if (noneArgsOnly == false) {
+      if (noTasks == false) {
         //We have already appended at least one tasks file.
         finalOpArg.append(",");
         finalOpArg.append(tasksFile);
       } else {
         finalOpArg.append(tasksFile);
-        noneArgsOnly = false;
+        noTasks = false;
       }
     }
 
-    if (noneArgsOnly) {
-      finalOpArg.append("none"); //there were no tasks file to append
+    if (noTasks) {
+      finalOpArg.append(PrivilegedOperation.CGROUP_ARG_NO_TASKS); //there
+      // were no tasks file to append
     }
 
     PrivilegedOperation finalOp = new PrivilegedOperation(
