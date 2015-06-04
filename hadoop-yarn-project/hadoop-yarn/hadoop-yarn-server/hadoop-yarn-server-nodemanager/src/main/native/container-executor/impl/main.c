@@ -282,8 +282,8 @@ static int validate_run_as_user_commands(int argc, char **argv, int *operation) 
     return 0;
  case LAUNCH_DOCKER_CONTAINER:
     //kill me now.
-    if (!(argc == 13 || argc == 14)) {
-      fprintf(ERRORFILE, "Wrong number of arguments (%d vs 13 or 14) for launch container\n",
+    if (!(argc == 14 || argc == 15)) {
+      fprintf(ERRORFILE, "Wrong number of arguments (%d vs 14 or 15) for launch docker container\n",
        argc);
       fflush(ERRORFILE);
       return INVALID_ARGUMENT_NUMBER;
@@ -323,7 +323,7 @@ static int validate_run_as_user_commands(int argc, char **argv, int *operation) 
 
   case LAUNCH_CONTAINER:
     //kill me now.
-    if (!(argc == 14 || argc == 15)) {
+    if (!(argc == 13 || argc == 14)) {
       fprintf(ERRORFILE, "Wrong number of arguments (%d vs 13 or 14) for launch container\n",
        argc);
       fflush(ERRORFILE);
