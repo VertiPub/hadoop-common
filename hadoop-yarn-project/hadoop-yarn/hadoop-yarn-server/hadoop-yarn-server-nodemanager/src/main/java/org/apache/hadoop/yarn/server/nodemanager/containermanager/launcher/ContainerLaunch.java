@@ -429,6 +429,7 @@ public class ContainerLaunch implements Callable<Integer> {
         boolean result = exec.signalContainer(
             new ContainerSignalContext.Builder()
                 .setContainer(container)
+                .setUser(user)
                 .setPid(processId)
                 .setSignal(signal)
                 .build());
