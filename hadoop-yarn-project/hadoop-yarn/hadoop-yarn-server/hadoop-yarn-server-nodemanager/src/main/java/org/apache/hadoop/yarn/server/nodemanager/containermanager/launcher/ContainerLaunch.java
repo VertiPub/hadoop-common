@@ -303,6 +303,7 @@ public class ContainerLaunch implements Callable<Integer> {
         exec.activateContainer(containerID, pidFilePath);
         ret = exec.launchContainer(new ContainerStartContext.Builder()
             .setContainer(container)
+            .setLocalizedResources(localResources)
             .setNmPrivateContainerScriptPath(nmPrivateContainerScriptPath)
             .setNmPrivateTokensPath(nmPrivateTokensPath)
             .setUser(user)

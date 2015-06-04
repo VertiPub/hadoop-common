@@ -44,6 +44,7 @@ public class PrivilegedOperation {
     LAUNCH_CONTAINER(""), //no CLI switch supported yet
     SIGNAL_CONTAINER(""), //no CLI switch supported yet
     DELETE_AS_USER(""), //no CLI switch supported yet
+    LAUNCH_DOCKER_CONTAINER(""), //no CLI switch supported yet
     TC_MODIFY_STATE("--tc-modify-state"),
     TC_READ_STATE("--tc-read-state"),
     TC_READ_STATS("--tc-read-stats"),

@@ -27,6 +27,7 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 import org.apache.commons.logging.Log;
@@ -53,7 +54,6 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resource
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerModule;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntime;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntimeContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerLivenessContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerReacquisitionContext;
@@ -323,6 +323,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
     Path containerWorkDir = ctx.getContainerWorkDir();
     List<String> localDirs = ctx.getLocalDirs();
     List<String> logDirs = ctx.getLogDirs();
+    Map<Path, List<String>> localizedResources = ctx.getLocalizedResources();
 
     verifyUsernamePattern(user);
     String runAsUser = getRunAsUser(user);
@@ -393,10 +394,9 @@ public class LinuxContainerExecutor extends ContainerExecutor {
               prefixCommands);
         }
 
-        builder.setExecutionAttribute(RUN_AS_USER, runAsUser)
+        builder.setExecutionAttribute(LOCALIZED_RESOURCES, localizedResources)
+            .setExecutionAttribute(RUN_AS_USER, runAsUser)
             .setExecutionAttribute(USER, user)
-            .setExecutionAttribute(COMMAND,
-                Commands.LAUNCH_CONTAINER.getValue())
             .setExecutionAttribute(APPID, appId)
             .setExecutionAttribute(CONTAINER_ID_STR, containerIdStr)
             .setExecutionAttribute(CONTAINER_WORK_DIR, containerWorkDir)
@@ -511,8 +511,6 @@ public class LinuxContainerExecutor extends ContainerExecutor {
         .Builder(container)
         .setExecutionAttribute(RUN_AS_USER, runAsUser)
         .setExecutionAttribute(USER, user)
-        .setExecutionAttribute(COMMAND,
-            Commands.SIGNAL_CONTAINER.getValue())
         .setExecutionAttribute(PID, pid)
         .setExecutionAttribute(SIGNAL, signal)
         .build();

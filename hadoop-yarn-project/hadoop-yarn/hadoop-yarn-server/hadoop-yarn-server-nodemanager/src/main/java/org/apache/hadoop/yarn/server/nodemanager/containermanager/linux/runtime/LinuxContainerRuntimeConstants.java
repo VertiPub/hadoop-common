@@ -25,19 +25,20 @@ import org.apache.hadoop.yarn.server.nodemanager.ContainerExecutor;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntimeContext.Attribute;
 
 import java.util.List;
+import java.util.Map;
 
 public final class LinuxContainerRuntimeConstants {
   private LinuxContainerRuntimeConstants() {
   }
 
+  public static final Attribute<Map> LOCALIZED_RESOURCES = Attribute
+      .attribute(Map.class, "localized_resources");
   public static final Attribute<List> CONTAINER_LAUNCH_PREFIX_COMMANDS =
       Attribute.attribute(List.class, "container_launch_prefix_commands");
   public static final Attribute<String> RUN_AS_USER =
       Attribute.attribute(String.class, "run_as_user");
   public static final Attribute<String> USER = Attribute.attribute(String.class,
       "user");
-  public static final Attribute<Integer> COMMAND =
-      Attribute.attribute(Integer.class, "command");
   public static final Attribute<String> APPID =
       Attribute.attribute(String.class, "appid");
   public static final Attribute<String> CONTAINER_ID_STR = Attribute
@@ -65,4 +66,19 @@ public final class LinuxContainerRuntimeConstants {
       String.class, "pid");
   public static final Attribute<ContainerExecutor.Signal> SIGNAL = Attribute
       .attribute(ContainerExecutor.Signal.class, "signal");
+
+  enum Commands {
+    INITIALIZE_CONTAINER(0),
+    LAUNCH_CONTAINER(1),
+    SIGNAL_CONTAINER(2),
+    DELETE_AS_USER(3),
+    LAUNCH_DOCKER_CONTAINER(4);
+    private int value;
+    Commands(int value) {
+      this.value = value;
+    }
+    int getValue() {
+      return value;
+    }
+  }
 }

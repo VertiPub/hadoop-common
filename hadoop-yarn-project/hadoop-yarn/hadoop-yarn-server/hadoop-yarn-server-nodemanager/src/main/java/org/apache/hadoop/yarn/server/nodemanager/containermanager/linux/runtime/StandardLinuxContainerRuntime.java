@@ -31,7 +31,6 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileg
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperationException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperationExecutor;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntime;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntimeContext;
 
 import java.util.List;
@@ -67,7 +66,7 @@ public class StandardLinuxContainerRuntime implements LinuxContainerRuntime {
     //All of these arguments are expected to be available in the runtime context
     launchOp.appendArgs(ctx.getExecutionAttribute(RUN_AS_USER),
         ctx.getExecutionAttribute(USER),
-        ctx.getExecutionAttribute(COMMAND).toString(),
+        Integer.toString(Commands.LAUNCH_CONTAINER.getValue()),
         ctx.getExecutionAttribute(APPID),
         ctx.getExecutionAttribute(CONTAINER_ID_STR),
         ctx.getExecutionAttribute(CONTAINER_WORK_DIR).toString(),
@@ -115,10 +114,9 @@ public class StandardLinuxContainerRuntime implements LinuxContainerRuntime {
 
     signalOp.appendArgs(ctx.getExecutionAttribute(RUN_AS_USER),
         ctx.getExecutionAttribute(USER),
-        ctx.getExecutionAttribute(COMMAND).toString(),
+        Integer.toString(Commands.SIGNAL_CONTAINER.getValue()),
         ctx.getExecutionAttribute(PID),
-        Integer.toString(ctx.getExecutionAttribute(SIGNAL).getValue())
-    );
+        Integer.toString(ctx.getExecutionAttribute(SIGNAL).getValue()));
 
     try {
       PrivilegedOperationExecutor executor = PrivilegedOperationExecutor
