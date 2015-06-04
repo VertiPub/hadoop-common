@@ -164,7 +164,8 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
     String imageName = environment.get(ENV_DOCKER_CONTAINER_IMAGE);
 
     if (imageName == null) {
-      throw new ContainerExecutionException(ENV_CONTAINER_TYPE + " not set!");
+      throw new ContainerExecutionException(ENV_DOCKER_CONTAINER_IMAGE
+          + " not set!");
     }
 
     String containerIdStr = container.getContainerId().toString();
@@ -260,7 +261,7 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
           null);
 
       launchOp.appendArgs(runAsUser, ctx.getExecutionAttribute(USER),
-          Integer.toString(Commands.LAUNCH_CONTAINER.getValue()),
+          Integer.toString(Commands.LAUNCH_DOCKER_CONTAINER.getValue()),
           ctx.getExecutionAttribute(APPID),
           containerIdStr, containerWorkDir.toString(),
           nmPrivateContainerScriptPath.toUri().getPath(),

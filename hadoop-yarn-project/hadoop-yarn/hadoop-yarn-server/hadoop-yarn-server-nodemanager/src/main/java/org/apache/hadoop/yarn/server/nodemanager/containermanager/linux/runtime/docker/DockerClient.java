@@ -25,6 +25,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
 
 import java.io.File;
@@ -49,6 +50,13 @@ public final class DockerClient {
       throw new ContainerExecutionException("hadoop.tmp.dir not set!");
     }
     tmpDirPath = tmpDirBase + "/nm-docker-cmds";
+
+    File tmpDir = new File(tmpDirPath);
+    if (!(tmpDir.exists() || tmpDir.mkdirs())) {
+      LOG.warn("Unable to create directory: " + tmpDirPath);
+      throw new ContainerExecutionException("Unable to create directory: " +
+          tmpDirPath);
+    }
   }
 
   public String writeCommandToTempFile(DockerCommand cmd, String filePrefix)
@@ -68,8 +76,7 @@ public final class DockerClient {
       return dockerCommandFile.getAbsolutePath();
     } catch (IOException e) {
       LOG.warn("Unable to write docker command to temporary file!");
-      throw new ContainerExecutionException(
-          "Unable to write docker command to temporary file!");
+      throw new ContainerExecutionException(e);
     }
   }
 }
