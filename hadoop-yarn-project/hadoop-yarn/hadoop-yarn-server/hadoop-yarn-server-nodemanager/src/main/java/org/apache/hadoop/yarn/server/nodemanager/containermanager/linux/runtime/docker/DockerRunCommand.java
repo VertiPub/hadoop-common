@@ -42,6 +42,11 @@ public class DockerRunCommand extends DockerCommand {
     return this;
   }
 
+  public DockerRunCommand detachOnRun() {
+    super.addCommandArguments("-d");
+    return this;
+  }
+
   public DockerRunCommand setContainerWorkDir(String workdir) {
     super.addCommandArguments("--workdir=" + workdir);
     return this;

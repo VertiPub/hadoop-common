@@ -221,7 +221,7 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
         LOCALIZED_RESOURCES);
     DockerRunCommand runCommand = new DockerRunCommand(containerIdStr,
         runAsUser, imageName)
-        .removeContainerOnExit()
+        .detachOnRun()
         .setContainerWorkDir(containerWorkDir.toString())
         .setNetworkType("host")
         .addMountLocation("/etc/passwd", "/etc/password:ro");
@@ -280,7 +280,14 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
           ctx.getExecutionAttribute(PID_FILE_PATH).toString(),
           StringUtils.join(",", localDirs),
           StringUtils.join(",", logDirs),
-          commandFile);
+          commandFile,
+          resourcesOpts);
+
+      String tcCommandFile = ctx.getExecutionAttribute(TC_COMMAND_FILE);
+
+      if (tcCommandFile != null) {
+        launchOp.appendArgs(tcCommandFile);
+      }
 
       try {
         PrivilegedOperationExecutor executor = PrivilegedOperationExecutor
