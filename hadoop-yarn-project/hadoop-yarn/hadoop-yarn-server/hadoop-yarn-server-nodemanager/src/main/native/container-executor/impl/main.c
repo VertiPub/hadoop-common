@@ -262,7 +262,7 @@ static int validate_run_as_user_commands(int argc, char **argv, int *operation) 
 
   fprintf(LOGFILE, "main : command provided %d\n", command);
   fprintf(LOGFILE, "main : run as user is %s\n", cmd_input.run_as_user_name);
-  fprintf(LOGFILE, "main : requested yarn user is %s\n", cmd_input.yarn_user_name);
+  fprintf(LOGFILE, "main : requested yarn-- user is %s\n", cmd_input.yarn_user_name);
   fflush(LOGFILE);
 
   switch (command) {
@@ -298,7 +298,26 @@ static int validate_run_as_user_commands(int argc, char **argv, int *operation) 
     cmd_input.local_dirs = argv[optind++];// good local dirs as a comma separated list
     cmd_input.log_dirs = argv[optind++];// good log dirs as a comma separated list
     cmd_input.docker_command_file = argv[optind++];
+    char * resources = argv[optind++];// key,value pair describing resources
+    char * resources_key = malloc(strlen(resources));
+    char * resources_value = malloc(strlen(resources));
+    if (get_kv_key(resources, resources_key, strlen(resources)) < 0 ||
+      get_kv_value(resources, resources_value, strlen(resources)) < 0) {
+      fprintf(ERRORFILE, "Invalid arguments for cgroups resources: %s",
+                         resources);
+      fflush(ERRORFILE);
+      free(resources_key);
+      free(resources_value);
+      return INVALID_ARGUMENT_NUMBER;
+    }
+    //network isolation through tc
+    if (argc == 14) {
+      cmd_input.traffic_control_command_file = argv[optind++];
+    }
 
+    cmd_input.resources_key = resources_key;
+    cmd_input.resources_value = resources_value;
+    cmd_input.resources_values = extract_values(resources_value);
     *operation = RUN_AS_USER_LAUNCH_DOCKER_CONTAINER;
     return 0;
 
@@ -319,9 +338,9 @@ static int validate_run_as_user_commands(int argc, char **argv, int *operation) 
     cmd_input.pid_file = argv[optind++];
     cmd_input.local_dirs = argv[optind++];// good local dirs as a comma separated list
     cmd_input.log_dirs = argv[optind++];// good log dirs as a comma separated list
-    char * resources = argv[optind++];// key,value pair describing resources
-    char * resources_key = malloc(strlen(resources));
-    char * resources_value = malloc(strlen(resources));
+    resources = argv[optind++];// key,value pair describing resources
+    resources_key = malloc(strlen(resources));
+    resources_value = malloc(strlen(resources));
 
     if (get_kv_key(resources, resources_key, strlen(resources)) < 0 ||
         get_kv_value(resources, resources_value, strlen(resources)) < 0) {
@@ -450,7 +469,9 @@ int main(int argc, char **argv) {
                       cmd_input.pid_file,
                       extract_values(cmd_input.local_dirs),
                       extract_values(cmd_input.log_dirs),
-                      cmd_input.docker_command_file);
+                      cmd_input.docker_command_file,
+                      cmd_input.resources_key,
+                      cmd_input.resources_values);
       break;
   case RUN_AS_USER_LAUNCH_CONTAINER:
     if (cmd_input.traffic_control_command_file != NULL) {

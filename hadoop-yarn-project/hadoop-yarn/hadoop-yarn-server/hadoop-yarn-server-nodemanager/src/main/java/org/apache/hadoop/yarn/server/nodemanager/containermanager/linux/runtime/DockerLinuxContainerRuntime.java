@@ -210,7 +210,6 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
     String containerIdStr = container.getContainerId().toString();
     String runAsUser = ctx.getExecutionAttribute(RUN_AS_USER);
     Path containerWorkDir = ctx.getExecutionAttribute(CONTAINER_WORK_DIR);
-    //String pidFilePath =
     //List<String> -> stored as List -> fetched/converted to List<String>
     //we can't do better here thanks to type-erasure
     @SuppressWarnings("unchecked")
