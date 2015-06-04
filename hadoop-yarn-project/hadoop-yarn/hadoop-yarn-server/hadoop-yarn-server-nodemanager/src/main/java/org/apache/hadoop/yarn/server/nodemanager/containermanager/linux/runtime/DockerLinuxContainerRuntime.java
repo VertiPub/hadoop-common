@@ -155,6 +155,41 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
     }
   }
 
+  public void addCGroupParentIfRequired(String resourcesOptions,
+      String containerIdStr, DockerRunCommand runCommand)
+      throws ContainerExecutionException {
+    if (resourcesOptions.equals(
+        (PrivilegedOperation.CGROUP_ARG_PREFIX + PrivilegedOperation
+            .CGROUP_ARG_NO_TASKS))) {
+      if (LOG.isInfoEnabled()) {
+        LOG.info("no resource restrictions specified. not using docker's "
+            + "cgroup options");
+      }
+    } else {
+      if (LOG.isInfoEnabled()) {
+        LOG.info("using docker's cgroups options");
+      }
+
+      try {
+        CGroupsHandler cGroupsHandler = ResourceHandlerModule
+            .getCGroupsHandler(conf);
+        String cGroupPath = "/" + cGroupsHandler.getRelativePathForCGroup(
+            containerIdStr);
+
+        if (LOG.isInfoEnabled()) {
+          LOG.info("using cgroup parent: " + cGroupPath);
+        }
+
+        runCommand.setCGroupParent(cGroupPath);
+      } catch (ResourceHandlerException e) {
+        LOG.warn("unable to use cgroups handler. Exception: ", e);
+        throw new ContainerExecutionException(e);
+      }
+    }
+  }
+
+
+
   @Override
   public void launchContainer(ContainerRuntimeContext ctx)
       throws ContainerExecutionException {
@@ -197,34 +232,7 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
 
     String resourcesOpts = ctx.getExecutionAttribute(RESOURCES_OPTIONS);
 
-    if (resourcesOpts.equals(
-      (PrivilegedOperation.CGROUP_ARG_PREFIX + PrivilegedOperation
-          .CGROUP_ARG_NO_TASKS))) {
-      if (LOG.isInfoEnabled()) {
-        LOG.info("no resource restrictions specified. not using docker's "
-            + "cgroup options");
-      }
-    } else {
-      if (LOG.isInfoEnabled()) {
-        LOG.info("using docker's cgroups options");
-      }
-
-      try {
-        CGroupsHandler cGroupsHandler = ResourceHandlerModule
-            .getCGroupsHandler(conf);
-        String cGroupPath = "/" + cGroupsHandler.getRelativePathForCGroup(
-            containerIdStr);
-
-        if (LOG.isInfoEnabled()) {
-          LOG.info("using cgroup parent: " + cGroupPath);
-        }
-
-        runCommand.setCGroupParent(cGroupPath);
-      } catch (ResourceHandlerException e) {
-        LOG.warn("unable to use cgroups handler. Exception: ", e);
-        throw new ContainerExecutionException(e);
-      }
-    }
+    addCGroupParentIfRequired(resourcesOpts, containerIdStr, runCommand);
 
     try {
       //hack - we'll need to overwrite the launch script, for the time being
