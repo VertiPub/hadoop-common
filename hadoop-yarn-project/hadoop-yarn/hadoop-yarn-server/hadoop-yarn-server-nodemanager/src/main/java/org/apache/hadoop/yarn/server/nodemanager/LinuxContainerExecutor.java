@@ -534,7 +534,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
 
   @Override
   public void deleteAsUser(DeletionAsUserContext ctx) {
-    String user = ctx.getUser();
+    /*String user = ctx.getUser();
     Path dir = ctx.getSubDir();
     List<Path> baseDirs = ctx.getBasedirs();
 
@@ -577,7 +577,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
           + " returned with exit code: " + exitCode, e);
       LOG.error("Output from LinuxContainerExecutor's deleteAsUser follows:");
       logOutput(shExec.getOutput());
-    }
+    }*/
   }
   
   @Override

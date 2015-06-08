@@ -235,7 +235,7 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
 
     String resourcesOpts = ctx.getExecutionAttribute(RESOURCES_OPTIONS);
 
-    //addCGroupParentIfRequired(resourcesOpts, containerIdStr, runCommand);
+    addCGroupParentIfRequired(resourcesOpts, containerIdStr, runCommand);
 
     try {
       //hack - we'll need to overwrite the launch script, for the time being

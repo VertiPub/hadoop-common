@@ -311,7 +311,7 @@ static int validate_run_as_user_commands(int argc, char **argv, int *operation) 
       return INVALID_ARGUMENT_NUMBER;
     }
     //network isolation through tc
-    if (argc == 14) {
+    if (argc == 15) {
       cmd_input.traffic_control_command_file = argv[optind++];
     }
 
@@ -454,6 +454,14 @@ int main(int argc, char **argv) {
                             argv + optind);
     break;
   case RUN_AS_USER_LAUNCH_DOCKER_CONTAINER:
+     if (cmd_input.traffic_control_command_file != NULL) {
+        //apply tc rules before switching users and launching the container
+        exit_code = traffic_control_modify_state(cmd_input.traffic_control_command_file);
+        if( exit_code != 0) {
+          //failed to apply tc rules - break out before launching the container
+          break;
+        }
+      }
 
       exit_code = set_user(cmd_input.run_as_user_name);
       if (exit_code != 0) {
