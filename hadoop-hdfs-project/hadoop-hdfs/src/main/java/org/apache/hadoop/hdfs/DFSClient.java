@@ -38,7 +38,6 @@ import java.net.Socket;
 import java.net.SocketAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
-import java.nio.charset.Charset;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -345,13 +344,10 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
       this.namenode = rpcNamenode;
       dtService = null;
     } else {
-      boolean noRetries = conf.getBoolean(
-          DFSConfigKeys.DFS_CLIENT_TEST_NO_PROXY_RETRIES,
-          DFSConfigKeys.DFS_CLIENT_TEST_NO_PROXY_RETRIES_DEFAULT);
       Preconditions.checkArgument(nameNodeUri != null,
           "null URI");
       proxyInfo = NameNodeProxies.createProxy(conf, nameNodeUri,
-          ClientProtocol.class, nnFallbackToSimpleAuth, !noRetries);
+          ClientProtocol.class, nnFallbackToSimpleAuth);
       this.dtService = proxyInfo.getDelegationTokenService();
       this.namenode = proxyInfo.getProxy();
     }
@@ -3197,35 +3193,26 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
     return saslClient;
   }
 
-  private static final byte[] PATH = "path".getBytes(Charset.forName("UTF-8"));
-
   TraceScope getPathTraceScope(String description, String path) {
     TraceScope scope = Trace.startSpan(description, traceSampler);
     Span span = scope.getSpan();
     if (span != null) {
       if (path != null) {
-        span.addKVAnnotation(PATH,
-            path.getBytes(Charset.forName("UTF-8")));
+        span.addKVAnnotation("path", path);
       }
     }
     return scope;
   }
-
-  private static final byte[] SRC = "src".getBytes(Charset.forName("UTF-8"));
-
-  private static final byte[] DST = "dst".getBytes(Charset.forName("UTF-8"));
 
   TraceScope getSrcDstTraceScope(String description, String src, String dst) {
     TraceScope scope = Trace.startSpan(description, traceSampler);
     Span span = scope.getSpan();
     if (span != null) {
       if (src != null) {
-        span.addKVAnnotation(SRC,
-            src.getBytes(Charset.forName("UTF-8")));
+        span.addKVAnnotation("src", src);
       }
       if (dst != null) {
-        span.addKVAnnotation(DST,
-            dst.getBytes(Charset.forName("UTF-8")));
+        span.addKVAnnotation("dst", dst);
       }
     }
     return scope;

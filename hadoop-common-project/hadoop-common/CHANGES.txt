@@ -132,6 +132,29 @@ Release 2.8.0 - UNRELEASED
     HADOOP-11594. Improve the readability of site index of documentation.
     (Masatake Iwasaki via aajisaka)
 
+    HADOOP-12030. test-patch should only report on newly introduced
+    findbugs warnings. (Sean Busbey via aw)
+
+    HADOOP-11894. Bump the version of Apache HTrace to 3.2.0-incubating
+    (Masatake Iwasaki via Colin P. McCabe)
+
+    HADOOP-12043. Display warning if defaultFs is not set when running fs
+    commands. (Lei Xu via wang)
+
+    HADOOP-12037. Fix wrong classname in example configuration of hadoop-auth
+    documentation. (Masatake Iwasaki via wang)
+
+    HADOOP-12059. S3Credentials should support use of CredentialProvider.
+    (Sean Busbey via wang)
+
+    HADOOP-12056. Use DirectoryStream in DiskChecker#checkDirs to detect
+    errors when listing a directory. (Zhihai Xu via wang)
+
+    HADOOP-12055. Deprecate usage of NativeIO#link. (Andrew Wang via cnauroth)
+
+    HADOOP-11971. Move test utilities for tracing from hadoop-hdfs to
+    hadoop-common. (Masatake Iwasaki via aajisaka)
+
   OPTIMIZATIONS
 
     HADOOP-11785. Reduce the number of listStatus operation in distcp
@@ -146,7 +169,14 @@ Release 2.8.0 - UNRELEASED
     HADOOP-11772. RPC Invoker relies on static ClientCache which has
     synchronized(this) blocks. (wheat9)
 
+    HADOOP-11242. Record the time of calling in tracing span of
+    IPC server. (Masatake Iwasaki via aajisaka)
+
+    HADOOP-11885. hadoop-dist dist-layout-stitching.sh does not work with dash.
+    (wang)
+
   BUG FIXES
+
     HADOOP-11802: DomainSocketWatcher thread terminates sometimes after there
     is an I/O error during requestShortCircuitShm (cmccabe)
 
@@ -290,6 +320,54 @@ Release 2.8.0 - UNRELEASED
     HADOOP-8751. NPE in Token.toString() when Token is constructed using null
     identifier. (kanaka kumar avvaru via aajisaka)
 
+    HADOOP-12004. test-patch breaks with reexec in certain situations (Sean
+    Busbey via aw)
+
+    HADOOP-12035. shellcheck plugin displays a wrong version potentially
+    (Kengo Seki via aw)
+
+    HDFS-8429. Avoid stuck threads if there is an error in DomainSocketWatcher
+    that stops the thread.  (zhouyingchao via cmccabe)
+
+    HADOOP-11930. test-patch in offline mode should tell maven to be in
+    offline mode (Sean Busbey via aw)
+
+    HADOOP-11959. WASB should configure client side socket timeout in storage
+    client blob request options. (Ivan Mitic via cnauroth)
+
+    HADOOP-12042. Users may see TrashPolicy if hdfs dfs -rm is run
+    (Andreina J via vinayakumarb)
+
+    HADOOP-11991. test-patch.sh isn't re-executed even if smart-apply-patch.sh
+    is modified. (Kengo Seki via aajisaka)
+
+    HADOOP-12018. smart-apply-patch.sh fails if the patch edits CR+LF files
+    and is created by 'git diff --no-prefix'. (Kengo Seki via aajisaka)
+
+    HADOOP-12019. update BUILDING.txt to include python for 'mvn site'
+    in windows (vinayakumarb)
+
+    HADOOP-11994. smart-apply-patch wrongly assumes that git is infallible.
+    (Kengo Seki via Arpit Agarwal)
+
+    HADOOP-11924. Tolerate JDK-8047340-related exceptions in
+    Shell#isSetSidAvailable preventing class init. (Tsuyoshi Ozawa via gera)
+
+    HADOOP-12052 IPC client downgrades all exception types to IOE, breaks
+    callers trying to use them. (Brahma Reddy Battula via stevel)
+
+    HADOOP-12054. RPC client should not retry for InvalidToken exceptions.
+    (Varun Saxena via Arpit Agarwal)
+
+    HADOOP-12073. Azure FileSystem PageBlobInputStream does not return -1 on
+    EOF. (Ivan Mitic via cnauroth)
+
+    HADOOP-7817. RawLocalFileSystem.append() should give FSDataOutputStream
+    with accurate .getPos() (kanaka kumar avvaru via vinayakumarb)
+
+    HADOOP-12074. in Shell.java#runCommand() rethrow InterruptedException as
+    InterruptedIOException (Lavkesh Lahngir via vinayakumarb)
+
 Release 2.7.1 - UNRELEASED
 
   INCOMPATIBLE CHANGES
@@ -327,6 +405,15 @@ Release 2.7.1 - UNRELEASED
 
     HADOOP-11973. Ensure ZkDelegationTokenSecretManager namespace znodes get
     created with ACLs. (Gregory Chanan via asuresh)
+
+    HADOOP-11934. Use of JavaKeyStoreProvider in LdapGroupsMapping causes
+    infinite loop. (Larry McCay via cnauroth)
+
+    HADOOP-12058. Fix dead links to DistCp and Hadoop Archives pages.
+    (Kazuho Fujii via aajisaka)
+
+    HADOOP-12078. The default retry policy does not handle RetriableException
+    correctly. (Arpit Agarwal)
 
 Release 2.7.0 - 2015-04-20
 

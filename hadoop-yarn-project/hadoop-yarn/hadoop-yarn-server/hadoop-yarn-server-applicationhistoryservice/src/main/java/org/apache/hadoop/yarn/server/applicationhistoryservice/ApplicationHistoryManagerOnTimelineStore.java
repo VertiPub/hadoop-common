@@ -19,11 +19,14 @@
 package org.apache.hadoop.yarn.server.applicationhistoryservice;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -50,6 +53,7 @@ import org.apache.hadoop.yarn.api.records.YarnApplicationState;
 import org.apache.hadoop.yarn.api.records.timeline.TimelineEntities;
 import org.apache.hadoop.yarn.api.records.timeline.TimelineEntity;
 import org.apache.hadoop.yarn.api.records.timeline.TimelineEvent;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.exceptions.ApplicationAttemptNotFoundException;
 import org.apache.hadoop.yarn.exceptions.ApplicationNotFoundException;
 import org.apache.hadoop.yarn.exceptions.ContainerNotFoundException;
@@ -78,6 +82,7 @@ public class ApplicationHistoryManagerOnTimelineStore extends AbstractService
   private TimelineDataManager timelineDataManager;
   private ApplicationACLsManager aclsManager;
   private String serverHttpAddress;
+  private long maxLoadedApplications;
 
   public ApplicationHistoryManagerOnTimelineStore(
       TimelineDataManager timelineDataManager,
@@ -91,6 +96,9 @@ public class ApplicationHistoryManagerOnTimelineStore extends AbstractService
   protected void serviceInit(Configuration conf) throws Exception {
     serverHttpAddress = WebAppUtils.getHttpSchemePrefix(conf) +
         WebAppUtils.getAHSWebAppURLWithoutScheme(conf);
+    maxLoadedApplications =
+        conf.getLong(YarnConfiguration.APPLICATION_HISTORY_MAX_APPS,
+          YarnConfiguration.DEFAULT_APPLICATION_HISTORY_MAX_APPS);
     super.serviceInit(conf);
   }
 
@@ -101,12 +109,15 @@ public class ApplicationHistoryManagerOnTimelineStore extends AbstractService
   }
 
   @Override
-  public Map<ApplicationId, ApplicationReport> getAllApplications()
-      throws YarnException, IOException {
-    TimelineEntities entities = timelineDataManager.getEntities(
-        ApplicationMetricsConstants.ENTITY_TYPE, null, null, null, null,
-        null, null, Long.MAX_VALUE, EnumSet.allOf(Field.class),
-        UserGroupInformation.getLoginUser());
+  public Map<ApplicationId, ApplicationReport> getApplications(long appsNum,
+      long appStartedTimeBegin, long appStartedTimeEnd) throws YarnException,
+      IOException {
+    TimelineEntities entities =
+        timelineDataManager.getEntities(
+          ApplicationMetricsConstants.ENTITY_TYPE, null, null,
+          appStartedTimeBegin, appStartedTimeEnd, null, null,
+          appsNum == Long.MAX_VALUE ? this.maxLoadedApplications : appsNum,
+          EnumSet.allOf(Field.class), UserGroupInformation.getLoginUser());
     Map<ApplicationId, ApplicationReport> apps =
         new LinkedHashMap<ApplicationId, ApplicationReport>();
     if (entities != null && entities.getEntities() != null) {
@@ -244,6 +255,7 @@ public class ApplicationHistoryManagerOnTimelineStore extends AbstractService
     FinalApplicationStatus finalStatus = FinalApplicationStatus.UNDEFINED;
     YarnApplicationState state = YarnApplicationState.ACCEPTED;
     ApplicationResourceUsageReport appResources = null;
+    Set<String> appTags = null;
     Map<ApplicationAccessType, String> appViewACLs =
         new HashMap<ApplicationAccessType, String>();
     Map<String, Object> entityInfo = entity.getOtherInfo();
@@ -265,7 +277,7 @@ public class ApplicationHistoryManagerOnTimelineStore extends AbstractService
             ConverterUtils.toApplicationId(entity.getEntityId()),
             latestApplicationAttemptId, user, queue, name, null, -1, null, state,
             diagnosticsInfo, null, createdTime, finishedTime, finalStatus, null,
-            null, progress, type, null), appViewACLs);
+            null, progress, type, null, appTags), appViewACLs);
       }
       if (entityInfo.containsKey(ApplicationMetricsConstants.QUEUE_ENTITY_INFO)) {
         queue =
@@ -289,6 +301,17 @@ public class ApplicationHistoryManagerOnTimelineStore extends AbstractService
                 ApplicationMetricsConstants.APP_MEM_METRICS).toString());
         appResources=ApplicationResourceUsageReport
             .newInstance(0, 0, null, null, null, memorySeconds, vcoreSeconds);
+      }
+      if (entityInfo.containsKey(ApplicationMetricsConstants.APP_TAGS_INFO)) {
+        appTags = new HashSet<String>();
+        Object obj = entityInfo.get(ApplicationMetricsConstants.APP_TAGS_INFO);
+        if (obj != null && obj instanceof Collection<?>) {
+          for(Object o : (Collection<?>)obj) {
+            if (o != null) {
+              appTags.add(o.toString());
+            }
+          }
+        }
       }
     }
     List<TimelineEvent> events = entity.getEvents();
@@ -342,7 +365,7 @@ public class ApplicationHistoryManagerOnTimelineStore extends AbstractService
         ConverterUtils.toApplicationId(entity.getEntityId()),
         latestApplicationAttemptId, user, queue, name, null, -1, null, state,
         diagnosticsInfo, null, createdTime, finishedTime, finalStatus, appResources,
-        null, progress, type, null), appViewACLs);
+        null, progress, type, null, appTags), appViewACLs);
   }
 
   private static ApplicationAttemptReport convertToApplicationAttemptReport(

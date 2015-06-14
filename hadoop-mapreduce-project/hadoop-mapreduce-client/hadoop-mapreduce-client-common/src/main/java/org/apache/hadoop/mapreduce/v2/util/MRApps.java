@@ -241,11 +241,6 @@ public class MRApps extends Apps {
     boolean userClassesTakesPrecedence = 
       conf.getBoolean(MRJobConfig.MAPREDUCE_JOB_USER_CLASSPATH_FIRST, false);
 
-    if (userClassesTakesPrecedence) {
-      conf.set(YarnConfiguration.YARN_APPLICATION_CLASSPATH_PREPEND_DISTCACHE,
-        "true");
-    }
-
     String classpathEnvVar =
       conf.getBoolean(MRJobConfig.MAPREDUCE_JOB_CLASSLOADER, false)
         ? Environment.APP_CLASSPATH.name() : Environment.CLASSPATH.name();
@@ -737,5 +732,36 @@ public class MRApps extends Apps {
         conf.getBoolean(MRConfig.MAPREDUCE_APP_SUBMISSION_CROSS_PLATFORM,
             MRConfig.DEFAULT_MAPREDUCE_APP_SUBMISSION_CROSS_PLATFORM);
     return crossPlatform ? env.$$() : env.$();
+  }
+
+  /**
+   * Return lines for system property keys and values per configuration.
+   *
+   * @return the formatted string for the system property lines or null if no
+   * properties are specified.
+   */
+  public static String getSystemPropertiesToLog(Configuration conf) {
+    String key = conf.get(MRJobConfig.MAPREDUCE_JVM_SYSTEM_PROPERTIES_TO_LOG,
+      MRJobConfig.DEFAULT_MAPREDUCE_JVM_SYSTEM_PROPERTIES_TO_LOG);
+    if (key != null) {
+      key = key.trim(); // trim leading and trailing whitespace from the config
+      if (!key.isEmpty()) {
+        String[] props = key.split(",");
+        if (props.length > 0) {
+          StringBuilder sb = new StringBuilder();
+          sb.append("\n/************************************************************\n");
+          sb.append("[system properties]\n");
+          for (String prop: props) {
+            prop = prop.trim(); // trim leading and trailing whitespace
+            if (!prop.isEmpty()) {
+              sb.append(prop).append(": ").append(System.getProperty(prop)).append('\n');
+            }
+          }
+          sb.append("************************************************************/");
+          return sb.toString();
+        }
+      }
+    }
+    return null;
   }
 }

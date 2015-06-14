@@ -206,14 +206,14 @@ import org.apache.hadoop.hdfs.security.token.delegation.DelegationTokenSecretMan
 import org.apache.hadoop.hdfs.security.token.delegation.DelegationTokenSecretManager.SecretManagerState;
 import org.apache.hadoop.hdfs.server.blockmanagement.BlockCollection;
 import org.apache.hadoop.hdfs.server.blockmanagement.BlockIdManager;
-import org.apache.hadoop.hdfs.server.blockmanagement.BlockInfoContiguous;
-import org.apache.hadoop.hdfs.server.blockmanagement.BlockInfoContiguousUnderConstruction;
+import org.apache.hadoop.hdfs.server.blockmanagement.BlockInfo;
+import org.apache.hadoop.hdfs.server.blockmanagement.BlockInfoUnderConstruction;
+import org.apache.hadoop.hdfs.server.blockmanagement.BlockInfoUnderConstructionContiguous;
 import org.apache.hadoop.hdfs.server.blockmanagement.BlockManager;
 import org.apache.hadoop.hdfs.server.blockmanagement.DatanodeDescriptor;
 import org.apache.hadoop.hdfs.server.blockmanagement.DatanodeManager;
 import org.apache.hadoop.hdfs.server.blockmanagement.DatanodeStatistics;
 import org.apache.hadoop.hdfs.server.blockmanagement.DatanodeStorageInfo;
-import org.apache.hadoop.hdfs.server.common.HdfsServerConstants;
 import org.apache.hadoop.hdfs.server.common.HdfsServerConstants.BlockUCState;
 import org.apache.hadoop.hdfs.server.common.HdfsServerConstants.NamenodeRole;
 import org.apache.hadoop.hdfs.server.common.HdfsServerConstants.RollingUpgradeStartupOption;
@@ -228,6 +228,7 @@ import org.apache.hadoop.hdfs.server.namenode.JournalSet.JournalAndStream;
 import org.apache.hadoop.hdfs.server.namenode.LeaseManager.Lease;
 import org.apache.hadoop.hdfs.server.namenode.NNStorage.NameNodeFile;
 import org.apache.hadoop.hdfs.server.namenode.NameNode.OperationCategory;
+import org.apache.hadoop.hdfs.server.namenode.NameNodeLayoutVersion.Feature;
 import org.apache.hadoop.hdfs.server.namenode.ha.EditLogTailer;
 import org.apache.hadoop.hdfs.server.namenode.ha.HAContext;
 import org.apache.hadoop.hdfs.server.namenode.ha.StandbyCheckpointer;
@@ -983,8 +984,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       if (needToSave) {
         fsImage.saveNamespace(this);
       } else {
-        updateStorageVersionForRollingUpgrade(fsImage.getLayoutVersion(),
-            startOpt);
         // No need to save, so mark the phase done.
         StartupProgress prog = NameNode.getStartupProgress();
         prog.beginPhase(Phase.SAVING_CHECKPOINT);
@@ -994,7 +993,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       // we shouldn't do it when coming up in standby state
       if (!haEnabled || (haEnabled && startOpt == StartupOption.UPGRADE)
           || (haEnabled && startOpt == StartupOption.UPGRADEONLY)) {
-        fsImage.openEditLogForWrite();
+        fsImage.openEditLogForWrite(getEffectiveLayoutVersion());
       }
       success = true;
     } finally {
@@ -1004,18 +1003,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       writeUnlock();
     }
     imageLoadComplete();
-  }
-
-  private void updateStorageVersionForRollingUpgrade(final long layoutVersion,
-      StartupOption startOpt) throws IOException {
-    boolean rollingStarted = RollingUpgradeStartupOption.STARTED
-        .matches(startOpt) && layoutVersion > HdfsServerConstants
-        .NAMENODE_LAYOUT_VERSION;
-    boolean rollingRollback = RollingUpgradeStartupOption.ROLLBACK
-        .matches(startOpt);
-    if (rollingRollback || rollingStarted) {
-      fsImage.updateStorageVersion();
-    }
   }
 
   private void startSecretManager() {
@@ -1135,7 +1122,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
             nextTxId);
         editLog.setNextTxId(nextTxId);
 
-        getFSImage().editLog.openForWrite();
+        getFSImage().editLog.openForWrite(getEffectiveLayoutVersion());
       }
 
       // Enable quota checks.
@@ -1877,7 +1864,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    */
   void concat(String target, String [] srcs, boolean logRetryCache)
       throws IOException {
-    checkOperation(OperationCategory.WRITE);
     waitForLoadingFSImage();
     HdfsFileStatus stat = null;
     boolean success = false;
@@ -1996,6 +1982,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
                    String clientName, String clientMachine,
                    long mtime)
       throws IOException, UnresolvedLinkException {
+    requireEffectiveLayoutVersionForFeature(Feature.TRUNCATE);
     boolean ret;
     try {
       ret = truncateInt(src, newLength, clientName, clientMachine, mtime);
@@ -2011,10 +1998,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
                       long mtime)
       throws IOException, UnresolvedLinkException {
     String src = srcArg;
-    if (NameNode.stateChangeLog.isDebugEnabled()) {
-      NameNode.stateChangeLog.debug("DIR* NameSystem.truncate: src="
-          + src + " newLength=" + newLength);
-    }
+    NameNode.stateChangeLog.debug(
+        "DIR* NameSystem.truncate: src={} newLength={}", src, newLength);
     if (newLength < 0) {
       throw new HadoopIllegalArgumentException(
           "Cannot truncate to a negative file size: " + newLength + ".");
@@ -2070,10 +2055,10 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     }
 
     // Check if the file is already being truncated with the same length
-    final BlockInfoContiguous last = file.getLastBlock();
+    final BlockInfo last = file.getLastBlock();
     if (last != null && last.getBlockUCState() == BlockUCState.UNDER_RECOVERY) {
       final Block truncateBlock
-          = ((BlockInfoContiguousUnderConstruction)last).getTruncateBlock();
+          = ((BlockInfoUnderConstruction)last).getTruncateBlock();
       if (truncateBlock != null) {
         final long truncateLength = file.computeFileSize(false, false)
             + truncateBlock.getNumBytes();
@@ -2144,7 +2129,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     leaseManager.addLease(
         file.getFileUnderConstructionFeature().getClientName(), file.getId());
     boolean shouldRecoverNow = (newBlock == null);
-    BlockInfoContiguous oldBlock = file.getLastBlock();
+    BlockInfo oldBlock = file.getLastBlock();
     boolean shouldCopyOnTruncate = shouldCopyOnTruncate(file, oldBlock);
     if(newBlock == null) {
       newBlock = (shouldCopyOnTruncate) ? createNewBlock() :
@@ -2152,37 +2137,37 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
               nextGenerationStamp(blockIdManager.isLegacyBlock(oldBlock)));
     }
 
-    BlockInfoContiguousUnderConstruction truncatedBlockUC;
+    BlockInfoUnderConstruction truncatedBlockUC;
     if(shouldCopyOnTruncate) {
       // Add new truncateBlock into blocksMap and
       // use oldBlock as a source for copy-on-truncate recovery
-      truncatedBlockUC = new BlockInfoContiguousUnderConstruction(newBlock,
+      truncatedBlockUC = new BlockInfoUnderConstructionContiguous(newBlock,
           file.getPreferredBlockReplication());
       truncatedBlockUC.setNumBytes(oldBlock.getNumBytes() - lastBlockDelta);
       truncatedBlockUC.setTruncateBlock(oldBlock);
       file.setLastBlock(truncatedBlockUC, blockManager.getStorages(oldBlock));
       getBlockManager().addBlockCollection(truncatedBlockUC, file);
 
-      NameNode.stateChangeLog.info("BLOCK* prepareFileForTruncate: "
-          + "Scheduling copy-on-truncate to new size "
-          + truncatedBlockUC.getNumBytes() + " new block " + newBlock
-          + " old block " + truncatedBlockUC.getTruncateBlock());
+      NameNode.stateChangeLog.debug(
+          "BLOCK* prepareFileForTruncate: Scheduling copy-on-truncate to new" +
+          " size {} new block {} old block {}", truncatedBlockUC.getNumBytes(),
+          newBlock, truncatedBlockUC.getTruncateBlock());
     } else {
       // Use new generation stamp for in-place truncate recovery
       blockManager.convertLastBlockToUnderConstruction(file, lastBlockDelta);
       oldBlock = file.getLastBlock();
       assert !oldBlock.isComplete() : "oldBlock should be under construction";
-      truncatedBlockUC = (BlockInfoContiguousUnderConstruction) oldBlock;
+      truncatedBlockUC = (BlockInfoUnderConstruction) oldBlock;
       truncatedBlockUC.setTruncateBlock(new Block(oldBlock));
       truncatedBlockUC.getTruncateBlock().setNumBytes(
           oldBlock.getNumBytes() - lastBlockDelta);
       truncatedBlockUC.getTruncateBlock().setGenerationStamp(
           newBlock.getGenerationStamp());
 
-      NameNode.stateChangeLog.debug("BLOCK* prepareFileForTruncate: "
-          + "Scheduling in-place block truncate to new size "
-          + truncatedBlockUC.getTruncateBlock().getNumBytes()
-          + " block=" + truncatedBlockUC);
+      NameNode.stateChangeLog.debug(
+          "BLOCK* prepareFileForTruncate: Scheduling in-place block" +
+          " truncate to new size {} block= {}",
+          truncatedBlockUC.getTruncateBlock().getNumBytes(), truncatedBlockUC);
     }
     if (shouldRecoverNow) {
       truncatedBlockUC.initializeBlockRecovery(newBlock.getGenerationStamp());
@@ -2195,7 +2180,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * Defines if a replica needs to be copied on truncate or
    * can be truncated in place.
    */
-  boolean shouldCopyOnTruncate(INodeFile file, BlockInfoContiguous blk) {
+  boolean shouldCopyOnTruncate(INodeFile file, BlockInfo blk) {
     if(!isUpgradeFinalized()) {
       return true;
     }
@@ -2369,7 +2354,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       throw new InvalidPathException(src);
     }
     blockManager.verifyReplication(src, replication, clientMachine);
-    checkOperation(OperationCategory.WRITE);
     if (blockSize < minBlockSize) {
       throw new IOException("Specified block size is less than configured" +
           " minimum value (" + DFSConfigKeys.DFS_NAMENODE_MIN_BLOCK_SIZE_KEY
@@ -2495,7 +2479,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       recoverLeaseInternal(RecoverLeaseOp.APPEND_FILE, iip, src, holder,
                            clientMachine, false);
       
-      final BlockInfoContiguous lastBlock = myFile.getLastBlock();
+      final BlockInfo lastBlock = myFile.getLastBlock();
       // Check that the block has at least minimum replication.
       if(lastBlock != null && lastBlock.isComplete() &&
           !getBlockManager().isSufficientlyReplicated(lastBlock)) {
@@ -2551,7 +2535,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         }
       }
     } else {
-      BlockInfoContiguous lastBlock = file.getLastBlock();
+      BlockInfo lastBlock = file.getLastBlock();
       if (lastBlock != null) {
         ExtendedBlock blk = new ExtendedBlock(this.getBlockPoolId(), lastBlock);
         ret = new LocatedBlock(blk, new DatanodeInfo[0]);
@@ -2559,7 +2543,12 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     }
 
     if (writeToEditLog) {
-      getEditLog().logAppendFile(src, file, newBlock, logRetryCache);
+      if (NameNodeLayoutVersion.supports(Feature.APPEND_NEW_BLOCK,
+          getEffectiveLayoutVersion())) {
+        getEditLog().logAppendFile(src, file, newBlock, logRetryCache);
+      } else {
+        getEditLog().logOpenFile(src, file, false, logRetryCache);
+      }
     }
     return ret;
   }
@@ -2593,7 +2582,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   /** Compute quota change for converting a complete block to a UC block */
   private QuotaCounts computeQuotaDeltaForUCBlock(INodeFile file) {
     final QuotaCounts delta = new QuotaCounts.Builder().build();
-    final BlockInfoContiguous lastBlock = file.getLastBlock();
+    final BlockInfo lastBlock = file.getLastBlock();
     if (lastBlock != null) {
       final long diff = file.getPreferredBlockSize() - lastBlock.getNumBytes();
       final short repl = file.getPreferredBlockReplication();
@@ -2730,7 +2719,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
                 op.getExceptionMessage(src, holder, clientMachine,
                     "lease recovery is in progress. Try again later."));
         } else {
-          final BlockInfoContiguous lastBlock = file.getLastBlock();
+          final BlockInfo lastBlock = file.getLastBlock();
           if (lastBlock != null
               && lastBlock.getBlockUCState() == BlockUCState.UNDER_RECOVERY) {
             throw new RecoveryInProgressException(
@@ -2754,9 +2743,12 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   LastBlockWithStatus appendFile(String src, String holder,
       String clientMachine, EnumSet<CreateFlag> flag, boolean logRetryCache)
       throws IOException {
+    boolean newBlock = flag.contains(CreateFlag.NEW_BLOCK);
+    if (newBlock) {
+      requireEffectiveLayoutVersionForFeature(Feature.APPEND_NEW_BLOCK);
+    }
     try {
-      return appendFileInt(src, holder, clientMachine,
-          flag.contains(CreateFlag.NEW_BLOCK), logRetryCache);
+      return appendFileInt(src, holder, clientMachine, newBlock, logRetryCache);
     } catch (AccessControlException e) {
       logAuditEvent(false, "append", src);
       throw e;
@@ -2767,11 +2759,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       String clientMachine, boolean newBlock, boolean logRetryCache)
       throws IOException {
     String src = srcArg;
-    if (NameNode.stateChangeLog.isDebugEnabled()) {
-      NameNode.stateChangeLog.debug("DIR* NameSystem.appendFile: src=" + src
-          + ", holder=" + holder
-          + ", clientMachine=" + clientMachine);
-    }
+    NameNode.stateChangeLog.debug(
+        "DIR* NameSystem.appendFile: src={}, holder={}, clientMachine={}",
+        src, holder, clientMachine);
     boolean skipSync = false;
     if (!supportAppends) {
       throw new UnsupportedOperationException(
@@ -2782,7 +2772,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     LocatedBlock lb = null;
     HdfsFileStatus stat = null;
     FSPermissionChecker pc = getPermissionChecker();
-    checkOperation(OperationCategory.WRITE);
     byte[][] pathComponents = FSDirectory.getPathComponentsForReservedPath(src);
     writeLock();
     try {
@@ -2806,12 +2795,10 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       }
     }
     if (lb != null) {
-      if (NameNode.stateChangeLog.isDebugEnabled()) {
-        NameNode.stateChangeLog.debug("DIR* NameSystem.appendFile: file "
-            +src+" for "+holder+" at "+clientMachine
-            +" block " + lb.getBlock()
-            +" block size " + lb.getBlock().getNumBytes());
-      }
+      NameNode.stateChangeLog.debug(
+          "DIR* NameSystem.appendFile: file {} for {} at {} block {} block" +
+          " size {}", src, holder, clientMachine, lb.getBlock(),
+          lb.getBlock().getNumBytes());
     }
     logAuditEvent(true, "append", srcArg);
     return new LastBlockWithStatus(lb, stat);
@@ -2840,10 +2827,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   LocatedBlock getAdditionalBlock(
       String src, long fileId, String clientName, ExtendedBlock previous,
       DatanodeInfo[] excludedNodes, String[] favoredNodes) throws IOException {
-    if(NameNode.stateChangeLog.isDebugEnabled()) {
-      NameNode.stateChangeLog.debug("BLOCK* getAdditionalBlock: "
-          + src + " inodeId " +  fileId  + " for " + clientName);
-    }
+    NameNode.stateChangeLog.debug("BLOCK* getAdditionalBlock: {} inodeId {}" +
+        " for {}", src, fileId, clientName);
 
     waitForLoadingFSImage();
     LocatedBlock[] onRetryBlock = new LocatedBlock[1];
@@ -2950,10 +2935,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    */
   void abandonBlock(ExtendedBlock b, long fileId, String src, String holder)
       throws IOException {
-    if(NameNode.stateChangeLog.isDebugEnabled()) {
-      NameNode.stateChangeLog.debug("BLOCK* NameSystem.abandonBlock: " + b
-          + "of file " + src);
-    }
+    NameNode.stateChangeLog.debug(
+        "BLOCK* NameSystem.abandonBlock: {} of file {}", b, src);
     waitForLoadingFSImage();
     checkOperation(OperationCategory.WRITE);
     FSPermissionChecker pc = getPermissionChecker();
@@ -2962,10 +2945,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       checkOperation(OperationCategory.WRITE);
       checkNameNodeSafeMode("Cannot abandon block " + b + " for file" + src);
       FSDirWriteFileOp.abandonBlock(dir, pc, b, fileId, src, holder);
-      if(NameNode.stateChangeLog.isDebugEnabled()) {
-        NameNode.stateChangeLog.debug("BLOCK* NameSystem.abandonBlock: "
-                                      + b + " is removed from pendingCreates");
-      }
+      NameNode.stateChangeLog.debug("BLOCK* NameSystem.abandonBlock: {} is" +
+          " removed from pendingCreates", b);
     } finally {
       writeUnlock();
     }
@@ -3061,10 +3042,10 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
           .getBlocks());
     } else {
       // check the penultimate block of this file
-      BlockInfoContiguous b = v.getPenultimateBlock();
+      BlockInfo b = v.getPenultimateBlock();
       return b == null ||
           blockManager.checkBlocksProperlyReplicated(
-              src, new BlockInfoContiguous[] { b });
+              src, new BlockInfo[] { b });
     }
   }
 
@@ -3077,7 +3058,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   boolean renameTo(String src, String dst, boolean logRetryCache)
       throws IOException {
     waitForLoadingFSImage();
-    checkOperation(OperationCategory.WRITE);
     FSDirRenameOp.RenameOldResult ret = null;
     writeLock();
     try {
@@ -3103,7 +3083,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
                 boolean logRetryCache, Options.Rename... options)
       throws IOException {
     waitForLoadingFSImage();
-    checkOperation(OperationCategory.WRITE);
     Map.Entry<BlocksMapUpdateInfo, HdfsFileStatus> res = null;
     writeLock();
     try {
@@ -3140,7 +3119,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   boolean delete(String src, boolean recursive, boolean logRetryCache)
       throws IOException {
     waitForLoadingFSImage();
-    checkOperation(OperationCategory.WRITE);
     BlocksMapUpdateInfo toRemovedBlocks = null;
     writeLock();
     boolean ret = false;
@@ -3238,7 +3216,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
     for (Block b : blocks.getToDeleteList()) {
       if (trackBlockCounts) {
-        BlockInfoContiguous bi = getStoredBlock(b);
+        BlockInfo bi = getStoredBlock(b);
         if (bi.isComplete()) {
           numRemovedComplete++;
           if (bi.numNodes() >= blockManager.minReplication) {
@@ -3379,6 +3357,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    */
   void setQuota(String src, long nsQuota, long ssQuota, StorageType type)
       throws IOException {
+    if (type != null) {
+      requireEffectiveLayoutVersionForFeature(Feature.QUOTA_BY_STORAGE_TYPE);
+    }
     checkOperation(OperationCategory.WRITE);
     writeLock();
     boolean success = false;
@@ -3462,10 +3443,10 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
     final INodeFile pendingFile = iip.getLastINode().asFile();
     int nrBlocks = pendingFile.numBlocks();
-    BlockInfoContiguous[] blocks = pendingFile.getBlocks();
+    BlockInfo[] blocks = pendingFile.getBlocks();
 
     int nrCompleteBlocks;
-    BlockInfoContiguous curBlock = null;
+    BlockInfo curBlock = null;
     for(nrCompleteBlocks = 0; nrCompleteBlocks < nrBlocks; nrCompleteBlocks++) {
       curBlock = blocks[nrCompleteBlocks];
       if(!curBlock.isComplete())
@@ -3500,9 +3481,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
     // The last block is not COMPLETE, and
     // that the penultimate block if exists is either COMPLETE or COMMITTED
-    final BlockInfoContiguous lastBlock = pendingFile.getLastBlock();
+    final BlockInfo lastBlock = pendingFile.getLastBlock();
     BlockUCState lastBlockState = lastBlock.getBlockUCState();
-    BlockInfoContiguous penultimateBlock = pendingFile.getPenultimateBlock();
+    BlockInfo penultimateBlock = pendingFile.getPenultimateBlock();
 
     // If penultimate block doesn't exist then its minReplication is met
     boolean penultimateBlockMinReplication = penultimateBlock == null ? true :
@@ -3535,7 +3516,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       throw new AlreadyBeingCreatedException(message);
     case UNDER_CONSTRUCTION:
     case UNDER_RECOVERY:
-      final BlockInfoContiguousUnderConstruction uc = (BlockInfoContiguousUnderConstruction)lastBlock;
+      final BlockInfoUnderConstruction uc =
+          (BlockInfoUnderConstruction)lastBlock;
       // determine if last block was intended to be truncated
       Block recoveryBlock = uc.getTruncateBlock();
       boolean truncateRecovery = recoveryBlock != null;
@@ -3646,12 +3628,12 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   }
 
   @VisibleForTesting
-  BlockInfoContiguous getStoredBlock(Block block) {
+  BlockInfo getStoredBlock(Block block) {
     return blockManager.getStoredBlock(block);
   }
   
   @Override
-  public boolean isInSnapshot(BlockInfoContiguousUnderConstruction blockUC) {
+  public boolean isInSnapshot(BlockInfoUnderConstruction blockUC) {
     assert hasReadLock();
     final BlockCollection bc = blockUC.getBlockCollection();
     if (bc == null || !(bc instanceof INodeFile)
@@ -3698,7 +3680,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     waitForLoadingFSImage();
     writeLock();
     boolean copyTruncate = false;
-    BlockInfoContiguousUnderConstruction truncatedBlock = null;
+    BlockInfoUnderConstruction truncatedBlock = null;
     try {
       checkOperation(OperationCategory.WRITE);
       // If a DN tries to commit to the standby, the recovery will
@@ -3706,7 +3688,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   
       checkNameNodeSafeMode(
           "Cannot commitBlockSynchronization while in safe mode");
-      final BlockInfoContiguous storedBlock = getStoredBlock(
+      final BlockInfo storedBlock = getStoredBlock(
           ExtendedBlock.getLocalBlock(oldBlock));
       if (storedBlock == null) {
         if (deleteblock) {
@@ -3755,7 +3737,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         return;
       }
 
-      truncatedBlock = (BlockInfoContiguousUnderConstruction) iFile
+      truncatedBlock = (BlockInfoUnderConstruction) iFile
           .getLastBlock();
       long recoveryId = truncatedBlock.getBlockRecoveryId();
       copyTruncate = truncatedBlock.getBlockId() != storedBlock.getBlockId();
@@ -3867,7 +3849,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    * @throws IOException on error
    */
   @VisibleForTesting
-  String closeFileCommitBlocks(INodeFile pendingFile, BlockInfoContiguous storedBlock)
+  String closeFileCommitBlocks(INodeFile pendingFile, BlockInfo storedBlock)
       throws IOException {
     final INodesInPath iip = INodesInPath.fromINode(pendingFile);
     final String src = iip.getPath();
@@ -3992,7 +3974,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   HeartbeatResponse handleHeartbeat(DatanodeRegistration nodeReg,
       StorageReport[] reports, long cacheCapacity, long cacheUsed,
       int xceiverCount, int xmitsInProgress, int failedVolumes,
-      VolumeFailureSummary volumeFailureSummary) throws IOException {
+      VolumeFailureSummary volumeFailureSummary,
+      boolean requestFullBlockReportLease) throws IOException {
     readLock();
     try {
       //get datanode commands
@@ -4001,13 +3984,17 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       DatanodeCommand[] cmds = blockManager.getDatanodeManager().handleHeartbeat(
           nodeReg, reports, blockPoolId, cacheCapacity, cacheUsed,
           xceiverCount, maxTransfer, failedVolumes, volumeFailureSummary);
-      
+      long blockReportLeaseId = 0;
+      if (requestFullBlockReportLease) {
+        blockReportLeaseId =  blockManager.requestBlockReportLeaseId(nodeReg);
+      }
       //create ha status
       final NNHAStatusHeartbeat haState = new NNHAStatusHeartbeat(
           haContext.getState().getServiceState(),
           getFSImage().getLastAppliedOrWrittenTxId());
 
-      return new HeartbeatResponse(cmds, haState, rollingUpgradeInfo);
+      return new HeartbeatResponse(cmds, haState, rollingUpgradeInfo,
+          blockReportLeaseId);
     } finally {
       readUnlock();
     }
@@ -4042,11 +4029,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     waitForLoadingFSImage();
     // file is closed
     getEditLog().logCloseFile(path, file);
-    if (NameNode.stateChangeLog.isDebugEnabled()) {
-      NameNode.stateChangeLog.debug("closeFile: "
-              +path+" with "+ file.getBlocks().length
-              +" blocks is persisted to the file system");
-    }
+    NameNode.stateChangeLog.debug("closeFile: {} with {} bloks is persisted" +
+        " to the file system", path, file.getBlocks().length);
   }
 
   /**
@@ -4158,7 +4142,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
         while (it.hasNext()) {
           Block b = it.next();
-          BlockInfoContiguous blockInfo = blockManager.getStoredBlock(b);
+          BlockInfo blockInfo = blockManager.getStoredBlock(b);
           if (blockInfo.getBlockCollection().getStoragePolicyID()
               == lpPolicy.getId()) {
             filesToDelete.add(blockInfo.getBlockCollection());
@@ -5099,7 +5083,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     SafeModeInfo safeMode = this.safeMode;
     if (safeMode == null) // mostly true
       return;
-    BlockInfoContiguous storedBlock = getStoredBlock(b);
+    BlockInfo storedBlock = getStoredBlock(b);
     if (storedBlock.isComplete()) {
       safeMode.decrementSafeBlockCount((short)blockManager.countNodes(b).liveReplicas());
     }
@@ -5257,7 +5241,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       if (Server.isRpcInvocation()) {
         LOG.info("Roll Edit Log from " + Server.getRemoteAddress());
       }
-      return getFSImage().rollEditLog();
+      return getFSImage().rollEditLog(getEffectiveLayoutVersion());
     } finally {
       writeUnlock();
     }
@@ -5273,7 +5257,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       
       LOG.info("Start checkpoint for " + backupNode.getAddress());
       NamenodeCommand cmd = getFSImage().startCheckpoint(backupNode,
-          activeNamenode);
+          activeNamenode, getEffectiveLayoutVersion());
       getEditLog().logSync();
       return cmd;
     } finally {
@@ -5659,7 +5643,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         + "access token for block " + block);
     
     // check stored block state
-    BlockInfoContiguous storedBlock = getStoredBlock(ExtendedBlock.getLocalBlock(block));
+    BlockInfo storedBlock = getStoredBlock(ExtendedBlock.getLocalBlock(block));
     if (storedBlock == null || 
         storedBlock.getBlockUCState() != BlockUCState.UNDER_CONSTRUCTION) {
         throw new IOException(block + 
@@ -5756,8 +5740,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       String clientName, ExtendedBlock oldBlock, ExtendedBlock newBlock,
       DatanodeID[] newNodes, String[] newStorageIDs, boolean logRetryCache)
       throws IOException {
-    checkOperation(OperationCategory.WRITE);
-
     LOG.info("updatePipeline(" + oldBlock.getLocalBlock()
              + ", newGS=" + newBlock.getGenerationStamp()
              + ", newLength=" + newBlock.getNumBytes()
@@ -5788,8 +5770,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     assert hasWriteLock();
     // check the vadility of the block and lease holder name
     final INodeFile pendingFile = checkUCBlock(oldBlock, clientName);
-    final BlockInfoContiguousUnderConstruction blockinfo
-        = (BlockInfoContiguousUnderConstruction)pendingFile.getLastBlock();
+    final BlockInfoUnderConstruction blockinfo
+        = (BlockInfoUnderConstruction)pendingFile.getLastBlock();
 
     // check new GS & length: this is not expected
     if (newBlock.getGenerationStamp() <= blockinfo.getGenerationStamp() ||
@@ -5906,7 +5888,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       if (cookieTab[0] == null) {
         cookieTab[0] = String.valueOf(getIntCookie(cookieTab[0]));
       }
-      LOG.info("there are no corrupt file blocks.");
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("there are no corrupt file blocks.");
+      }
       return corruptFiles;
     }
 
@@ -5941,7 +5925,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
         }
       }
       cookieTab[0] = String.valueOf(skip);
-      LOG.info("list corrupt file blocks returned: " + count);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("list corrupt file blocks returned: " + count);
+      }
       return corruptFiles;
     } finally {
       readUnlock();
@@ -6738,7 +6724,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   void renameSnapshot(
       String path, String snapshotOldName, String snapshotNewName,
       boolean logRetryCache) throws IOException {
-    checkOperation(OperationCategory.WRITE);
     boolean success = false;
     writeLock();
     try {
@@ -6826,7 +6811,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    */
   void deleteSnapshot(String snapshotRoot, String snapshotName,
       boolean logRetryCache) throws IOException {
-    checkOperation(OperationCategory.WRITE);
     boolean success = false;
     writeLock();
     BlocksMapUpdateInfo blocksToBeDeleted = null;
@@ -6897,7 +6881,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       getEditLog().logStartRollingUpgrade(rollingUpgradeInfo.getStartTime());
       if (haEnabled) {
         // roll the edit log to make sure the standby NameNode can tail
-        getFSImage().rollEditLog();
+        getFSImage().rollEditLog(getEffectiveLayoutVersion());
       }
     } finally {
       writeUnlock();
@@ -7000,6 +6984,67 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     return rollingUpgradeInfo != null && !rollingUpgradeInfo.isFinalized();
   }
 
+  /**
+   * Returns the layout version in effect.  Under normal operation, this is the
+   * same as the software's current layout version, defined in
+   * {@link NameNodeLayoutVersion#CURRENT_LAYOUT_VERSION}.  During a rolling
+   * upgrade, this can retain the layout version that was persisted to metadata
+   * prior to starting the rolling upgrade, back to a lower bound defined in
+   * {@link NameNodeLayoutVersion#MINIMUM_COMPATIBLE_LAYOUT_VERSION}.  New
+   * fsimage files and edit log segments will continue to be written with this
+   * older layout version, so that the files are still readable by the old
+   * software version if the admin chooses to downgrade.
+   *
+   * @return layout version in effect
+   */
+  public int getEffectiveLayoutVersion() {
+    return getEffectiveLayoutVersion(isRollingUpgrade(),
+        fsImage.getStorage().getLayoutVersion(),
+        NameNodeLayoutVersion.MINIMUM_COMPATIBLE_LAYOUT_VERSION,
+        NameNodeLayoutVersion.CURRENT_LAYOUT_VERSION);
+  }
+
+  @VisibleForTesting
+  static int getEffectiveLayoutVersion(boolean isRollingUpgrade, int storageLV,
+      int minCompatLV, int currentLV) {
+    if (isRollingUpgrade) {
+      if (storageLV <= minCompatLV) {
+        // The prior layout version satisfies the minimum compatible layout
+        // version of the current software.  Keep reporting the prior layout
+        // as the effective one.  Downgrade is possible.
+        return storageLV;
+      }
+    }
+    // The current software cannot satisfy the layout version of the prior
+    // software.  Proceed with using the current layout version.
+    return currentLV;
+  }
+
+  /**
+   * Performs a pre-condition check that the layout version in effect is
+   * sufficient to support the requested {@link Feature}.  If not, then the
+   * method throws {@link HadoopIllegalArgumentException} to deny the operation.
+   * This exception class is registered as a terse exception, so it prevents
+   * verbose stack traces in the NameNode log.  During a rolling upgrade, this
+   * method is used to restrict usage of new features.  This prevents writing
+   * new edit log operations that would be unreadable by the old software
+   * version if the admin chooses to downgrade.
+   *
+   * @param f feature to check
+   * @throws HadoopIllegalArgumentException if the current layout version in
+   *     effect is insufficient to support the feature
+   */
+  private void requireEffectiveLayoutVersionForFeature(Feature f)
+      throws HadoopIllegalArgumentException {
+    int lv = getEffectiveLayoutVersion();
+    if (!NameNodeLayoutVersion.supports(f, lv)) {
+      throw new HadoopIllegalArgumentException(String.format(
+          "Feature %s unsupported at NameNode layout version %d.  If a " +
+          "rolling upgrade is in progress, then it must be finalized before " +
+          "using this feature.", f, lv));
+    }
+  }
+
   void checkRollingUpgrade(String action) throws RollingUpgradeException {
     if (isRollingUpgrade()) {
       throw new RollingUpgradeException("Failed to " + action
@@ -7023,7 +7068,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       getEditLog().logFinalizeRollingUpgrade(rollingUpgradeInfo.getFinalizeTime());
       if (haEnabled) {
         // roll the edit log to make sure the standby NameNode can tail
-        getFSImage().rollEditLog();
+        getFSImage().rollEditLog(getEffectiveLayoutVersion());
       }
       getFSImage().updateStorageVersion();
       getFSImage().renameCheckpoint(NameNodeFile.IMAGE_ROLLBACK,
@@ -7051,7 +7096,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   long addCacheDirective(CacheDirectiveInfo directive,
                          EnumSet<CacheFlag> flags, boolean logRetryCache)
       throws IOException {
-    checkOperation(OperationCategory.WRITE);
     CacheDirectiveInfo effectiveDirective = null;
     if (!flags.contains(CacheFlag.FORCE)) {
       cacheManager.waitForRescanIfNeeded();
@@ -7079,7 +7123,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
   void modifyCacheDirective(CacheDirectiveInfo directive,
       EnumSet<CacheFlag> flags, boolean logRetryCache) throws IOException {
-    checkOperation(OperationCategory.WRITE);
     boolean success = false;
     if (!flags.contains(CacheFlag.FORCE)) {
       cacheManager.waitForRescanIfNeeded();
@@ -7103,7 +7146,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   }
 
   void removeCacheDirective(long id, boolean logRetryCache) throws IOException {
-    checkOperation(OperationCategory.WRITE);
     boolean success = false;
     writeLock();
     try {
@@ -7142,7 +7184,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
   void addCachePool(CachePoolInfo req, boolean logRetryCache)
       throws IOException {
-    checkOperation(OperationCategory.WRITE);
     writeLock();
     boolean success = false;
     String poolInfoStr = null;
@@ -7164,7 +7205,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
   void modifyCachePool(CachePoolInfo req, boolean logRetryCache)
       throws IOException {
-    checkOperation(OperationCategory.WRITE);
     writeLock();
     boolean success = false;
     try {
@@ -7186,7 +7226,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
   void removeCachePool(String cachePoolName, boolean logRetryCache)
       throws IOException {
-    checkOperation(OperationCategory.WRITE);
     writeLock();
     boolean success = false;
     try {
@@ -7381,7 +7420,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     String src = srcArg;
     HdfsFileStatus resultingStat = null;
     checkSuperuserPrivilege();
-    checkOperation(OperationCategory.WRITE);
     final byte[][] pathComponents =
       FSDirectory.getPathComponentsForReservedPath(src);
     FSPermissionChecker pc = getPermissionChecker();
@@ -7467,7 +7505,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   void setXAttr(String src, XAttr xAttr, EnumSet<XAttrSetFlag> flag,
                 boolean logRetryCache)
       throws IOException {
-    checkOperation(OperationCategory.WRITE);
     HdfsFileStatus auditStat = null;
     writeLock();
     try {
@@ -7515,7 +7552,6 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
 
   void removeXAttr(String src, XAttr xAttr, boolean logRetryCache)
       throws IOException {
-    checkOperation(OperationCategory.WRITE);
     HdfsFileStatus auditStat = null;
     writeLock();
     try {

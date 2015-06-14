@@ -68,6 +68,26 @@ public interface MRJobConfig {
 
   public static final String QUEUE_NAME = "mapreduce.job.queuename";
 
+  /**
+   *  Node Label expression applicable for all Job containers.
+   */
+  public static final String JOB_NODE_LABEL_EXP = "mapreduce.job.node-label-expression";
+
+  /**
+   * Node Label expression applicable for AM containers.
+   */
+  public static final String AM_NODE_LABEL_EXP = "mapreduce.job.am.node-label-expression";
+
+  /**
+   *  Node Label expression applicable for map containers.
+   */
+  public static final String MAP_NODE_LABEL_EXP = "mapreduce.map.node-label-expression";
+
+  /**
+   * Node Label expression applicable for reduce containers.
+   */
+  public static final String REDUCE_NODE_LABEL_EXP = "mapreduce.reduce.node-label-expression";
+
   public static final String RESERVATION_ID = "mapreduce.job.reservation.id";
 
   public static final String JOB_TAGS = "mapreduce.job.tags";
@@ -184,6 +204,11 @@ public interface MRJobConfig {
   public static final String MAPREDUCE_JOB_SHUFFLE_PROVIDER_SERVICES = "mapreduce.job.shuffle.provider.services";
 
   public static final String MAPREDUCE_JOB_CLASSLOADER_SYSTEM_CLASSES = "mapreduce.job.classloader.system.classes";
+
+  public static final String MAPREDUCE_JVM_SYSTEM_PROPERTIES_TO_LOG = "mapreduce.jvm.system-properties-to-log";
+  public static final String DEFAULT_MAPREDUCE_JVM_SYSTEM_PROPERTIES_TO_LOG =
+    "os.name,os.version,java.home,java.runtime.version,java.vendor," +
+    "java.version,java.vm.name,java.class.path,java.io.tmpdir,user.dir,user.name";
 
   public static final String IO_SORT_FACTOR = "mapreduce.task.io.sort.factor";
 

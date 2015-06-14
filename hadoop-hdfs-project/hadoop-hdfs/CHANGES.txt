@@ -4,8 +4,6 @@ Release 2.8.0 - UNRELEASED
 
   INCOMPATIBLE CHANGES
 
-    HDFS-8135. Remove the deprecated FSConstants class. (Li Lu via wheat9)
-
   NEW FEATURES
 
     HDFS-7891. A block placement policy with best rack failure tolerance.
@@ -245,6 +243,52 @@ Release 2.8.0 - UNRELEASED
 
     HDFS-8377. Support HTTP/2 in datanode. (Duo Zhang via wheat9)
 
+    HDFS-8482. Rename BlockInfoContiguous to BlockInfo. (Zhe Zhang via wang)
+
+    HDFS-8443. Document dfs.namenode.service.handler.count in hdfs-site.xml.
+    (J.Andreina via aajisaka)
+
+    HDFS-8489. Subclass BlockInfo to represent contiguous blocks.
+    (Zhe Zhang via jing9)
+
+    HDFS-8386. Improve synchronization of 'streamer' reference in
+    DFSOutputStream. (Rakesh R via wang)
+
+    HDFS-8513. Rename BlockPlacementPolicyRackFaultTolarent to
+    BlockPlacementPolicyRackFaultTolerant. (wang)
+
+    HDFS-8532. Make the visibility of DFSOutputStream#streamer member variable
+    to private. (Rakesh R via wang)
+
+    HDFS-8535. Clarify that dfs usage in dfsadmin -report output includes all
+    block replicas. (Eddy Xu via wang)
+
+    HDFS-8432. Introduce a minimum compatible layout version to allow downgrade
+    in more rolling upgrade use cases. (cnauroth)
+
+    HDFS-8116. Cleanup uncessary if LOG.isDebugEnabled() from
+    RollingWindowManager. (Brahma Reddy Battula via xyao)
+
+    HDFS-8553. Document hdfs class path options.
+    (Brahma Reddy Battula via cnauroth)
+
+    HDFS-8552. Fix hdfs CLI usage message for namenode and zkfc.
+    (Brahma Reddy Battula via xyao)
+
+    HDFS-8568. TestClusterId#testFormatWithEmptyClusterIdOption is failing.
+    (Rakesh R. via xyao)
+
+    HDFS-8549. Abort the balancer if an upgrade is in progress. (wang)
+
+    HDFS-8573. Move creation of restartMeta file logic from BlockReceiver to
+    ReplicaInPipeline. (Eddy Xu via wang)
+
+    HDFS-7923. The DataNodes should rate-limit their full block reports by
+    asking the NN on heartbeat messages (cmccabe)
+
+    HDFS-8499. Refactor BlockInfo class hierarchy with static helper class.
+    (Zhe Zhang via wang)
+
   OPTIMIZATIONS
 
     HDFS-8026. Trace FSOutputSummer#writeChecksumChunks rather than
@@ -473,6 +517,41 @@ Release 2.8.0 - UNRELEASED
     HDFS-8268. Port conflict log for data node server is not sufficient
     (Mohammad Shahid Khan via vinayakumarb)
 
+    HDFS-8431. hdfs crypto class not found in Windows.
+    (Anu Engineer via cnauroth)
+
+    HDFS-8407. hdfsListDirectory must set errno to 0 on success (Masatake
+    Iwasaki via Colin P. McCabe)
+
+    HDFS-7401. Add block info to DFSInputStream' WARN message when it adds
+    node to deadNodes (Arshad Mohammad via vinayakumarb)
+
+    HDFS-7609. Avoid retry cache collision when Standby NameNode loading edits.
+    (Ming Ma via jing9)
+
+    HDFS-8490. Typo in trace enabled log in ExceptionHandler of WebHDFS.
+    (Archana T via ozawa)
+
+    HDFS-8256. "-storagepolicies , -blockId ,-replicaDetails " options are missed
+    out in usage and from documentation (J.Andreina via vinayakumarb)
+
+    HDFS-8470. fsimage loading progress should update inode, delegation token and
+    cache pool count. (surendra singh lilhore via vinayakumarb)
+
+    HDFS-3716. Purger should remove stale fsimage ckpt files
+    (J.Andreina via vinayakumarb)
+
+    HDFS-8463. Calling DFSInputStream.seekToNewSource just after stream creation
+    causes NullPointerException (Masatake Iwasaki via kihwal)
+
+    HDFS-8539. Hdfs doesnt have class 'debug' in windows.
+    (Anu Engineer via cnauroth)
+
+    HDFS-8554. TestDatanodeLayoutUpgrade fails on Windows. (cnauroth)
+
+    HDFS-8593. Calculation of effective layout version mishandles comparison to
+    current layout version in storage. (cnauroth)
+
 Release 2.7.1 - UNRELEASED
 
   INCOMPATIBLE CHANGES
@@ -494,6 +573,9 @@ Release 2.7.1 - UNRELEASED
 
     HDFS-8213. DFSClient should use hdfs.client.htrace HTrace configuration
     prefix rather than hadoop.htrace (cmccabe)
+
+    HDFS-8521. Add VisibleForTesting annotation to
+    BlockPoolSlice#selectReplicaToDelete. (cmccabe)
 
   OPTIMIZATIONS
 
@@ -562,6 +644,29 @@ Release 2.7.1 - UNRELEASED
 
     HDFS-8451. DFSClient probe for encryption testing interprets empty URI
     property for "enabled". (Steve Loughran via xyao)
+
+    HDFS-8486. DN startup may cause severe data loss (Daryn Sharp via Colin P.
+    McCabe)
+
+    HDFS-8270. create() always retried with hardcoded timeout when file already
+    exists with open lease (J.Andreina via vinayakumarb)
+
+    HDFS-8523. Remove usage information on unsupported operation
+    "fsck -showprogress" from branch-2 (J.Andreina via vinayakumarb)
+
+    HDFS-8522. Change heavily recorded NN logs from INFO to DEBUG level. (xyao)
+
+    HDFS-8566. HDFS documentation about debug commands wrongly identifies them
+    as "hdfs dfs" commands (Surendra Singh Lilhore via Colin P. McCabe)
+
+    HDFS-8583. Document that NFS gateway does not work with rpcbind
+    on SLES 11. (Arpit Agarwal)
+
+    HDFS-8572. DN always uses HTTP/localhost@REALM principals in SPNEGO.
+    (wheat9)
+
+    HDFS-8596. TestDistributedFileSystem et al tests are broken in branch-2
+    due to incorrect setting of "datanode" attribute. (Yongjun Zhang)
 
 Release 2.7.0 - 2015-04-20
 

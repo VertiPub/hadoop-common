@@ -1567,6 +1567,41 @@
 <!-- MR YARN Application properties -->
 
 <property>
+ <name>mapreduce.job.node-label-expression</name>
+  <description>All the containers of the Map Reduce job will be run with this
+  node label expression. If the node-label-expression for job is not set, then
+  it will use queue's default-node-label-expression for all job's containers.
+  </description>
+</property>
+
+<property>
+  <name>mapreduce.job.am.node-label-expression</name>
+  <description>This is node-label configuration for Map Reduce Application Master
+  container. If not configured it will make use of
+  mapreduce.job.node-label-expression and if job's node-label expression is not
+  configured then it will use queue's default-node-label-expression.
+  </description>
+</property>
+
+<property>
+ <name>mapreduce.map.node-label-expression</name>
+  <description>This is node-label configuration for Map task containers. If not
+  configured it will use mapreduce.job.node-label-expression and if job's
+  node-label expression is not configured then it will use queue's
+  default-node-label-expression.
+  </description>
+</property>
+
+<property>
+  <name>mapreduce.reduce.node-label-expression</name>
+  <description>This is node-label configuration for Reduce task containers. If
+  not configured it will use mapreduce.job.node-label-expression and if job's
+  node-label expression is not configured then it will use queue's
+  default-node-label-expression.
+  </description>
+</property>
+
+<property>
  <name>mapreduce.job.counters.limit</name>
   <value>120</value>
   <description>Limit on the number of user counters allowed per job.
@@ -1946,6 +1981,12 @@
   </description>
 </property>
 
+<property>
+   <name>mapreduce.jvm.system-properties-to-log</name>
+   <value>os.name,os.version,java.home,java.runtime.version,java.vendor,java.version,java.vm.name,java.class.path,java.io.tmpdir,user.dir,user.name</value>
+   <description>Comma-delimited list of system properties to log on mapreduce JVM start</description>
+</property>
+
 <!-- jobhistory properties -->
 
 <property>
@@ -2115,6 +2156,14 @@
     The following values are supported:
     - HTTP_ONLY : Service is provided only on http
     - HTTPS_ONLY : Service is provided only on https
+  </description>
+</property>
+
+<property>
+  <name>mapreduce.jobhistory.jobname.limit</name>
+  <value>50</value>
+  <description>
+     Number of characters allowed for job name in Job History Server web page.
   </description>
 </property>
 

@@ -631,8 +631,8 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
           fetchBlockAt(target);
         } else {
           connectFailedOnce = true;
-          DFSClient.LOG.warn("Failed to connect to " + targetAddr + " for block"
-            + ", add to deadNodes and continue. " + ex, ex);
+          DFSClient.LOG.warn("Failed to connect to " + targetAddr + " for block "
+            +targetBlock.getBlock()+ ", add to deadNodes and continue. " + ex, ex);
           // Put chosen node into dead list, continue
           addToDeadNodes(chosenNode);
         }
@@ -1533,6 +1533,9 @@ implements ByteBufferReadable, CanSetDropBehind, CanSetReadahead,
    */
   @Override
   public synchronized boolean seekToNewSource(long targetPos) throws IOException {
+    if (currentNode == null) {
+      return seekToBlockSource(targetPos);
+    }
     boolean markedDead = deadNodes.containsKey(currentNode);
     addToDeadNodes(currentNode);
     DatanodeInfo oldNode = currentNode;
