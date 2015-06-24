@@ -155,6 +155,12 @@ Release 2.8.0 - UNRELEASED
     HADOOP-11971. Move test utilities for tracing from hadoop-hdfs to
     hadoop-common. (Masatake Iwasaki via aajisaka)
 
+    HADOOP-11965. determine-flaky-tests needs a summary mode.
+    (Yufei Gu via Yongjun Zhang)
+
+    HADOOP-7139. Allow appending to existing SequenceFiles
+    (kanaka kumar avvaru via vinayakumarb)
+
   OPTIMIZATIONS
 
     HADOOP-11785. Reduce the number of listStatus operation in distcp
@@ -368,6 +374,15 @@ Release 2.8.0 - UNRELEASED
     HADOOP-12074. in Shell.java#runCommand() rethrow InterruptedException as
     InterruptedIOException (Lavkesh Lahngir via vinayakumarb)
 
+    HADOOP-12001. Fixed LdapGroupsMapping to include configurable Posix UID and
+    GID attributes during the search. (Patrick White via vinodkv)
+
+    HADOOP-12095. org.apache.hadoop.fs.shell.TestCount fails.
+    (Brahma Reddy Battula via aajisaka)
+
+    HADOOP-12076. Incomplete Cache Mechanism in CredentialProvider API.
+    (Larry McCay via cnauroth)
+
 Release 2.7.1 - UNRELEASED
 
   INCOMPATIBLE CHANGES
@@ -375,6 +390,9 @@ Release 2.7.1 - UNRELEASED
   NEW FEATURES
 
   IMPROVEMENTS
+
+    HADOOP-12103. Small refactoring of DelegationTokenAuthenticationFilter to
+    allow code sharing. (Yongjun Zhang)
 
   OPTIMIZATIONS
 
@@ -414,6 +432,10 @@ Release 2.7.1 - UNRELEASED
 
     HADOOP-12078. The default retry policy does not handle RetriableException
     correctly. (Arpit Agarwal)
+
+    HADOOP-12100. ImmutableFsPermission should not override applyUmask since
+    that method doesn't modify the FsPermission (Bibin A Chundatt via Colin P.
+    McCabe)
 
 Release 2.7.0 - 2015-04-20
 

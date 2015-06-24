@@ -36,8 +36,6 @@ import java.util.StringTokenizer;
 
 import javax.ws.rs.core.MediaType;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.CommonConfigurationKeys;
@@ -81,6 +79,8 @@ import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenSelect
 import org.apache.hadoop.util.Progressable;
 import org.apache.hadoop.util.StringUtils;
 import org.codehaus.jackson.map.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -89,7 +89,8 @@ import com.google.common.collect.Lists;
 /** A FileSystem for HDFS over the web. */
 public class WebHdfsFileSystem extends FileSystem
     implements DelegationTokenRenewer.Renewable, TokenAspect.TokenManagementDelegator {
-  public static final Log LOG = LogFactory.getLog(WebHdfsFileSystem.class);
+  public static final Logger LOG = LoggerFactory
+      .getLogger(WebHdfsFileSystem.class);
   /** WebHdfs version. */
   public static final int VERSION = 1;
   /** Http URI: http://namenode:port/{PATH_PREFIX}/path/to/file */
@@ -110,6 +111,7 @@ public class WebHdfsFileSystem extends FileSystem
   protected Text tokenServiceName;
   private RetryPolicy retryPolicy = null;
   private Path workingDir;
+  private Path cachedHomeDirectory;
   private InetSocketAddress nnAddrs[];
   private int currentNNAddrIndex;
   private boolean disallowFallbackToInsecureCluster;
@@ -192,7 +194,7 @@ public class WebHdfsFileSystem extends FileSystem
               failoverSleepMaxMillis);
     }
 
-    this.workingDir = getHomeDirectory();
+    this.workingDir = makeQualified(new Path(getHomeDirectoryString(ugi)));
     this.canRefreshDelegationToken = UserGroupInformation.isSecurityEnabled();
     this.disallowFallbackToInsecureCluster = !conf.getBoolean(
         CommonConfigurationKeys.IPC_CLIENT_FALLBACK_TO_SIMPLE_AUTH_ALLOWED_KEY,
@@ -206,7 +208,7 @@ public class WebHdfsFileSystem extends FileSystem
   }
 
   /** Is WebHDFS enabled in conf? */
-  public static boolean isEnabled(final Configuration conf, final Log log) {
+  public static boolean isEnabled(final Configuration conf) {
     final boolean b = conf.getBoolean(
         HdfsClientConfigKeys.DFS_WEBHDFS_ENABLED_KEY,
         HdfsClientConfigKeys.DFS_WEBHDFS_ENABLED_DEFAULT);
@@ -227,14 +229,14 @@ public class WebHdfsFileSystem extends FileSystem
       // to get another token to match hdfs/rpc behavior
       if (token != null) {
         if(LOG.isDebugEnabled()) {
-          LOG.debug("Using UGI token: " + token);
+          LOG.debug("Using UGI token: {}", token);
         }
         canRefreshDelegationToken = false;
       } else {
         token = getDelegationToken(null);
         if (token != null) {
           if(LOG.isDebugEnabled()) {
-            LOG.debug("Fetched new token: " + token);
+            LOG.debug("Fetched new token: {}", token);
           }
         } else { // security is disabled
           canRefreshDelegationToken = false;
@@ -251,7 +253,7 @@ public class WebHdfsFileSystem extends FileSystem
     if (canRefreshDelegationToken) {
       Token<?> token = getDelegationToken(null);
       if(LOG.isDebugEnabled()) {
-        LOG.debug("Replaced expired token: " + token);
+        LOG.debug("Replaced expired token: {}", token);
       }
       setDelegationToken(token);
       replaced = (token != null);
@@ -276,14 +278,35 @@ public class WebHdfsFileSystem extends FileSystem
     return NetUtils.getCanonicalUri(uri, getDefaultPort());
   }
 
-  /** @return the home directory. */
+  /** @return the home directory */
+  @Deprecated
   public static String getHomeDirectoryString(final UserGroupInformation ugi) {
     return "/user/" + ugi.getShortUserName();
   }
 
   @Override
   public Path getHomeDirectory() {
-    return makeQualified(new Path(getHomeDirectoryString(ugi)));
+    if (cachedHomeDirectory == null) {
+      final HttpOpParam.Op op = GetOpParam.Op.GETHOMEDIRECTORY;
+      try {
+        String pathFromDelegatedFS = new FsPathResponseRunner<String>(op, null,
+            new UserParam(ugi)) {
+          @Override
+          String decodeResponse(Map<?, ?> json) throws IOException {
+            return JsonUtilClient.getPath(json);
+          }
+        }   .run();
+
+        cachedHomeDirectory = new Path(pathFromDelegatedFS).makeQualified(
+            this.getUri(), null);
+
+      } catch (IOException e) {
+        LOG.error("Unable to get HomeDirectory from original File System", e);
+        cachedHomeDirectory = new Path("/user/" + ugi.getShortUserName())
+            .makeQualified(this.getUri(), null);
+      }
+    }
+    return cachedHomeDirectory;
   }
 
   @Override
@@ -293,12 +316,13 @@ public class WebHdfsFileSystem extends FileSystem
 
   @Override
   public synchronized void setWorkingDirectory(final Path dir) {
-    String result = makeAbsolute(dir).toUri().getPath();
+    Path absolutePath = makeAbsolute(dir);
+    String result = absolutePath.toUri().getPath();
     if (!DFSUtilClient.isValidName(result)) {
       throw new IllegalArgumentException("Invalid DFS directory name " +
                                          result);
     }
-    workingDir = makeAbsolute(dir);
+    workingDir = absolutePath;
   }
 
   private Path makeAbsolute(Path f) {
@@ -416,7 +440,7 @@ public class WebHdfsFileSystem extends FileSystem
     final URL url = new URL(getTransportScheme(), nnAddr.getHostName(),
           nnAddr.getPort(), path + '?' + query);
     if (LOG.isTraceEnabled()) {
-      LOG.trace("url=" + url);
+      LOG.trace("url={}", url);
     }
     return url;
   }
@@ -453,7 +477,7 @@ public class WebHdfsFileSystem extends FileSystem
         + Param.toSortedString("&", parameters);
     final URL url = getNamenodeURL(path, query);
     if (LOG.isTraceEnabled()) {
-      LOG.trace("url=" + url);
+      LOG.trace("url={}", url);
     }
     return url;
   }
@@ -644,9 +668,9 @@ public class WebHdfsFileSystem extends FileSystem
               a.action == RetryPolicy.RetryAction.RetryDecision.FAILOVER_AND_RETRY;
 
           if (isRetry || isFailoverAndRetry) {
-            LOG.info("Retrying connect to namenode: " + nnAddr
-                + ". Already tried " + retry + " time(s); retry policy is "
-                + retryPolicy + ", delay " + a.delayMillis + "ms.");
+            LOG.info("Retrying connect to namenode: {}. Already tried {}"
+                + " time(s); retry policy is {}, delay {}ms.", nnAddr, retry,
+                retryPolicy, a.delayMillis);
 
             if (isFailoverAndRetry) {
               resetStateToFailOver();
@@ -743,7 +767,7 @@ public class WebHdfsFileSystem extends FileSystem
         final IOException ioe =
             new IOException("Response decoding failure: "+e.toString(), e);
         if (LOG.isDebugEnabled()) {
-          LOG.debug(ioe);
+          LOG.debug("Response decoding failure: {}", e.toString(), e);
         }
         throw ioe;
       } finally {
@@ -1198,7 +1222,7 @@ public class WebHdfsFileSystem extends FileSystem
       }
     } catch (IOException ioe) {
       if (LOG.isDebugEnabled()) {
-        LOG.debug("Token cancel failed: " + ioe);
+        LOG.debug("Token cancel failed: ", ioe);
       }
     } finally {
       super.close();

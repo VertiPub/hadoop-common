@@ -289,6 +289,44 @@ Release 2.8.0 - UNRELEASED
     HDFS-8499. Refactor BlockInfo class hierarchy with static helper class.
     (Zhe Zhang via wang)
 
+    HDFS-8540.  Mover should exit with NO_MOVE_BLOCK if no block can be moved.
+    (surendra singh lilhore via szetszwo)
+
+    HDFS-8606. Cleanup DFSOutputStream by removing unwanted changes
+    from HDFS-8386. (Rakesh R via szetszwo)
+
+    HDFS-8238. Move ClientProtocol to the hdfs-client.
+    (Takanobu Asanuma via wheat9)
+
+    HDFS-8446. Separate safemode related operations in GetBlockLocations().
+    (wheat9)
+
+    HDFS-8589. Fix unused imports in BPServiceActor and BlockReportLeaseManager
+    (cmccabe)
+
+    HDFS-6249. Output AclEntry in PBImageXmlWriter.
+    (surendra singh lilhore via aajisaka)
+
+    HDFS-8605. Merge Refactor of DFSOutputStream from HDFS-7285 branch.
+    (vinayakumarb via wang)
+
+    HDFS-8582. Support getting a list of reconfigurable config properties and
+    do not generate spurious reconfig warnings (Lei (Eddy) Xu via Colin P.
+    McCabe)
+
+    HDFS-8192. Eviction should key off used locked memory instead of
+    ram disk free space. (Arpit Agarwal)
+
+    HDFS-9608. Merge HDFS-7912 to trunk and branch-2 (track BlockInfo instead
+    of Block in UnderReplicatedBlocks and PendingReplicationBlocks).
+    (Zhe Zhang via wang)
+
+    HDFS-6564. Use slf4j instead of common-logging in hdfs-client.
+    (Rakesh R via wheat9)
+
+    HDFS-8639. Add Option for NameNode HTTP port in MiniDFSClusterManager.
+    (Kai Sasaki via jing9)
+
   OPTIMIZATIONS
 
     HDFS-8026. Trace FSOutputSummer#writeChecksumChunks rather than
@@ -552,6 +590,29 @@ Release 2.8.0 - UNRELEASED
     HDFS-8593. Calculation of effective layout version mishandles comparison to
     current layout version in storage. (cnauroth)
 
+    HDFS-8607. TestFileCorruption doesn't work as expected. (Walter Su via
+    Arpit Agarwal)
+
+    HDFS-8592. SafeModeException never get unwrapped. (wheat9)
+
+    HDFS-8548. Minicluster throws NPE on shutdown.
+    (surendra singh lilhore via xyao)
+
+    HDFS-8551. Fix hdfs datanode CLI usage message.
+    (Brahma Reddy Battula via xyao)
+
+    HDFS-8615. Correct HTTP method in WebHDFS document.
+    (Brahma Reddy Battula via aajisaka)
+
+    HDFS-8337. Accessing httpfs via webhdfs doesn't work from a jar with
+    kerberos. (Yongjun Zhang)
+
+    HDFS-4366. Block Replication Policy Implementation May Skip Higher-Priority
+    Blocks for Lower-Priority Blocks (Derek Dagit via kihwal)
+
+    HDFS-8542. WebHDFS getHomeDirectory behavior does not match specification.
+    (Kanaka Kumar Avvaru via jghoman)
+
 Release 2.7.1 - UNRELEASED
 
   INCOMPATIBLE CHANGES
@@ -577,7 +638,17 @@ Release 2.7.1 - UNRELEASED
     HDFS-8521. Add VisibleForTesting annotation to
     BlockPoolSlice#selectReplicaToDelete. (cmccabe)
 
+    HDFS-8361. Choose SSD over DISK in block placement.  (szetszwo)
+
+    HDFS-7546. Document, and set an accepting default for
+    dfs.namenode.kerberos.principal.pattern (Harsh J via aw)
+
+    HDFS-7164. Feature documentation for HDFS-6581. (Arpit Agarwal)
+
   OPTIMIZATIONS
+    HDFS-8480. Fix performance and timeout issues in HDFS-7929 by using
+    hard-links to preserve old edit logs, instead of copying them. (Zhe Zhang
+    via Colin P. McCabe)
 
   BUG FIXES
 
@@ -667,6 +738,25 @@ Release 2.7.1 - UNRELEASED
 
     HDFS-8596. TestDistributedFileSystem et al tests are broken in branch-2
     due to incorrect setting of "datanode" attribute. (Yongjun Zhang)
+
+    HDFS-8595. TestCommitBlockSynchronization fails in branch-2.7. (Patch
+    applies to all branches). (Arpit Agarwal)
+
+    HDFS-8576.  Lease recovery should return true if the lease can be released
+    and the file can be closed.  (J.Andreina via szetszwo)
+
+    HDFS-8544. Incorrect port specified in HFTP Guide document in branch-2.
+    (Brahma Reddy Battula via Yongjun Zhang)
+
+    HDFS-8597. Fix TestFSImage#testZeroBlockSize on Windows. (Xiaoyu Yao)
+
+    HDFS-4660. Block corruption can happen during pipeline recovery (kihwal)
+
+    HDFS-8633. Fix setting of dfs.datanode.readahead.bytes in hdfs-default.xml
+    to match DFSConfigKeys. (Ray Chiang via Yongjun Zhang)
+
+    HDFS-8626. Reserved RBW space is not released if creation of RBW File
+    fails. (kanaka kumar avvaru via Arpit Agarwal)
 
 Release 2.7.0 - 2015-04-20
 
