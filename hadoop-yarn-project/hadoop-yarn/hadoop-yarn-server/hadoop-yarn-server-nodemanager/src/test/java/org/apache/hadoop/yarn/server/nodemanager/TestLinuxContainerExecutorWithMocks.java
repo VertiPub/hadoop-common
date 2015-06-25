@@ -110,9 +110,8 @@ public class TestLinuxContainerExecutorWithMocks {
     dirsHandler.init(conf);
     PrivilegedOperationExecutor.initializeInstance(conf);
     linuxContainerRuntime.initialize(conf);
-    mockExec = new LinuxContainerExecutor();
+    mockExec = new LinuxContainerExecutor(linuxContainerRuntime);
     mockExec.setConf(conf);
-    mockExec.setLinuxContainerRuntime(linuxContainerRuntime);
   }
 
   @After
@@ -253,13 +252,15 @@ public class TestLinuxContainerExecutorWithMocks {
     conf.set(YarnConfiguration.NM_LOCAL_DIRS, "file:///bin/echo");
     conf.set(YarnConfiguration.NM_LOG_DIRS, "file:///dev/null");
 
-    LinuxContainerExecutor exec = new LinuxContainerExecutor();
+
+    LinuxContainerExecutor exec;
     LinuxContainerRuntime linuxContainerRuntime = new
         StandardLinuxContainerRuntime();
 
     PrivilegedOperationExecutor.initializeInstance(conf);
     linuxContainerRuntime.initialize(conf);
-    exec.setLinuxContainerRuntime(linuxContainerRuntime);
+    exec = new LinuxContainerExecutor(linuxContainerRuntime);
+
     mockExec = spy(exec);
     doAnswer(
         new Answer() {

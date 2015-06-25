@@ -20,16 +20,6 @@ package org.apache.hadoop.yarn.server.nodemanager;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Optional;
-
-import java.io.File;
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.regex.Pattern;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -47,12 +37,12 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Cont
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperation;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperationException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperationExecutor;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.DelegatingLinuxContainerRuntime;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.LinuxContainerRuntime;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.ContainerLocalizer;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandler;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resources.ResourceHandlerModule;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.DelegatingLinuxContainerRuntime;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.LinuxContainerRuntime;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.localizer.ContainerLocalizer;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntimeContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerLivenessContext;
@@ -65,11 +55,20 @@ import org.apache.hadoop.yarn.server.nodemanager.util.DefaultLCEResourcesHandler
 import org.apache.hadoop.yarn.server.nodemanager.util.LCEResourcesHandler;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 
+import java.io.File;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
+
 import static org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.LinuxContainerRuntimeConstants.*;
 
 /** Container execution for Linux. Provides linux-specific localization
  * mechanisms, resource management via cgroups and can switch between multiple
- * container runtimes - e.g Standard "Process Tree", Docker, Appc
+ * container runtimes - e.g Standard "Process Tree", Docker etc
  */
 
 public class LinuxContainerExecutor extends ContainerExecutor {
@@ -86,6 +85,14 @@ public class LinuxContainerExecutor extends ContainerExecutor {
   private boolean containerLimitUsers;
   private ResourceHandler resourceHandlerChain;
   private LinuxContainerRuntime linuxContainerRuntime;
+
+  public LinuxContainerExecutor() {
+  }
+
+  // created primarily for testing
+  public LinuxContainerExecutor(LinuxContainerRuntime linuxContainerRuntime) {
+    this.linuxContainerRuntime = linuxContainerRuntime;
+  }
 
   @Override
   public void setConf(Configuration conf) {
@@ -134,7 +141,6 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       return nonsecureLocalUser;
     }
   }
-
 
 
   /**
@@ -221,7 +227,6 @@ public class LinuxContainerExecutor extends ContainerExecutor {
     Configuration conf = super.getConf();
 
     try {
-
       resourceHandlerChain = ResourceHandlerModule
           .getConfiguredResourceHandlerChain(conf);
       if (resourceHandlerChain != null) {
@@ -233,22 +238,18 @@ public class LinuxContainerExecutor extends ContainerExecutor {
     }
 
     try {
-      LinuxContainerRuntime runtime = new DelegatingLinuxContainerRuntime();
-      runtime.initialize(conf);
+      if (linuxContainerRuntime == null) {
+        LinuxContainerRuntime runtime = new DelegatingLinuxContainerRuntime();
 
-      setLinuxContainerRuntime(runtime);
+        runtime.initialize(conf);
+        this.linuxContainerRuntime = runtime;
+      }
     } catch (ContainerExecutionException e) {
      throw new IOException("Failed to initialize linux container runtime(s)!");
     }
 
     resourcesHandler.init(this);
   }
-
-  @VisibleForTesting
-  void setLinuxContainerRuntime(LinuxContainerRuntime linuxContainerRuntime) {
-    this.linuxContainerRuntime = linuxContainerRuntime;
-  }
-
 
   @Override
   public void startLocalizer(LocalizerStartContext ctx)
@@ -534,7 +535,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
 
   @Override
   public void deleteAsUser(DeletionAsUserContext ctx) {
-    /*String user = ctx.getUser();
+    String user = ctx.getUser();
     Path dir = ctx.getSubDir();
     List<Path> baseDirs = ctx.getBasedirs();
 
@@ -577,7 +578,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
           + " returned with exit code: " + exitCode, e);
       LOG.error("Output from LinuxContainerExecutor's deleteAsUser follows:");
       logOutput(shExec.getOutput());
-    }*/
+    }
   }
   
   @Override
