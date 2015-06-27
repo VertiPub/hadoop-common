@@ -1064,14 +1064,6 @@ int run_docker(const char *command_file) {
   char **args = extract_values_delim(docker_command_with_binary, " ");
 
   int exit_code = -1;
-  fprintf(LOGFILE, "docker_args: ");
-  int i = 0;
-  for(i = 0; args[i] != '\0'; i++)
-  {
-    fprintf(LOGFILE, ", %s", args[i]);
-  }
-  fprintf(LOGFILE, "\n");
-  fflush(LOGFILE);
   if (execvp(docker_binary, args) != 0) {
     fprintf(ERRORFILE, "Couldn't execute the container launch with args %s - %s",
               docker_binary, strerror(errno));
@@ -1210,8 +1202,6 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
   }
 
   sprintf(docker_command_with_binary, "%s %s", docker_binary, docker_command);
-  fprintf(LOGFILE, "invoking docker %s\n", docker_command_with_binary);
-  fflush(LOGFILE);
   //first invoke the initial command
   FILE* start_docker = popen(docker_command_with_binary, "r");
   if (pclose (start_docker) != 0)
@@ -1222,8 +1212,6 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
       exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
       goto cleanup;
   }
-  fprintf (LOGFILE, "launched docker.\n");
-   fflush(LOGFILE);
   //now docker inspect
   sprintf(docker_inspect_command,
     "%s inspect --format {{.State.Pid}} %s",
@@ -1232,9 +1220,6 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
   FILE* inspect_docker = popen(docker_inspect_command, "r");
   int pid = 0;
   fscanf (inspect_docker, "%d", &pid);
-  fprintf (LOGFILE,
-       "Found pid... %d.\n", pid);
-  fflush(LOGFILE);
     if (pclose (inspect_docker) != 0)
     {
       fprintf (ERRORFILE,
@@ -1271,8 +1256,6 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
     //now attach docker if container is alive
     sprintf(docker_attach_command,
       "%s attach --sig-proxy=true %s", docker_binary, container_id);
-    fprintf (LOGFILE, "docker attach command %s.\n", docker_attach_command);
-    fflush(LOGFILE);
     FILE* attach_docker = popen(docker_attach_command, "r");
     if (pclose (attach_docker) != 0)
     {
@@ -1284,8 +1267,6 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
   //now rm docker
   sprintf(docker_rm_command,
     "%s rm %s", docker_binary, container_id);
-  fprintf (LOGFILE, "docker remove command %s.\n", docker_rm_command);
-    fflush(LOGFILE);
   FILE* rm_docker = popen(docker_rm_command, "w");
   if (pclose (rm_docker) != 0)
   {
