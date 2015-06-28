@@ -24,8 +24,10 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -39,6 +41,7 @@ import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
@@ -55,6 +58,7 @@ import org.apache.hadoop.yarn.server.nodemanager.executor.LocalizerStartContext;
 import org.apache.hadoop.yarn.server.nodemanager.util.ProcessIdFileReader;
 import org.apache.hadoop.util.Shell;
 import org.apache.hadoop.util.StringUtils;
+import sun.misc.Signal;
 
 public abstract class ContainerExecutor implements Configurable {
 
@@ -245,9 +249,24 @@ public abstract class ContainerExecutor implements Configurable {
     Map<Path, List<String>> resources, List<String> command) throws IOException{
     ContainerLaunch.ShellScriptBuilder sb =
       ContainerLaunch.ShellScriptBuilder.create();
+    Set<String> whitelist = new HashSet<String>();
+    whitelist.add(YarnConfiguration.NM_DOCKER_CONTAINER_EXECUTOR_IMAGE_NAME);
+    whitelist.add(ApplicationConstants.Environment.HADOOP_YARN_HOME.name());
+    whitelist.add(ApplicationConstants.Environment.HADOOP_COMMON_HOME.name());
+    whitelist.add(ApplicationConstants.Environment.HADOOP_HDFS_HOME.name());
+    whitelist.add(ApplicationConstants.Environment.HADOOP_CONF_DIR.name());
+    whitelist.add(ApplicationConstants.Environment.JAVA_HOME.name());
+    whitelist.add(YarnConfiguration.ENV_CONTAINER_TYPE);
+    whitelist.add(YarnConfiguration.ENV_DOCKER_CONTAINER_IMAGE);
+    whitelist.add(YarnConfiguration.ENV_DOCKER_CONTAINER_IMAGE_FILE);
+    whitelist.add(YarnConfiguration.ENV_DOCKER_CONTAINER_DISABLE_RUN_OVERRIDE);
     if (environment != null) {
       for (Map.Entry<String,String> env : environment.entrySet()) {
-        sb.env(env.getKey().toString(), env.getValue().toString());
+        if (!whitelist.contains(env.getKey())) {
+          sb.env(env.getKey().toString(), env.getValue().toString());
+        } else {
+          sb.whitelistedEnv(env.getKey().toString(), env.getValue().toString());
+        }
       }
     }
     if (resources != null) {

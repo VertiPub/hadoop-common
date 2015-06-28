@@ -67,8 +67,16 @@ public class YarnConfiguration extends Configuration {
 
   @Evolving
   public static final int APPLICATION_MAX_TAG_LENGTH = 100;
+    public static final String ENV_CONTAINER_TYPE =
+          "yarn.container-runtime.type";
+    public static final String ENV_DOCKER_CONTAINER_IMAGE =
+              "yarn.container-runtime.docker.image";
+    public static final String ENV_DOCKER_CONTAINER_IMAGE_FILE =
+                  "yarn.container-runtime.docker.image-file";
+    public static final String ENV_DOCKER_CONTAINER_DISABLE_RUN_OVERRIDE =
+                      "yarn.container-runtime.docker.run.override.disable";
 
-  static {
+static {
     addDeprecatedKeys();
     Configuration.addDefaultResource(YARN_DEFAULT_CONFIGURATION_FILE);
     Configuration.addDefaultResource(YARN_SITE_CONFIGURATION_FILE);
