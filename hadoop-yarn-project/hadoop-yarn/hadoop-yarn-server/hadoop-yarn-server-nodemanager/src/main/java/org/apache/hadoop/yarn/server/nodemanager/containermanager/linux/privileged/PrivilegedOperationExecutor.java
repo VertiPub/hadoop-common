@@ -92,8 +92,6 @@ public class PrivilegedOperationExecutor {
     instance = new PrivilegedOperationExecutor(conf);
   }
 
-
-
   /**
    * @param prefixCommands in some cases ( e.g priorities using nice ),
    *                       prefix commands are necessary
