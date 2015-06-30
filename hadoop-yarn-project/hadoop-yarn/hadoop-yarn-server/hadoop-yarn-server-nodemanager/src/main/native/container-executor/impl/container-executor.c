@@ -1059,7 +1059,7 @@ char* parse_docker_command_file(const char* command_file) {
 int run_docker(const char *command_file) {
   char* docker_command = parse_docker_command_file(command_file);
   char* docker_binary = get_value(DOCKER_BINARY_KEY);
-  char* docker_command_with_binary = calloc(sizeof(char), strlen(docker_command) + 1);
+  char* docker_command_with_binary = calloc(sizeof(char), PATH_MAX);
   sprintf(docker_command_with_binary, "%s %s", docker_binary, docker_command);
   char **args = extract_values_delim(docker_command_with_binary, " ");
 
@@ -1093,11 +1093,11 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
   char *exit_code_file = NULL;
   char *docker_command = parse_docker_command_file(command_file);
   char *docker_binary = get_value(DOCKER_BINARY_KEY);
-  int length = strlen(docker_command) + strlen(docker_binary);
-  char *docker_command_with_binary[length];
-  char *docker_attach_command[length];
-  char *docker_inspect_command[length];
-  char *docker_rm_command[length];
+
+  char *docker_command_with_binary[PATH_MAX];
+  char *docker_attach_command[PATH_MAX];
+  char *docker_inspect_command[PATH_MAX];
+  char *docker_rm_command[PATH_MAX];
 
   script_file_dest = get_container_launcher_file(work_dir);
   if (script_file_dest == NULL) {
@@ -1215,7 +1215,7 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
   //now docker inspect
   sprintf(docker_inspect_command,
     "%s inspect --format {{.State.Pid}} %s",
-    docker_binary, container_id, pid_file);
+    docker_binary, container_id);
 
   FILE* inspect_docker = popen(docker_inspect_command, "r");
   int pid = 0;
