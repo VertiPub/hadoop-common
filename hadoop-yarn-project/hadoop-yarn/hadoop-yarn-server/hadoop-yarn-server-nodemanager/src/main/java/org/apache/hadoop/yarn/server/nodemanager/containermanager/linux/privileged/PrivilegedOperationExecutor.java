@@ -76,20 +76,12 @@ public class PrivilegedOperationExecutor {
     if (instance == null) {
       synchronized (PrivilegedOperationExecutor.class) {
         if (instance == null) {
-          initializeInstance(conf);
+          instance = new PrivilegedOperationExecutor(conf);
         }
       }
     }
 
     return instance;
-  }
-
-  //It looks like there are test cases that want to switch between
-  // 'container-executor's - so we'll need a way to initialize and 'reset' this
-  // instance somehow.
-  @VisibleForTesting
-  public static void initializeInstance(Configuration conf) {
-    instance = new PrivilegedOperationExecutor(conf);
   }
 
   /**

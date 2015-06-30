@@ -129,7 +129,11 @@ public final class ContainerStartContext {
   }
 
   public Map<Path, List<String>> getLocalizedResources() {
-    return Collections.unmodifiableMap(this.localizedResources);
+    if (this.localizedResources != null) {
+      return Collections.unmodifiableMap(this.localizedResources);
+    } else {
+      return null;
+    }
   }
 
   public Path getNmPrivateContainerScriptPath() {

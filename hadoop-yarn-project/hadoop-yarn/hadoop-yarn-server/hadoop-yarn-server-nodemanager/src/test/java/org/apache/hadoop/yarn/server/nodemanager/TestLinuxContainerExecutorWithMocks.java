@@ -32,6 +32,8 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.LineNumberReader;
 import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -49,8 +51,6 @@ import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerDiagnosticsUpdateEvent;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperation;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperationExecutor;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.LinuxContainerRuntime;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.StandardLinuxContainerRuntime;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
@@ -65,11 +65,19 @@ import org.junit.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
+import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
+
 public class TestLinuxContainerExecutorWithMocks {
 
   private static final Log LOG = LogFactory
       .getLog(TestLinuxContainerExecutorWithMocks.class);
 
+  private static final String MOCK_EXECUTOR =
+      "./src/test/resources/mock-container-executor";
+  private static final String MOCK_EXECUTOR_WITH_ERROR =
+      "./src/test/resources/mock-container-executer-with-error";
+
+  private String tmpMockExecutor;
   private LinuxContainerExecutor mockExec = null;
   private final File mockParamFile = new File("./params.txt");
   private LocalDirsHandlerService dirsHandler;
@@ -92,23 +100,41 @@ public class TestLinuxContainerExecutorWithMocks {
     reader.close();
     return ret;
   }
+
+  private void setupMockExecutor(String executorPath, Configuration conf)
+      throws IOException {
+    //we'll always use the tmpMockExecutor - since
+    // PrivilegedOperationExecutor can only be initialized once.
+
+    Files.copy(Paths.get(executorPath), Paths.get(tmpMockExecutor),
+        REPLACE_EXISTING);
+
+    File executor = new File(tmpMockExecutor);
+
+    if (!FileUtil.canExecute(executor)) {
+      FileUtil.setExecutable(executor, true);
+    }
+    String executorAbsolutePath = executor.getAbsolutePath();
+    conf.set(YarnConfiguration.NM_LINUX_CONTAINER_EXECUTOR_PATH,
+        executorAbsolutePath);
+  }
+
+
   
   @Before
-  public void setup() throws ContainerExecutionException {
+  public void setup() throws IOException, ContainerExecutionException {
     assumeTrue(!Path.WINDOWS);
-    File f = new File("./src/test/resources/mock-container-executor");
-    if(!FileUtil.canExecute(f)) {
-      FileUtil.setExecutable(f, true);
-    }
-    String executorPath = f.getAbsolutePath();
+
+    tmpMockExecutor = System.getProperty("test.build.data") +
+        "/tmp-mock-container-executor";
+
     Configuration conf = new Configuration();
     LinuxContainerRuntime linuxContainerRuntime = new
         StandardLinuxContainerRuntime();
 
-    conf.set(YarnConfiguration.NM_LINUX_CONTAINER_EXECUTOR_PATH, executorPath);
+    setupMockExecutor(MOCK_EXECUTOR, conf);
     dirsHandler = new LocalDirsHandlerService();
     dirsHandler.init(conf);
-    PrivilegedOperationExecutor.initializeInstance(conf);
     linuxContainerRuntime.initialize(conf);
     mockExec = new LinuxContainerExecutor(linuxContainerRuntime);
     mockExec.setConf(conf);
@@ -168,13 +194,8 @@ public class TestLinuxContainerExecutorWithMocks {
   public void testContainerLaunchWithPriority() throws IOException {
 
     // set the scheduler priority to make sure still works with nice -n prio
-    File f = new File("./src/test/resources/mock-container-executor");
-    if (!FileUtil.canExecute(f)) {
-      FileUtil.setExecutable(f, true);
-    }
-    String executorPath = f.getAbsolutePath();
     Configuration conf = new Configuration();
-    conf.set(YarnConfiguration.NM_LINUX_CONTAINER_EXECUTOR_PATH, executorPath);
+    setupMockExecutor(MOCK_EXECUTOR, conf);
     conf.setInt(YarnConfiguration.NM_CONTAINER_EXECUTOR_SCHED_PRIORITY, 2);
 
     mockExec.setConf(conf);
@@ -242,13 +263,8 @@ public class TestLinuxContainerExecutorWithMocks {
       throws IOException, ContainerExecutionException {
 
     // reinitialize executer
-    File f = new File("./src/test/resources/mock-container-executer-with-error");
-    if (!FileUtil.canExecute(f)) {
-      FileUtil.setExecutable(f, true);
-    }
-    String executorPath = f.getAbsolutePath();
     Configuration conf = new Configuration();
-    conf.set(YarnConfiguration.NM_LINUX_CONTAINER_EXECUTOR_PATH, executorPath);
+    setupMockExecutor(MOCK_EXECUTOR_WITH_ERROR, conf);
     conf.set(YarnConfiguration.NM_LOCAL_DIRS, "file:///bin/echo");
     conf.set(YarnConfiguration.NM_LOG_DIRS, "file:///dev/null");
 
@@ -257,7 +273,6 @@ public class TestLinuxContainerExecutorWithMocks {
     LinuxContainerRuntime linuxContainerRuntime = new
         StandardLinuxContainerRuntime();
 
-    PrivilegedOperationExecutor.initializeInstance(conf);
     linuxContainerRuntime.initialize(conf);
     exec = new LinuxContainerExecutor(linuxContainerRuntime);
 
@@ -419,14 +434,9 @@ public class TestLinuxContainerExecutorWithMocks {
         Arrays.asList(YarnConfiguration.DEFAULT_NM_NONSECURE_MODE_LOCAL_USER,
             appSubmitter, cmd, "", baseDir0.toString(), baseDir1.toString()),
         readMockParams());
-
-    File f = new File("./src/test/resources/mock-container-executer-with-error");
-    if (!FileUtil.canExecute(f)) {
-      FileUtil.setExecutable(f, true);
-    }
-    String executorPath = f.getAbsolutePath();
+    ;
     Configuration conf = new Configuration();
-    conf.set(YarnConfiguration.NM_LINUX_CONTAINER_EXECUTOR_PATH, executorPath);
+    setupMockExecutor(MOCK_EXECUTOR, conf);
     mockExec.setConf(conf);
 
     mockExec.deleteAsUser(new DeletionAsUserContext.Builder()
