@@ -1255,8 +1255,9 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
 
     //now attach docker if container is alive
     sprintf(docker_attach_command,
-      "%s attach --sig-proxy=true %s", docker_binary, container_id);
+      "%s wait %s", docker_binary, container_id);
     FILE* attach_docker = popen(docker_attach_command, "r");
+    fscanf (attach_docker, "%d", &exit_code);
     if (pclose (attach_docker) != 0)
     {
       fprintf (ERRORFILE,
@@ -1276,7 +1277,7 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
     exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
     goto cleanup;
   }
- exit_code = 0;
+
 cleanup:
    if (exit_code_file != NULL && write_exit_code_file(exit_code_file, exit_code) < 0) {
      fprintf (ERRORFILE,
