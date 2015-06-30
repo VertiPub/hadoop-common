@@ -142,18 +142,18 @@ class CGroupsHandlerImpl implements CGroupsHandler {
         if (controllerPath != null) {
           File f = new File(controllerPath + "/" + cGroupPrefix);
 
-         // if (FileUtil.canWrite(f)) {
+          if (FileUtil.canWrite(f)) {
             ret.put(controller, controllerPath);
-//          //} else {
-//            String error =
-//                new StringBuffer("Mount point Based on mtab file: ")
-//                  .append(mtab)
-//                  .append(". Controller mount point not writable for: ")
-//                  .append(name).toString();
-//
-//            LOG.error(error);
-//            throw new ResourceHandlerException(error);
-//          }
+          } else {
+            String error =
+                new StringBuffer("Mount point Based on mtab file: ")
+                    .append(mtab)
+                    .append(". Controller mount point not writable for: ")
+                    .append(name).toString();
+
+            LOG.error(error);
+            throw new ResourceHandlerException(error);
+          }
         } else {
           LOG.warn("Controller not mounted but automount disabled: " + name);
         }
@@ -300,28 +300,19 @@ class CGroupsHandlerImpl implements CGroupsHandler {
   }
 
   @Override
-  public String createCGroup(CGroupController controllerIn, String cGroupId)
+  public String createCGroup(CGroupController controller, String cGroupId)
       throws ResourceHandlerException {
-    String retPath = null;
+    String path = getPathForCGroup(controller, cGroupId);
 
-    for (CGroupController controller : CGroupController.values()) {
-      String path = getPathForCGroup(controller, cGroupId);
-
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("createCgroup: " + path);
-      }
-
-      if (!new File(path).mkdirs()) {
-        //throw new ResourceHandlerException(
-          //  "Failed to create cgroup at " + path);
-      }
-
-      if (controller.equals(controllerIn)) {
-        retPath = path;
-      }
-
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("createCgroup: " + path);
     }
-    return retPath;
+
+    if (!new File(path).mkdir()) {
+      throw new ResourceHandlerException("Failed to create cgroup at " + path);
+    }
+
+    return path;
   }
 
   /*

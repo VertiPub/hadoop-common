@@ -146,12 +146,11 @@ public class PrivilegedOperationExecutor {
     ShellCommandExecutor exec = new ShellCommandExecutor(fullCommandArray,
         workingDir, env);
 
-    LOG.warn("command array:");
-    LOG.warn(Arrays.toString(fullCommandArray));
-
     try {
       exec.execute();
       if (LOG.isDebugEnabled()) {
+        LOG.debug("command array:");
+        LOG.debug(Arrays.toString(fullCommandArray));
         LOG.debug("Privileged Execution Operation Output:");
         LOG.debug(exec.getOutput());
       }
