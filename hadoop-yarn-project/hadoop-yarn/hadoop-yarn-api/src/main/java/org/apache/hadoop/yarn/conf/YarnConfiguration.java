@@ -67,7 +67,7 @@ public class YarnConfiguration extends Configuration {
 
   @Evolving
   public static final int APPLICATION_MAX_TAG_LENGTH = 100;
-  
+
   static {
     addDeprecatedKeys();
     Configuration.addDefaultResource(YARN_DEFAULT_CONFIGURATION_FILE);
