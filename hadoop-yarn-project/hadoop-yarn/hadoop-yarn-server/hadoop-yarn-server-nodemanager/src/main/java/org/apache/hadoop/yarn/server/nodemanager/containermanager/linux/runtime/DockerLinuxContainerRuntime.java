@@ -25,10 +25,8 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.StringUtils;
-import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch;
@@ -41,21 +39,14 @@ import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.resource
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.docker.DockerClient;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.docker.DockerRunCommand;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntimeConstants;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerRuntimeContext;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.PrintStream;
+
 import java.util.ArrayList;
-import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
-import static org.apache.hadoop.fs.CreateFlag.CREATE;
-import static org.apache.hadoop.fs.CreateFlag.OVERWRITE;
 import static org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.LinuxContainerRuntimeConstants.*;
 
 @InterfaceAudience.Private
@@ -64,7 +55,18 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
   private static final Log LOG = LogFactory.getLog(
       DockerLinuxContainerRuntime.class);
 
-private Configuration conf;
+  @InterfaceAudience.Private
+  public static final String ENV_DOCKER_CONTAINER_IMAGE =
+      "YARN_CONTAINER_RUNTIME_DOCKER_IMAGE";
+  @InterfaceAudience.Private
+  public static final String ENV_DOCKER_CONTAINER_IMAGE_FILE =
+      "YARN_CONTAINER_RUNTIME_DOCKER_IMAGE_FILE";
+  @InterfaceAudience.Private
+  public static final String ENV_DOCKER_CONTAINER_RUN_OVERRIDE_DISABLE =
+      "YARN_CONTAINER_RUNTIME_DOCKER_RUN_OVERRIDE_DISABLE";
+
+
+  private Configuration conf;
   private DockerClient dockerClient;
 
   public static boolean isDockerContainerRequested(
@@ -73,7 +75,7 @@ private Configuration conf;
       return false;
     }
 
-    String type = env.get(YarnConfiguration.ENV_CONTAINER_TYPE);
+    String type = env.get(ContainerRuntimeConstants.ENV_CONTAINER_TYPE);
 
     return type != null && type.equals("docker");
   }
@@ -132,10 +134,10 @@ private Configuration conf;
     Container container = ctx.getContainer();
     Map<String, String> environment = container.getLaunchContext()
         .getEnvironment();
-    String imageName = environment.get(YarnConfiguration.ENV_DOCKER_CONTAINER_IMAGE);
+    String imageName = environment.get(ENV_DOCKER_CONTAINER_IMAGE);
 
     if (imageName == null) {
-      throw new ContainerExecutionException(YarnConfiguration.ENV_DOCKER_CONTAINER_IMAGE
+      throw new ContainerExecutionException(ENV_DOCKER_CONTAINER_IMAGE
           + " not set!");
     }
 
@@ -165,13 +167,17 @@ private Configuration conf;
 
     String resourcesOpts = ctx.getExecutionAttribute(RESOURCES_OPTIONS);
 
-    addCGroupParentIfRequired(resourcesOpts, containerIdStr, runCommand);
+    /** Disabling docker's cgroup parent support for the time being. Docker
+     * needs to use a more recent libcontainer that supports net_cls. In
+     * addition we also need to revisit current cgroup creation in YARN.
+     */
+    //addCGroupParentIfRequired(resourcesOpts, containerIdStr, runCommand);
 
    Path nmPrivateContainerScriptPath = ctx.getExecutionAttribute(
         NM_PRIVATE_CONTAINER_SCRIPT_PATH);
 
     String disableOverride = environment.get(
-        YarnConfiguration.ENV_DOCKER_CONTAINER_DISABLE_RUN_OVERRIDE);
+        ENV_DOCKER_CONTAINER_RUN_OVERRIDE_DISABLE);
 
     if (disableOverride != null && disableOverride.equals("true")) {
       if (LOG.isInfoEnabled()) {

@@ -58,7 +58,6 @@ import org.apache.hadoop.yarn.server.nodemanager.executor.LocalizerStartContext;
 import org.apache.hadoop.yarn.server.nodemanager.util.ProcessIdFileReader;
 import org.apache.hadoop.util.Shell;
 import org.apache.hadoop.util.StringUtils;
-import sun.misc.Signal;
 
 public abstract class ContainerExecutor implements Configurable {
 
@@ -256,10 +255,6 @@ public abstract class ContainerExecutor implements Configurable {
     whitelist.add(ApplicationConstants.Environment.HADOOP_HDFS_HOME.name());
     whitelist.add(ApplicationConstants.Environment.HADOOP_CONF_DIR.name());
     whitelist.add(ApplicationConstants.Environment.JAVA_HOME.name());
-    whitelist.add(YarnConfiguration.ENV_CONTAINER_TYPE);
-    whitelist.add(YarnConfiguration.ENV_DOCKER_CONTAINER_IMAGE);
-    whitelist.add(YarnConfiguration.ENV_DOCKER_CONTAINER_IMAGE_FILE);
-    whitelist.add(YarnConfiguration.ENV_DOCKER_CONTAINER_DISABLE_RUN_OVERRIDE);
     if (environment != null) {
       for (Map.Entry<String,String> env : environment.entrySet()) {
         if (!whitelist.contains(env.getKey())) {
