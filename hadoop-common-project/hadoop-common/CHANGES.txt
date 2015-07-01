@@ -161,6 +161,15 @@ Release 2.8.0 - UNRELEASED
     HADOOP-7139. Allow appending to existing SequenceFiles
     (kanaka kumar avvaru via vinayakumarb)
 
+    HADOOP-11958. MetricsSystemImpl fails to show backtrace when an error
+    occurs (Jason Lowe via jeagles)
+
+    HADOOP-12158. Improve error message in
+    TestCryptoStreamsWithOpensslAesCtrCryptoCodec when OpenSSL is not
+    installed. (wang)
+
+    HADOOP-12124. Add HTrace support for FsShell (cmccabe)
+
   OPTIMIZATIONS
 
     HADOOP-11785. Reduce the number of listStatus operation in distcp
@@ -180,6 +189,15 @@ Release 2.8.0 - UNRELEASED
 
     HADOOP-11885. hadoop-dist dist-layout-stitching.sh does not work with dash.
     (wang)
+
+    HADOOP-12104. Migrate Hadoop Pipes native build to new CMake framework
+    (alanburlison via cmccabe)
+
+    HADOOP-12036. Consolidate all of the cmake extensions in one directory
+    (alanburlison via cmccabe)
+
+    HADOOP-12112. Make hadoop-common-project Native code -Wall-clean
+    (alanburlison via cmccabe)
 
   BUG FIXES
 
@@ -381,7 +399,43 @@ Release 2.8.0 - UNRELEASED
     (Brahma Reddy Battula via aajisaka)
 
     HADOOP-12076. Incomplete Cache Mechanism in CredentialProvider API.
-    (Larry McCay via cnauroth)
+    (Larry McCay via cnauroth) 
+
+    HADOOP-8151. Error handling in snappy decompressor throws invalid
+    exceptions. (Matt Foley via harsh)
+
+    HADOOP-12119. hadoop fs -expunge does not work for federated namespace
+    (J.Andreina via vinayakumarb)
+
+    HADOOP-12089. StorageException complaining " no lease ID" when updating
+    FolderLastModifiedTime in WASB. (Duo Xu via cnauroth)
+
+    HADOOP-12154. FileSystem#getUsed() returns the file length only from root '/'
+    (J.Andreina via vinayakumarb)
+
+    HADOOP-10798. globStatus() should always return a sorted list of files
+    (cmccabe)
+
+    HADOOP-12159. Move DistCpUtils#compareFs() to org.apache.hadoop.fs.FileUtil
+    and fix for HA namespaces (rchiang via rkanter)
+
+    HADOOP-12116. Fix unrecommended syntax usages in hadoop/hdfs/yarn script for
+    cygwin in branch-2. (Li Lu via cnauroth)
+
+    HADOOP-12164. Fix TestMove and TestFsShellReturnCode failed to get command
+    name using reflection. (lei)
+
+Release 2.7.2 - UNRELEASED
+
+  INCOMPATIBLE CHANGES
+
+  NEW FEATURES
+
+  IMPROVEMENTS
+
+  OPTIMIZATIONS
+
+  BUG FIXES
 
 Release 2.7.1 - UNRELEASED
 

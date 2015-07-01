@@ -45,6 +45,7 @@ function print_usage(){
   echo "  journalnode          run the DFS journalnode"
   echo "  zkfc                 run the ZK Failover Controller daemon"
   echo "  datanode             run a DFS datanode"
+  echo "  debug                run a Debug Admin to execute HDFS debug commands"
   echo "  dfsadmin             run a DFS admin client"
   echo "  haadmin              run a DFS HA admin client"
   echo "  fsck                 run a DFS filesystem checking utility"
@@ -208,7 +209,7 @@ elif [ "$COMMAND" = "classpath" ]; then
     CLASS=org.apache.hadoop.util.Classpath
   else
     # No need to bother starting up a JVM for this simple case.
-    if $cygwin; then
+    if [ "$cygwin" = true ]; then
       CLASSPATH=$(cygpath -p -w "$CLASSPATH" 2>/dev/null)
     fi
     echo $CLASSPATH
@@ -219,7 +220,7 @@ else
 fi
 
 # cygwin path translation
-if $cygwin; then
+if [ "$cygwin" = true ]; then
   CLASSPATH=$(cygpath -p -w "$CLASSPATH" 2>/dev/null)
   HADOOP_LOG_DIR=$(cygpath -w "$HADOOP_LOG_DIR" 2>/dev/null)
   HADOOP_PREFIX=$(cygpath -w "$HADOOP_PREFIX" 2>/dev/null)

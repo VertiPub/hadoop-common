@@ -9,6 +9,8 @@ Release 2.8.0 - UNRELEASED
 
   NEW FEATURES
 
+    YARN-3360. Add JMX metrics to TimelineDataManager (Jason Lowe via jeagles)
+
     YARN-3345. Add non-exclusive node label API. (Wangda Tan via jianhe)
 
     YARN-3365. Enhanced NodeManager to support using the 'tc' tool via
@@ -267,6 +269,9 @@ Release 2.8.0 - UNRELEASED
     YARN-3834. Scrub debug logging of tokens during resource localization.
     (Chris Nauroth via xgong)
 
+    YARN-3827. Migrate YARN native build to new CMake framework (Alan Burlison
+    via Colin P. McCabe)
+
   OPTIMIZATIONS
 
     YARN-3339. TestDockerContainerExecutor should pull a single image and not
@@ -503,6 +508,42 @@ Release 2.8.0 - UNRELEASED
     YARN-3790. usedResource from rootQueue metrics may get stale data for FS
     scheduler after recovering the container (Zhihai Xu via rohithsharmaks)
 
+    YARN-3826. Race condition in ResourceTrackerService leads to
+    wrong diagnostics messages. (Chengbing Liu via devaraj)
+
+    YARN-3745. SerializedException should also try to instantiate internal
+    exception with the default constructor. (Lavkesh Lahngir via devaraj)
+
+    YARN-2871. TestRMRestart#testRMRestartGetApplicationList sometime fails in trunk.
+    (zhihai xu via xgong)
+
+    YARN-3859. LeafQueue doesn't print user properly for application add.
+    (Varun Saxena via devaraj)
+
+    YARN-3860. rmadmin -transitionToActive should check the state of non-target node.
+    (Masatake Iwasaki via junping_du)
+
+    YARN-3695. ServerProxy (NMProxy, etc.) shouldn't retry forever for non
+    network exception. (Raju Bairishetti via jianhe)
+
+    YARN-3770. SerializedException should also handle java.lang.Error on
+    de-serialization. (Lavkesh Lahngir via jianhe)
+
+    YARN-3768. ArrayIndexOutOfBoundsException with empty environment variables.
+    (Zhihai Xu via gera)
+
+Release 2.7.2 - UNRELEASED
+
+  INCOMPATIBLE CHANGES
+
+  NEW FEATURES
+
+  IMPROVEMENTS
+
+  OPTIMIZATIONS
+
+  BUG FIXES
+
 Release 2.7.1 - UNRELEASED
 
   INCOMPATIBLE CHANGES
@@ -663,6 +704,9 @@ Release 2.7.1 - UNRELEASED
 
     YARN-3832. Resource Localization fails on a cluster due to existing cache
     directories (Brahma Reddy Battula via jlowe)
+
+    YARN-3850. NM fails to read files from full disks which can lead to
+    container logs being lost and other issues (Varun Saxena via jlowe)
 
 Release 2.7.0 - 2015-04-20
 

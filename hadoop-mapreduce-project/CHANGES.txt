@@ -97,6 +97,9 @@ Release 2.8.0 - UNRELEASED
     MAPREDUCE-6408. Queue name and user name should be printed on the job page.
     (Siqi Li via gera)
 
+    MAPREDUCE-6384. Add the last reporting reducer info for too many fetch
+    failure diagnostics (Chang Li via jlowe)
+
   OPTIMIZATIONS
 
   BUG FIXES
@@ -244,6 +247,24 @@ Release 2.8.0 - UNRELEASED
     MAPREDUCE-6400. Multiple shuffle transfer fails because input is closed
     too early (Brahma Reddy Battula, Akira AJISAKA, and Gera Shegalov via
     jlowe)
+
+    MAPREDUCE-6413. TestLocalJobSubmission is failing with unknown host
+    (zhihai xu via jlowe)
+
+    MAPREDUCE-6121. JobResourceUpdater#compareFs() doesn't handle HA namespaces
+    (rchiang via rkanter)
+
+Release 2.7.2 - UNRELEASED
+
+  INCOMPATIBLE CHANGES
+
+  NEW FEATURES
+
+  IMPROVEMENTS
+
+  OPTIMIZATIONS
+
+  BUG FIXES
 
 Release 2.7.1 - UNRELEASED
 
