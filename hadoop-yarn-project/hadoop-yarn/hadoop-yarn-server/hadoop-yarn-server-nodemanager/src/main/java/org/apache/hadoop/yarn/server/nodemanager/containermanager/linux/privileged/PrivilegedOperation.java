@@ -119,4 +119,45 @@ public class PrivilegedOperation {
   public int hashCode() {
     return opType.hashCode() + 97 * args.hashCode();
   }
+
+  /**
+   * List of commands that the container-executor will execute.
+   */
+  public enum RunAsUserCommand {
+    INITIALIZE_CONTAINER(0),
+    LAUNCH_CONTAINER(1),
+    SIGNAL_CONTAINER(2),
+    DELETE_AS_USER(3),
+    LAUNCH_DOCKER_CONTAINER(4);
+
+    private int value;
+    RunAsUserCommand(int value) {
+      this.value = value;
+    }
+    public int getValue() {
+      return value;
+    }
+  }
+
+  /**
+   * Result codes returned from the C container-executor.
+   * These must match the values in container-executor.h.
+   */
+  public enum ResultCode {
+    OK(0),
+    INVALID_USER_NAME(2),
+    UNABLE_TO_EXECUTE_CONTAINER_SCRIPT(7),
+    INVALID_CONTAINER_PID(9),
+    INVALID_CONTAINER_EXEC_PERMISSIONS(22),
+    INVALID_CONFIG_FILE(24),
+    WRITE_CGROUP_FAILED(27);
+
+    private final int value;
+    ResultCode(int value) {
+      this.value = value;
+    }
+    public int getValue() {
+      return value;
+    }
+  }
 }

@@ -51,8 +51,9 @@ import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerDiagnosticsUpdateEvent;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.privileged.PrivilegedOperation;
+import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.DefaultLinuxContainerRuntime;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.LinuxContainerRuntime;
-import org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.runtime.StandardLinuxContainerRuntime;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.runtime.ContainerExecutionException;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerSignalContext;
 import org.apache.hadoop.yarn.server.nodemanager.executor.ContainerStartContext;
@@ -130,7 +131,7 @@ public class TestLinuxContainerExecutorWithMocks {
 
     Configuration conf = new Configuration();
     LinuxContainerRuntime linuxContainerRuntime = new
-        StandardLinuxContainerRuntime();
+        DefaultLinuxContainerRuntime();
 
     setupMockExecutor(MOCK_EXECUTOR, conf);
     dirsHandler = new LocalDirsHandlerService();
@@ -149,7 +150,7 @@ public class TestLinuxContainerExecutorWithMocks {
   public void testContainerLaunch() throws IOException {
     String appSubmitter = "nobody";
     String cmd = String.valueOf(
-        LinuxContainerExecutor.Commands.LAUNCH_CONTAINER.getValue());
+        PrivilegedOperation.RunAsUserCommand.LAUNCH_CONTAINER.getValue());
     String appId = "APP_ID";
     String containerId = "CONTAINER_ID";
     Container container = mock(Container.class);
@@ -271,7 +272,7 @@ public class TestLinuxContainerExecutorWithMocks {
 
     LinuxContainerExecutor exec;
     LinuxContainerRuntime linuxContainerRuntime = new
-        StandardLinuxContainerRuntime();
+        DefaultLinuxContainerRuntime();
 
     linuxContainerRuntime.initialize(conf);
     exec = new LinuxContainerExecutor(linuxContainerRuntime);
@@ -295,7 +296,7 @@ public class TestLinuxContainerExecutorWithMocks {
 
     String appSubmitter = "nobody";
     String cmd = String
-        .valueOf(LinuxContainerExecutor.Commands.LAUNCH_CONTAINER.getValue());
+        .valueOf(PrivilegedOperation.RunAsUserCommand.LAUNCH_CONTAINER.getValue());
     String appId = "APP_ID";
     String containerId = "CONTAINER_ID";
     Container container = mock(Container.class);
@@ -366,7 +367,7 @@ public class TestLinuxContainerExecutorWithMocks {
   public void testContainerKill() throws IOException {
     String appSubmitter = "nobody";
     String cmd = String.valueOf(
-        LinuxContainerExecutor.Commands.SIGNAL_CONTAINER.getValue());
+        PrivilegedOperation.RunAsUserCommand.SIGNAL_CONTAINER.getValue());
     ContainerExecutor.Signal signal = ContainerExecutor.Signal.QUIT;
     String sigVal = String.valueOf(signal.getValue());
 
@@ -392,7 +393,7 @@ public class TestLinuxContainerExecutorWithMocks {
   public void testDeleteAsUser() throws IOException {
     String appSubmitter = "nobody";
     String cmd = String.valueOf(
-        LinuxContainerExecutor.Commands.DELETE_AS_USER.getValue());
+        PrivilegedOperation.RunAsUserCommand.DELETE_AS_USER.getValue());
     Path dir = new Path("/tmp/testdir");
     Path testFile = new Path("testfile");
     Path baseDir0 = new Path("/grid/0/BaseDir");

@@ -142,47 +142,6 @@ public class LinuxContainerExecutor extends ContainerExecutor {
     }
   }
 
-
-  /**
-   * List of commands that the setuid script will execute.
-   */
-  enum Commands {
-    INITIALIZE_CONTAINER(0),
-    LAUNCH_CONTAINER(1),
-    SIGNAL_CONTAINER(2),
-    DELETE_AS_USER(3);
-
-    private int value;
-    Commands(int value) {
-      this.value = value;
-    }
-    int getValue() {
-      return value;
-    }
-  }
-
-  /**
-   * Result codes returned from the C container-executor.
-   * These must match the values in container-executor.h.
-   */
-  enum ResultCode {
-    OK(0),
-    INVALID_USER_NAME(2),
-    UNABLE_TO_EXECUTE_CONTAINER_SCRIPT(7),
-    INVALID_CONTAINER_PID(9),
-    INVALID_CONTAINER_EXEC_PERMISSIONS(22),
-    INVALID_CONFIG_FILE(24),
-    WRITE_CGROUP_FAILED(27);
-
-    private final int value;
-    ResultCode(int value) {
-      this.value = value;
-    }
-    int getValue() {
-      return value;
-    }
-  }
-
   protected String getContainerExecutorExecutablePath(Configuration conf) {
     String yarnHomeEnvVar =
         System.getenv(ApplicationConstants.Environment.HADOOP_YARN_HOME.key());
@@ -270,7 +229,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
     command.addAll(Arrays.asList(containerExecutorExe, 
                    runAsUser,
                    user, 
-                   Integer.toString(Commands.INITIALIZE_CONTAINER.getValue()),
+                   Integer.toString(PrivilegedOperation.RunAsUserCommand.INITIALIZE_CONTAINER.getValue()),
                    appId,
                    nmPrivateContainerTokensPath.toUri().getPath().toString(),
                    StringUtils.join(",", localDirs),
@@ -520,7 +479,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
       linuxContainerRuntime.signalContainer(runtimeContext);
     } catch (ContainerExecutionException e) {
       int retCode = e.getExitCode();
-      if (retCode == ResultCode.INVALID_CONTAINER_PID.getValue()) {
+      if (retCode == PrivilegedOperation.ResultCode.INVALID_CONTAINER_PID.getValue()) {
         return false;
       }
       LOG.warn("Error in signalling container " + pid + " with " + signal
@@ -548,7 +507,8 @@ public class LinuxContainerExecutor extends ContainerExecutor {
         Arrays.asList(containerExecutorExe,
                     runAsUser,
                     user,
-                    Integer.toString(Commands.DELETE_AS_USER.getValue()),
+                    Integer.toString(PrivilegedOperation.
+                        RunAsUserCommand.DELETE_AS_USER.getValue()),
                     dirString));
     List<String> pathsToDelete = new ArrayList<String>();
     if (baseDirs == null || baseDirs.size() == 0) {

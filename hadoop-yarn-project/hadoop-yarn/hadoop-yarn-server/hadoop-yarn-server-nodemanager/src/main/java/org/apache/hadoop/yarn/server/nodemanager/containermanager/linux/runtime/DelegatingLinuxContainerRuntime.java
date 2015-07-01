@@ -36,14 +36,14 @@ import java.util.Map;
 public class DelegatingLinuxContainerRuntime implements LinuxContainerRuntime {
   private static final Log LOG = LogFactory
       .getLog(DelegatingLinuxContainerRuntime.class);
-  private StandardLinuxContainerRuntime standardLinuxContainerRuntime;
+  private DefaultLinuxContainerRuntime defaultLinuxContainerRuntime;
   private DockerLinuxContainerRuntime dockerLinuxContainerRuntime;
 
   @Override
   public void initialize(Configuration conf)
       throws ContainerExecutionException {
-    standardLinuxContainerRuntime = new StandardLinuxContainerRuntime();
-    standardLinuxContainerRuntime.initialize(conf);
+    defaultLinuxContainerRuntime = new DefaultLinuxContainerRuntime();
+    defaultLinuxContainerRuntime.initialize(conf);
     dockerLinuxContainerRuntime = new DockerLinuxContainerRuntime();
     dockerLinuxContainerRuntime.initialize(conf);
   }
@@ -55,7 +55,7 @@ public class DelegatingLinuxContainerRuntime implements LinuxContainerRuntime {
     if (DockerLinuxContainerRuntime.isDockerContainerRequested(env)){
       runtime = dockerLinuxContainerRuntime;
     } else  {
-      runtime = standardLinuxContainerRuntime;
+      runtime = defaultLinuxContainerRuntime;
     }
 
     if (LOG.isInfoEnabled()) {

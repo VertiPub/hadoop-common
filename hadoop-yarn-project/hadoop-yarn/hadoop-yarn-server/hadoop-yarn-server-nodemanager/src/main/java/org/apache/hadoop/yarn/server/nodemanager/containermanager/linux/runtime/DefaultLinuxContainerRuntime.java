@@ -39,9 +39,9 @@ import static org.apache.hadoop.yarn.server.nodemanager.containermanager.linux.r
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
-public class StandardLinuxContainerRuntime implements LinuxContainerRuntime {
+public class DefaultLinuxContainerRuntime implements LinuxContainerRuntime {
   private static final Log LOG = LogFactory
-      .getLog(StandardLinuxContainerRuntime.class);
+      .getLog(DefaultLinuxContainerRuntime.class);
   private Configuration conf;
 
   @Override
@@ -66,7 +66,8 @@ public class StandardLinuxContainerRuntime implements LinuxContainerRuntime {
     //All of these arguments are expected to be available in the runtime context
     launchOp.appendArgs(ctx.getExecutionAttribute(RUN_AS_USER),
         ctx.getExecutionAttribute(USER),
-        Integer.toString(Commands.LAUNCH_CONTAINER.getValue()),
+        Integer.toString(PrivilegedOperation.
+            RunAsUserCommand.LAUNCH_CONTAINER.getValue()),
         ctx.getExecutionAttribute(APPID),
         ctx.getExecutionAttribute(CONTAINER_ID_STR),
         ctx.getExecutionAttribute(CONTAINER_WORK_DIR).toString(),
@@ -114,7 +115,8 @@ public class StandardLinuxContainerRuntime implements LinuxContainerRuntime {
 
     signalOp.appendArgs(ctx.getExecutionAttribute(RUN_AS_USER),
         ctx.getExecutionAttribute(USER),
-        Integer.toString(Commands.SIGNAL_CONTAINER.getValue()),
+        Integer.toString(PrivilegedOperation.RunAsUserCommand
+            .SIGNAL_CONTAINER.getValue()),
         ctx.getExecutionAttribute(PID),
         Integer.toString(ctx.getExecutionAttribute(SIGNAL).getValue()));
 

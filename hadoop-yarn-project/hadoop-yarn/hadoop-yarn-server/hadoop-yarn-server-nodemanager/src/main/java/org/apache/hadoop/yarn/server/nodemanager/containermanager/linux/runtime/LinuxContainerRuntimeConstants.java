@@ -66,19 +66,4 @@ public final class LinuxContainerRuntimeConstants {
       String.class, "pid");
   public static final Attribute<ContainerExecutor.Signal> SIGNAL = Attribute
       .attribute(ContainerExecutor.Signal.class, "signal");
-
-  enum Commands {
-    INITIALIZE_CONTAINER(0),
-    LAUNCH_CONTAINER(1),
-    SIGNAL_CONTAINER(2),
-    DELETE_AS_USER(3),
-    LAUNCH_DOCKER_CONTAINER(4);
-    private int value;
-    Commands(int value) {
-      this.value = value;
-    }
-    int getValue() {
-      return value;
-    }
-  }
 }

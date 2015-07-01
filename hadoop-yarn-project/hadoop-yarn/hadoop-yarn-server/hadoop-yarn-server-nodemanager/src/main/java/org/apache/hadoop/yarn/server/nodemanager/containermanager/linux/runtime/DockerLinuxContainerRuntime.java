@@ -200,7 +200,8 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
         null);
 
     launchOp.appendArgs(runAsUser, ctx.getExecutionAttribute(USER),
-        Integer.toString(Commands.LAUNCH_DOCKER_CONTAINER.getValue()),
+        Integer.toString(PrivilegedOperation
+            .RunAsUserCommand.LAUNCH_DOCKER_CONTAINER.getValue()),
         ctx.getExecutionAttribute(APPID),
         containerIdStr, containerWorkDir.toString(),
         nmPrivateContainerScriptPath.toUri().getPath(),
@@ -241,7 +242,8 @@ public class DockerLinuxContainerRuntime implements LinuxContainerRuntime {
 
     signalOp.appendArgs(ctx.getExecutionAttribute(RUN_AS_USER),
         ctx.getExecutionAttribute(USER),
-        Integer.toString(Commands.SIGNAL_CONTAINER.getValue()),
+        Integer.toString(PrivilegedOperation
+            .RunAsUserCommand.SIGNAL_CONTAINER.getValue()),
         ctx.getExecutionAttribute(PID),
         Integer.toString(ctx.getExecutionAttribute(SIGNAL).getValue()));
 
