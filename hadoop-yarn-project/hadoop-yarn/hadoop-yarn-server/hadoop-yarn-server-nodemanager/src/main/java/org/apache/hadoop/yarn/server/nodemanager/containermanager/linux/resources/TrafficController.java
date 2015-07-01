@@ -86,7 +86,7 @@ import java.util.regex.Pattern;
   /** Format of the classid that is to be used with the net_cls cgroup. Needs
    * to be of the form 0xAAAABBBB */
   private static final String FORMAT_NET_CLS_CLASS_ID = "0x%04d%04d";
-  /** RunAsUserCommand to read the qdsic(s)/filter(s)/class(es) associated with an
+  /** Commands to read the qdsic(s)/filter(s)/class(es) associated with an
    * interface
    */
   private static final String FORMAT_READ_STATE =
