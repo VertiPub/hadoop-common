@@ -65,6 +65,7 @@ public class YarnConfiguration extends Configuration {
   @Evolving
   public static final int APPLICATION_MAX_TAGS = 10;
 
+  @Evolving
   public static final int APPLICATION_MAX_TAG_LENGTH = 100;
 
 
