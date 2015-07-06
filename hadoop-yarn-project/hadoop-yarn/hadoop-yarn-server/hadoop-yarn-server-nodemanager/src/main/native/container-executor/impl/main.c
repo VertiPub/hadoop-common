@@ -55,6 +55,8 @@ static void display_usage(FILE *stream) {
       "            initialize container:  %2d appid tokens nm-local-dirs nm-log-dirs cmd app...\n" \
       "            launch container:      %2d appid containerid workdir container-script " \
                               "tokens pidfile nm-local-dirs nm-log-dirs resources optional-tc-command-file\n" \
+      "            launch docker container:      %2d appid containerid workdir container-script " \
+                              "tokens pidfile nm-local-dirs nm-log-dirs docker-command-file resources optional-tc-command-file\n" \
       "            signal container:      %2d container-pid signal\n" \
       "            delete as user:        %2d relative-path\n" ;
 

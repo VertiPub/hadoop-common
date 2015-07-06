@@ -1132,69 +1132,68 @@ int create_local_dirs(const char * user, const char *app_id,
                        char* script_file_dest, char* cred_file_dest,
                        int container_file_source, int cred_file_source) {
   int exit_code = -1;
-// create the user directory on all disks
-    int result = initialize_user(user, local_dirs);
-    if (result != 0) {
-      fprintf(ERRORFILE, "Could not create user dir");
+  // create the user directory on all disks
+  int result = initialize_user(user, local_dirs);
+  if (result != 0) {
+    fprintf(ERRORFILE, "Could not create user dir");
+    fflush(ERRORFILE);
+    return result;
+  }
+  // initializing log dirs
+  int log_create_result = create_log_dirs(app_id, log_dirs);
+  if (log_create_result != 0) {
+    fprintf(ERRORFILE, "Could not create log dirs");
+    fflush(ERRORFILE);
+    return log_create_result;
+  }
+  if (effective_user == 1) {
+    if (change_effective_user(user_detail->pw_uid, user_detail->pw_gid) != 0) {
+      fprintf(ERRORFILE, "Could not change to effective users %d, %d\n", user_detail->pw_uid, user_detail->pw_gid);
       fflush(ERRORFILE);
-      return result;
+      goto cleanup;
     }
-    // initializing log dirs
-    int log_create_result = create_log_dirs(app_id, log_dirs);
-    if (log_create_result != 0) {
-      fprintf(ERRORFILE, "Could not create log dirs");
-      fflush(ERRORFILE);
-      return log_create_result;
+  } else {
+   // give up root privs
+    if (change_user(user_detail->pw_uid, user_detail->pw_gid) != 0) {
+      exit_code = SETUID_OPER_FAILED;
+      goto cleanup;
     }
-    if (effective_user == 1) {
+  }
+  // Create container specific directories as user. If there are no resources
+  // to localize for this container, app-directories and log-directories are
+  // also created automatically as part of this call.
+  if (create_container_directories(user, app_id, container_id, local_dirs,
+                                   log_dirs, work_dir) != 0) {
+    fprintf(ERRORFILE, "Could not create container dirs");
+    fflush(ERRORFILE);
+    goto cleanup;
+  }
 
-      if (change_effective_user(user_detail->pw_uid, user_detail->pw_gid) != 0) {
-        fprintf(ERRORFILE, "Could not change to effective users %d, %d\n", user_detail->pw_uid, user_detail->pw_gid);
-        fflush(ERRORFILE);
-        goto cleanup;
-      }
-    } else {
-     // give up root privs
-      if (change_user(user_detail->pw_uid, user_detail->pw_gid) != 0) {
-        exit_code = SETUID_OPER_FAILED;
-        goto cleanup;
-      }
-    }
-    // Create container specific directories as user. If there are no resources
-    // to localize for this container, app-directories and log-directories are
-    // also created automatically as part of this call.
-    if (create_container_directories(user, app_id, container_id, local_dirs,
-                                     log_dirs, work_dir) != 0) {
-      fprintf(ERRORFILE, "Could not create container dirs");
-      fflush(ERRORFILE);
-      goto cleanup;
-    }
+  // 700
+  if (copy_file(container_file_source, script_name, script_file_dest,S_IRWXU) != 0) {
+    fprintf(ERRORFILE, "Could not create copy file");
+    fflush(ERRORFILE);
+    exit_code = INVALID_COMMAND_PROVIDED;
+    goto cleanup;
+  }
+  // 600
+  if (copy_file(cred_file_source, cred_file, cred_file_dest,
+        S_IRUSR | S_IWUSR) != 0) {
+    exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
+    fprintf(ERRORFILE, "Could not copy file");
+    fflush(ERRORFILE);
+    goto cleanup;
+  }
 
-    // 700
-    if (copy_file(container_file_source, script_name, script_file_dest,S_IRWXU) != 0) {
-      fprintf(ERRORFILE, "Could not create copy file");
+  if (chdir(work_dir) != 0) {
+    fprintf(ERRORFILE, "Can't change directory to %s -%s\n", work_dir,
+      strerror(errno));
       fflush(ERRORFILE);
-      exit_code = INVALID_COMMAND_PROVIDED;
-      goto cleanup;
-    }
-    // 600
-    if (copy_file(cred_file_source, cred_file, cred_file_dest,
-          S_IRUSR | S_IWUSR) != 0) {
-      exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
-      fprintf(ERRORFILE, "Could not copy file");
-      fflush(ERRORFILE);
-      goto cleanup;
-    }
-
-    if (chdir(work_dir) != 0) {
-      fprintf(ERRORFILE, "Can't change directory to %s -%s\n", work_dir,
-  	    strerror(errno));
-  	    fflush(ERRORFILE);
-      goto cleanup;
-    }
-     exit_code = 0;
-       cleanup:
-       return exit_code;
+    goto cleanup;
+  }
+  exit_code = 0;
+  cleanup:
+  return exit_code;
 }
 
 int launch_docker_container_as_user(const char * user, const char *app_id,
@@ -1218,8 +1217,8 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
   int container_file_source =-1;
   int cred_file_source = -1;
   exit_code = create_script_paths(
-  work_dir, script_name, cred_file, script_file_dest, cred_file_dest,
-  &container_file_source, &cred_file_source);
+    work_dir, script_name, cred_file, script_file_dest, cred_file_dest,
+    &container_file_source, &cred_file_source);
   if (exit_code != 0) {
     fprintf(ERRORFILE, "Could not create local files and directories");
     fflush(ERRORFILE);
@@ -1229,9 +1228,9 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
   gid_t user_gid = getegid();
 
   exit_code = create_local_dirs(user, app_id, container_id,
-  work_dir, script_name, cred_file, local_dirs, log_dirs,
-  1, script_file_dest, cred_file_dest,
-  container_file_source, cred_file_source);
+    work_dir, script_name, cred_file, local_dirs, log_dirs,
+    1, script_file_dest, cred_file_dest,
+    container_file_source, cred_file_source);
   if (exit_code != 0) {
     fprintf(ERRORFILE, "Could not create local files and directories");
     fflush(ERRORFILE);
@@ -1271,30 +1270,29 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
   FILE* inspect_docker = popen(docker_inspect_command, "r");
   int pid = 0;
   fscanf (inspect_docker, "%d", &pid);
-    if (pclose (inspect_docker) != 0)
-    {
-      fprintf (ERRORFILE,
-       "Could not inspect docker %s.\n", docker_inspect_command);
-      fflush(ERRORFILE);
-      exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
-      goto cleanup;
-    }
+  if (pclose (inspect_docker) != 0)
+  {
+    fprintf (ERRORFILE,
+     "Could not inspect docker %s.\n", docker_inspect_command);
+    fflush(ERRORFILE);
+    exit_code = UNABLE_TO_EXECUTE_CONTAINER_SCRIPT;
+    goto cleanup;
+  }
 
-   if (pid != 0) {
+  if (pid != 0) {
     // cgroups-based resource enforcement
-     if (resources_key != NULL && ! strcmp(resources_key, "cgroups")) {
-
-       // write pid to cgroups
-       char* const* cgroup_ptr;
-       for (cgroup_ptr = resources_values; cgroup_ptr != NULL &&
-            *cgroup_ptr != NULL; ++cgroup_ptr) {
-         if (strcmp(*cgroup_ptr, "none") != 0 &&
-               write_pid_to_cgroup_as_root(*cgroup_ptr, pid) != 0) {
-           exit_code = WRITE_CGROUP_FAILED;
-           goto cleanup;
-         }
+    if (resources_key != NULL && ! strcmp(resources_key, "cgroups")) {
+     // write pid to cgroups
+     char* const* cgroup_ptr;
+     for (cgroup_ptr = resources_values; cgroup_ptr != NULL &&
+          *cgroup_ptr != NULL; ++cgroup_ptr) {
+       if (strcmp(*cgroup_ptr, "none") != 0 &&
+             write_pid_to_cgroup_as_root(*cgroup_ptr, pid) != 0) {
+         exit_code = WRITE_CGROUP_FAILED;
+         goto cleanup;
        }
      }
+    }
     // write pid to pidfile
     if (pid_file == NULL
         || write_pid_to_file_as_nm(pid_file, (pid_t)pid) != 0) {
@@ -1309,8 +1307,7 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
       "%s wait %s", docker_binary, container_id);
     FILE* attach_docker = popen(docker_attach_command, "r");
     fscanf (attach_docker, "%d", &exit_code);
-    if (pclose (attach_docker) != 0)
-    {
+    if (pclose (attach_docker) != 0) {
       fprintf (ERRORFILE,
        "Could not attach to docker is container dead? %s.\n", docker_attach_command);
       fflush(ERRORFILE);
@@ -1330,11 +1327,11 @@ int launch_docker_container_as_user(const char * user, const char *app_id,
   }
 
 cleanup:
-   if (exit_code_file != NULL && write_exit_code_file(exit_code_file, exit_code) < 0) {
-     fprintf (ERRORFILE,
+  if (exit_code_file != NULL && write_exit_code_file(exit_code_file, exit_code) < 0) {
+    fprintf (ERRORFILE,
       "Could not write exit code to file %s.\n", exit_code_file);
-     fflush(ERRORFILE);
-   }
+    fflush(ERRORFILE);
+  }
 #if HAVE_FCLOSEALL
   fcloseall();
 #else
@@ -1370,11 +1367,11 @@ int launch_container_as_user(const char *user, const char *app_id,
     goto cleanup;
   }
 
-   int container_file_source =-1;
+  int container_file_source =-1;
   int cred_file_source = -1;
   exit_code = create_script_paths(
-  work_dir, script_name, cred_file, script_file_dest, cred_file_dest,
-  &container_file_source, &cred_file_source);
+    work_dir, script_name, cred_file, script_file_dest, cred_file_dest,
+    &container_file_source, &cred_file_source);
   if (exit_code != 0) {
     fprintf(ERRORFILE, "Could not create local files and directories");
     fflush(ERRORFILE);
@@ -1404,7 +1401,6 @@ int launch_container_as_user(const char *user, const char *app_id,
 
   // cgroups-based resource enforcement
   if (resources_key != NULL && ! strcmp(resources_key, "cgroups")) {
-
     // write pid to cgroups
     char* const* cgroup_ptr;
     for (cgroup_ptr = resources_values; cgroup_ptr != NULL && 
@@ -1447,11 +1443,11 @@ int launch_container_as_user(const char *user, const char *app_id,
   }
   exit_code = 0;
 
- cleanup:
-  free(exit_code_file);
-  free(script_file_dest);
-  free(cred_file_dest);
-  return exit_code;
+  cleanup:
+    free(exit_code_file);
+    free(script_file_dest);
+    free(cred_file_dest);
+    return exit_code;
 }
 
 int signal_container_as_user(const char *user, int pid, int sig) {
