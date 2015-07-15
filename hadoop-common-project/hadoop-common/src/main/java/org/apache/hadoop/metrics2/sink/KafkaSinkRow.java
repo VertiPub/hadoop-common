@@ -109,12 +109,14 @@ public class KafkaSinkRow implements MetricsSink, Closeable {
 
         // Collect datapoints and create the avro object.
 
-            jsonLines.append("{\"hostname\": \"" + hostname); 
             jsonLines.append("\", \"timestamp\": " + timestamp);
             jsonLines.append(", \"date\": \"" + date);
             jsonLines.append("\",\"time\": \"" + time);
-            jsonLines.append("\",\"context\": \"" + record.context());
-            jsonLines.append("\",\"name\": \"" + record.name());
+            jsonLines.append("\",\"name\": \"" + record.name() + "\" ");
+            for (MetricsTag tag : record.tags()) {
+                jsonLines.append(", \"" + tag.name().toString().replaceAll("[\\p{Cc}]", "") + "\": ");
+                jsonLines.append(" \"" + tag.value().toString() + "\"");
+            }
             for (AbstractMetric metric : record.metrics()) {
                 jsonLines.append(", \"" + metric.name().toString().replaceAll("[\\p{Cc}]", "") + "\": ");
                 jsonLines.append(" \"" + metric.value().toString() + "\"");
