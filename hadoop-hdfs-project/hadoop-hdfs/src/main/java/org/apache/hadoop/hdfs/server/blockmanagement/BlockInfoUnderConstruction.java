@@ -54,6 +54,11 @@ public class BlockInfoUnderConstruction extends BlockInfo {
    */
   private long blockRecoveryId = 0;
 
+  /** The number of times all replicas will be used to attempt recovery before
+   * giving up and marking the block under construction missing.
+   */
+  private int recoveryAttemptsBeforeMarkingBlockMissing;
+
   /**
    * ReplicaUnderConstruction contains information about replicas while
    * they are under construction.
@@ -168,6 +173,8 @@ public class BlockInfoUnderConstruction extends BlockInfo {
       "BlockInfoUnderConstruction cannot be in COMPLETE state";
     this.blockUCState = state;
     setExpectedLocations(targets);
+    this.recoveryAttemptsBeforeMarkingBlockMissing =
+      BlockManager.getMaxBlockUCRecoveries();
   }
 
   /**
@@ -176,7 +183,6 @@ public class BlockInfoUnderConstruction extends BlockInfo {
    * @return BlockInfo - a complete block.
    * @throws IOException if the state of the block 
    * (the generation stamp and the length) has not been committed by 
-   * the client or it does not have at least a minimal number of replicas 
    * reported from data-nodes. 
    */
   BlockInfo convertToCompleteBlock() throws IOException {
@@ -276,9 +282,9 @@ public class BlockInfoUnderConstruction extends BlockInfo {
     setBlockUCState(BlockUCState.UNDER_RECOVERY);
     blockRecoveryId = recoveryId;
     if (replicas.size() == 0) {
-      NameNode.blockStateChangeLog.warn("BLOCK*"
-        + " BlockInfoUnderConstruction.initLeaseRecovery:"
-        + " No blocks found, lease removed.");
+      NameNode.blockStateChangeLog.warn("BLOCK* " +
+          "BlockInfoUnderConstruction.initLeaseRecovery: " +
+          "No replicas found.");
     }
     boolean allLiveReplicasTriedAsPrimary = true;
     for (int i = 0; i < replicas.size(); i++) {
@@ -289,6 +295,11 @@ public class BlockInfoUnderConstruction extends BlockInfo {
       }
     }
     if (allLiveReplicasTriedAsPrimary) {
+      recoveryAttemptsBeforeMarkingBlockMissing--;
+      NameNode.blockStateChangeLog.info("Tried to recover " + this +" using all"
+          + " replicas. Will try " + recoveryAttemptsBeforeMarkingBlockMissing
+          + " more times");
+
       // Just set all the replicas to be chosen whether they are alive or not.
       for (int i = 0; i < replicas.size(); i++) {
         replicas.get(i).setChosenAsPrimary(false);
@@ -344,6 +355,19 @@ public class BlockInfoUnderConstruction extends BlockInfo {
     replicas.add(new ReplicaUnderConstruction(block, storage, rState));
   }
 
+  public int getNumRecoveryAttemptsLeft() {
+    return recoveryAttemptsBeforeMarkingBlockMissing;
+  }
+
+  /**
+   * Convert an under construction block to a complete block.
+   *
+   * @return a complete block.
+   * @throws IOException
+   *           if the state of the block (the generation stamp and the length)
+   *           has not been committed by the client or it does not have at
+   *           least a minimal number of replicas reported from data-nodes.
+   */
   @Override // BlockInfo
   // BlockInfoUnderConstruction participates in maps the same way as BlockInfo
   public int hashCode() {

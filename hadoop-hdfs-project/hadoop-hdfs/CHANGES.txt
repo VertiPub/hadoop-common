@@ -1,6 +1,7 @@
 Hadoop HDFS Change Log
 
 Release 2.4.1 - 2014-06-23 
+HDFS-8344. NameNode doesn't recover lease for files with missing blocks (raviprak)
 
   INCOMPATIBLE CHANGES
 
@@ -13,6 +14,8 @@ Release 2.4.1 - 2014-06-23
   OPTIMIZATIONS
 
   BUG FIXES 
+
+    HDFS-8344. NameNode doesn't recover lease for files with missing blocks (raviprak)
 
     HDFS-7575. Upgrade should generate a unique storage ID for each
     volume. (Arpit Agarwal)

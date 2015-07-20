@@ -3853,6 +3853,16 @@ public class FSNamesystem implements Namesystem, FSClusterStats,
             + "Removed empty last block and closed file.");
         return true;
       }
+
+      //If the block's recovery has been attempted enough times, mark the block
+      //complete anyway and recover the lease
+      if(uc.getNumRecoveryAttemptsLeft() == 0) {
+        blockManager.forceCompleteBlock(pendingFile, uc);
+        finalizeINodeFileUnderConstruction(src, pendingFile,
+            iip.getLatestSnapshotId());
+        return true;
+      }
+
       // start recovery of the last block for this file
       long blockRecoveryId = nextGenerationStamp(isLegacyBlock(uc));
       lease = reassignLease(lease, src, recoveryLeaseHolder, pendingFile);
