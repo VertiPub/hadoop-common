@@ -195,6 +195,11 @@ public class OptionsParser {
       }
     }
 
+    if (command.hasOption(DistCpOptionSwitch.COMPRESS_CODEC.getSwitch())) {
+      option.setCompressCodec(
+          getVal(command, DistCpOptionSwitch.COMPRESS_CODEC.getSwitch()));
+    }
+
     if (command.hasOption(DistCpOptionSwitch.COPY_STRATEGY.getSwitch())) {
       option.setCopyStrategy(
             getVal(command, DistCpOptionSwitch.COPY_STRATEGY.getSwitch()));

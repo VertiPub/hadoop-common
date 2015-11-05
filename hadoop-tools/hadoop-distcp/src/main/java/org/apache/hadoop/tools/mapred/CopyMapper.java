@@ -25,6 +25,7 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.compress.CompressionCodec;
 import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.tools.DistCpConstants;
@@ -32,6 +33,7 @@ import org.apache.hadoop.tools.DistCpOptionSwitch;
 import org.apache.hadoop.tools.DistCpOptions;
 import org.apache.hadoop.tools.DistCpOptions.FileAttribute;
 import org.apache.hadoop.tools.util.DistCpUtils;
+import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.StringUtils;
 
 import java.io.*;
@@ -72,6 +74,8 @@ public class CopyMapper extends Mapper<Text, FileStatus, Text, Text> {
   private FileSystem targetFS = null;
   private Path    targetWorkPath = null;
 
+  private CompressionCodec codec;
+
   /**
    * Implementation of the Mapper::setup() method. This extracts the DistCp-
    * options specified in the Job's configuration, to set up the Job.
@@ -89,6 +93,20 @@ public class CopyMapper extends Mapper<Text, FileStatus, Text, Text> {
     overWrite = conf.getBoolean(DistCpOptionSwitch.OVERWRITE.getConfigLabel(), false);
     preserve = DistCpUtils.unpackAttributes(conf.get(DistCpOptionSwitch.
         PRESERVE_STATUS.getConfigLabel()));
+    codec = null;
+
+    String compressCodec = conf.get(
+        DistCpOptionSwitch.COMPRESS_CODEC.getConfigLabel(), "");
+    System.out.println("compressCodec: " + compressCodec);
+    if(!compressCodec.equals("")) {
+      try {
+        codec = ReflectionUtils.newInstance(conf.getClassByName(compressCodec).
+            asSubclass(CompressionCodec.class), conf);
+        skipCrc = true;
+      } catch(java.lang.ClassNotFoundException e) {
+        throw new RuntimeException("class not found " + compressCodec, e);
+      }
+    }
 
     targetWorkPath = new Path(conf.get(DistCpConstants.CONF_LABEL_TARGET_WORK_PATH));
     Path targetFinalPath = new Path(conf.get(
@@ -179,8 +197,14 @@ public class CopyMapper extends Mapper<Text, FileStatus, Text, Text> {
     if (LOG.isDebugEnabled())
       LOG.debug("DistCpMapper::map(): Received " + sourcePath + ", " + relPath);
 
+    String additionalSuffix = "";
+    if (codec != null && sourceFileStatus.isFile()) {
+      additionalSuffix = codec.getDefaultExtension();
+    }
+
     Path target = new Path(targetWorkPath.makeQualified(targetFS.getUri(),
-                          targetFS.getWorkingDirectory()) + relPath.toString());
+                          targetFS.getWorkingDirectory()) + relPath.toString() +
+                          additionalSuffix);
 
     EnumSet<DistCpOptions.FileAttribute> fileAttributes
             = getFileAttributeSettings(context);
@@ -255,8 +279,8 @@ public class CopyMapper extends Mapper<Text, FileStatus, Text, Text> {
 
     long bytesCopied;
     try {
-      bytesCopied = (Long)new RetriableFileCopyCommand(skipCrc, description)
-                       .execute(sourceFileStatus, target, context, fileAttributes);
+      bytesCopied = (Long) new RetriableFileCopyCommand(skipCrc, description,
+          action, codec).execute(sourceFileStatus, target, context, fileAttributes);
     } catch (Exception e) {
       context.setStatus("Copy Failure: " + sourceFileStatus.getPath());
       throw new IOException("File copy failed: " + sourceFileStatus.getPath() +

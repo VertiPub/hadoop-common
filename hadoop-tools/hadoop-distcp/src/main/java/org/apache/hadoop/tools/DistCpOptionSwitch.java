@@ -163,6 +163,12 @@ public enum DistCpOptionSwitch {
   BANDWIDTH(DistCpConstants.CONF_LABEL_BANDWIDTH_MB,
       new Option("bandwidth", true, "Specify bandwidth per map in MB"));
 
+  /**
+   * Compression codec for output files
+   */
+  COMPRESS_CODEC(DistCpConstants.CONF_LABEL_COMPRESS_CODEC,
+      new Option("compresscodec", true, "Compress output file with codec"));
+
   private final String confLabel;
   private final Option option;
 

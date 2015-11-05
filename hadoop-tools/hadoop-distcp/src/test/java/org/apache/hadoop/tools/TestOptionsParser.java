@@ -396,7 +396,12 @@ public class TestOptionsParser {
     DistCpOptions option = new DistCpOptions(new Path("abc"), new Path("xyz"));
     String val = "DistCpOptions{atomicCommit=false, syncFolder=false, deleteMissing=false, " +
         "ignoreFailures=false, maxMaps=20, sslConfigurationFile='null', copyStrategy='uniformsize', " +
-        "sourceFileListing=abc, sourcePaths=null, targetPath=xyz}";
+//<<<<<<< HEAD
+        "compressCodec='', sourceFileListing=abc, sourcePaths=null, targetPath=xyz}";
+/*=======
+        "compressCodec='', sourceFileListing=abc, sourcePaths=null, targetPath=xyz, " +
+        "targetPathExists=true, preserveRawXattrs=false, filtersFile='null'}";
+>>>>>>> fc82e33... HADOOP-8065: add compression support to distcp*/
     Assert.assertEquals(val, option.toString());
     Assert.assertNotSame(DistCpOptionSwitch.ATOMIC_COMMIT.toString(),
         DistCpOptionSwitch.ATOMIC_COMMIT.name());
@@ -589,5 +594,32 @@ public class TestOptionsParser {
     Assert.assertTrue(conf.getBoolean(DistCpOptionSwitch.DELETE_MISSING.getConfigLabel(), false));
     Assert.assertEquals(conf.get(DistCpOptionSwitch.PRESERVE_STATUS.getConfigLabel()), "U");
     Assert.assertEquals(conf.getInt(DistCpOptionSwitch.BANDWIDTH.getConfigLabel(), -1), 11);
+  }
+
+  @Test
+  public void testCompressCodecOption() {
+    Configuration conf = new Configuration();
+    Assert.assertEquals("", conf.get(
+        DistCpOptionSwitch.COMPRESS_CODEC.getConfigLabel(), ""));
+
+    DistCpOptions options = OptionsParser.parse(new String[] {
+        "-compresscodec", "org.apache.hadoop.io.compress.GzipCodec",
+        "hdfs://localhost:8020/source/first",
+        "hdfs://localhost:8020/target/" });
+    options.appendToConf(conf);
+    Assert.assertEquals("org.apache.hadoop.io.compress.GzipCodec",
+        conf.get(DistCpOptionSwitch.COMPRESS_CODEC.getConfigLabel(), ""));
+
+    try {
+      options = OptionsParser.parse(new String[]{
+          "-update",
+          "-compresscodec", "org.apache.hadoop.io.compress.GzipCodec",
+          "hdfs://localhost:8020/source/first",
+          "hdfs://localhost:8020/target/"});
+      fail("compresscodec should fail if update option is specified");
+    } catch (IllegalArgumentException e) {
+      GenericTestUtils.assertExceptionContains(
+          "Compression codec cannot be specified with update option", e);
+    }
   }
 }

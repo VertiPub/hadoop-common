@@ -37,6 +37,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.io.compress.CompressionCodec;
 import org.apache.hadoop.tools.DistCpConstants;
 import org.apache.hadoop.tools.DistCpOptions.FileAttribute;
 import org.apache.hadoop.tools.util.DistCpUtils;
@@ -54,6 +55,7 @@ public class RetriableFileCopyCommand extends RetriableCommand {
   private static Log LOG = LogFactory.getLog(RetriableFileCopyCommand.class);
   private static int BUFFER_SIZE = 8 * 1024;
   private boolean skipCrc = false;
+  private CompressionCodec codec;
 
   /**
    * Constructor, taking a description of the action.
@@ -68,10 +70,14 @@ public class RetriableFileCopyCommand extends RetriableCommand {
    *
    * @param skipCrc Whether to skip the crc check.
    * @param description A verbose description of the copy operation.
+   * @param action We should overwrite the target file or append new data to it.
+   * @param codec The CompressionCodec to use when writing files, or null.
    */
-  public RetriableFileCopyCommand(boolean skipCrc, String description) {
-    this(description);
+  public RetriableFileCopyCommand(boolean skipCrc, String description,
+      FileAction action, CompressionCodec codec) {
+    this(description, action);
     this.skipCrc = skipCrc;
+    this.codec = codec;
   }
 
   /**
@@ -153,6 +159,7 @@ public class RetriableFileCopyCommand extends RetriableCommand {
       throws IOException {
     FsPermission permission = FsPermission.getFileDefault().applyUMask(
         FsPermission.getUMask(targetFS.getConf()));
+//<<<<<<< HEAD
     OutputStream outStream = new BufferedOutputStream(
         targetFS.create(tmpTargetPath, permission,
             EnumSet.of(CreateFlag.CREATE, CreateFlag.OVERWRITE), BUFFER_SIZE,
@@ -161,15 +168,44 @@ public class RetriableFileCopyCommand extends RetriableCommand {
             getBlockSize(fileAttributes, sourceFileStatus, targetFS,
                 tmpTargetPath),
             context, getChecksumOpt(fileAttributes, sourceChecksum)));
+      if(codec != null) {
+        outStream = codec.createOutputStream(outStream);
+      }
     return copyBytes(sourceFileStatus, outStream, BUFFER_SIZE, context);
-  }
+/*=======
+    final OutputStream outStream;
+    if (action == FileAction.OVERWRITE) {
+      final short repl = getReplicationFactor(fileAttributes, sourceFileStatus,
+          targetFS, targetPath);
+      final long blockSize = getBlockSize(fileAttributes, sourceFileStatus,
+          targetFS, targetPath);
+      OutputStream out = targetFS.create(targetPath, permission,
+          EnumSet.of(CreateFlag.CREATE, CreateFlag.OVERWRITE),
+          BUFFER_SIZE, repl, blockSize, context,
+          getChecksumOpt(fileAttributes, sourceChecksum));
+      if(codec != null) {
+        out = codec.createOutputStream(out);
+      }
+      outStream = new BufferedOutputStream(out);
+    } else {
+      outStream = new BufferedOutputStream(targetFS.append(targetPath,
+          BUFFER_SIZE));
+    }
+    return copyBytes(sourceFileStatus, sourceOffset, outStream, BUFFER_SIZE,
+        context);
+>>>>>>> fc82e33... HADOOP-8065: add compression support to distcp*/  
+}
 
   private void compareFileLengths(FileStatus sourceFileStatus, Path target,
                                   Configuration configuration, long bytesRead)
                                   throws IOException {
     final Path sourcePath = sourceFileStatus.getPath();
     FileSystem fs = sourcePath.getFileSystem(configuration);
+<<<<<<< HEAD
     if (fs.getFileStatus(sourcePath).getLen() != bytesRead)
+=======
+    if (fs.getFileStatus(sourcePath).getLen() != targetLen && codec == null)
+>>>>>>> fc82e33... HADOOP-8065: add compression support to distcp
       throw new IOException("Mismatch in length of source:" + sourcePath
                 + " and target:" + target);
   }

@@ -51,6 +51,8 @@ public class DistCpOptions {
 
   private String copyStrategy = DistCpConstants.UNIFORMSIZE;
 
+  private String compressCodec = "";
+
   private EnumSet<FileAttribute> preserveStatus = EnumSet.noneOf(FileAttribute.class);
 
   private Path atomicWorkPath;
@@ -120,6 +122,7 @@ public class DistCpOptions {
       this.mapBandwidth = that.mapBandwidth;
       this.sslConfigurationFile = that.getSslConfigurationFile();
       this.copyStrategy = that.copyStrategy;
+      this.compressCodec = that.compressCodec;
       this.preserveStatus = that.preserveStatus;
       this.atomicWorkPath = that.getAtomicWorkPath();
       this.logPath = that.getLogPath();
@@ -432,6 +435,25 @@ public class DistCpOptions {
   }
 
   /**
+   * Get the compression codec to use, if any.
+   *
+   * @return compression codec to use, or null
+   */
+  public String getCompressCodec() {
+    return compressCodec;
+  }
+
+  /**
+   * Set the compression codec use.
+   *
+   * @param compressCodec - compression codec to use
+   */
+  public void setCompressCodec(String compressCodec) {
+    validate(DistCpOptionSwitch.COMPRESS_CODEC, !compressCodec.equals(""));
+    this.compressCodec = compressCodec;
+  }
+
+  /**
    * File path (hdfs:// or file://) that contains the list of actual
    * files to copy
    *
@@ -478,6 +500,8 @@ public class DistCpOptions {
         value : this.atomicCommit);
     boolean skipCRC = (option == DistCpOptionSwitch.SKIP_CRC ?
         value : this.skipCRC);
+    boolean compressCodec = (option == DistCpOptionSwitch.COMPRESS_CODEC ?
+        value : !this.compressCodec.equals(""));
 
     if (syncFolder && atomicCommit) {
       throw new IllegalArgumentException("Atomic commit can't be used with " +
@@ -498,6 +522,10 @@ public class DistCpOptions {
       throw new IllegalArgumentException("Skip CRC is valid only with update options");
     }
 
+    if (compressCodec && syncFolder) {
+      throw new IllegalArgumentException(
+          "Compression codec cannot be specified with update option");
+    }
   }
 
   /**
@@ -522,6 +550,8 @@ public class DistCpOptions {
         String.valueOf(mapBandwidth));
     DistCpOptionSwitch.addToConf(conf, DistCpOptionSwitch.PRESERVE_STATUS,
         DistCpUtils.packAttributes(preserveStatus));
+    DistCpOptionSwitch.addToConf(conf, DistCpOptionSwitch.COMPRESS_CODEC,
+        String.valueOf(compressCodec));
   }
 
   /**
@@ -539,6 +569,7 @@ public class DistCpOptions {
         ", maxMaps=" + maxMaps +
         ", sslConfigurationFile='" + sslConfigurationFile + '\'' +
         ", copyStrategy='" + copyStrategy + '\'' +
+        ", compressCodec='" + compressCodec + '\'' +
         ", sourceFileListing=" + sourceFileListing +
         ", sourcePaths=" + sourcePaths +
         ", targetPath=" + targetPath +
