@@ -74,8 +74,8 @@ public class RetriableFileCopyCommand extends RetriableCommand {
    * @param codec The CompressionCodec to use when writing files, or null.
    */
   public RetriableFileCopyCommand(boolean skipCrc, String description,
-      FileAction action, CompressionCodec codec) {
-    this(description, action);
+      CompressionCodec codec) {
+    this(description);
     this.skipCrc = skipCrc;
     this.codec = codec;
   }
@@ -201,11 +201,7 @@ public class RetriableFileCopyCommand extends RetriableCommand {
                                   throws IOException {
     final Path sourcePath = sourceFileStatus.getPath();
     FileSystem fs = sourcePath.getFileSystem(configuration);
-<<<<<<< HEAD
-    if (fs.getFileStatus(sourcePath).getLen() != bytesRead)
-=======
-    if (fs.getFileStatus(sourcePath).getLen() != targetLen && codec == null)
->>>>>>> fc82e33... HADOOP-8065: add compression support to distcp
+    if (fs.getFileStatus(sourcePath).getLen() != bytesRead && codec == null)
       throw new IOException("Mismatch in length of source:" + sourcePath
                 + " and target:" + target);
   }

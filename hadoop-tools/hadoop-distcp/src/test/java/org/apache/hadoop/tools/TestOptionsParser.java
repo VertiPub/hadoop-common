@@ -616,10 +616,8 @@ public class TestOptionsParser {
           "-compresscodec", "org.apache.hadoop.io.compress.GzipCodec",
           "hdfs://localhost:8020/source/first",
           "hdfs://localhost:8020/target/"});
-      fail("compresscodec should fail if update option is specified");
+      Assert.fail("compresscodec should fail if update option is specified");
     } catch (IllegalArgumentException e) {
-      GenericTestUtils.assertExceptionContains(
-          "Compression codec cannot be specified with update option", e);
     }
   }
 }

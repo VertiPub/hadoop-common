@@ -161,7 +161,7 @@ public enum DistCpOptionSwitch {
    * Specify bandwidth per map in MB
    */
   BANDWIDTH(DistCpConstants.CONF_LABEL_BANDWIDTH_MB,
-      new Option("bandwidth", true, "Specify bandwidth per map in MB"));
+      new Option("bandwidth", true, "Specify bandwidth per map in MB")),
 
   /**
    * Compression codec for output files

@@ -280,7 +280,7 @@ public class CopyMapper extends Mapper<Text, FileStatus, Text, Text> {
     long bytesCopied;
     try {
       bytesCopied = (Long) new RetriableFileCopyCommand(skipCrc, description,
-          action, codec).execute(sourceFileStatus, target, context, fileAttributes);
+          codec).execute(sourceFileStatus, target, context, fileAttributes);
     } catch (Exception e) {
       context.setStatus("Copy Failure: " + sourceFileStatus.getPath());
       throw new IOException("File copy failed: " + sourceFileStatus.getPath() +
