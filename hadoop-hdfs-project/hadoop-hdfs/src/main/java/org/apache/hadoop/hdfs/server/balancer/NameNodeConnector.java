@@ -52,7 +52,7 @@ import org.apache.hadoop.util.Daemon;
 @InterfaceAudience.Private
 class NameNodeConnector {
   private static final Log LOG = Balancer.LOG;
-  private static final Path BALANCER_ID_PATH = new Path("/system/balancer.id");
+  static final Path BALANCER_ID_PATH = new Path("/system/balancer.id");
   private static final int MAX_NOT_CHANGED_ITERATIONS = 5;
 
   final URI nameNodeUri;
@@ -185,12 +185,18 @@ class NameNodeConnector {
    */
   private OutputStream checkAndMarkRunningBalancer() throws IOException {
     try {
-      // A balancer will not be able to create the file while another one is
-      // running.
-      final DataOutputStream out = fs.create(BALANCER_ID_PATH, false);
-      out.writeBytes(InetAddress.getLocalHost().getHostName());
-      out.flush();
-      return out;
+      if (fs.exists(BALANCER_ID_PATH)) {
+        // try appending to it so that it will fail fast if another balancer is
+        // running.
+        IOUtils.closeStream(fs.append(BALANCER_ID_PATH));
+        fs.delete(BALANCER_ID_PATH, true);
+      }
+      final DataOutputStream fsout = fs.create(BALANCER_ID_PATH, false);
+      // mark balancer BALANCER_ID_PATH to be deleted during filesystem closure
+      fs.deleteOnExit(BALANCER_ID_PATH);
+      fsout.writeBytes(InetAddress.getLocalHost().getHostName());
+      fsout.flush();
+      return fsout;
     } catch(RemoteException e) {
       if(AlreadyBeingCreatedException.class.getName().equals(e.getClassName())){
         return null;

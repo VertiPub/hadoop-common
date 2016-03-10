@@ -1,7 +1,6 @@
 Hadoop HDFS Change Log
 
 Release 2.4.1 - 2014-06-23 
-HDFS-8344. NameNode doesn't recover lease for files with missing blocks (raviprak)
 
   INCOMPATIBLE CHANGES
 
@@ -14,6 +13,8 @@ HDFS-8344. NameNode doesn't recover lease for files with missing blocks (ravipra
   OPTIMIZATIONS
 
   BUG FIXES 
+
+    HDFS-6300. Prevent multiple balancers from running simultaneously (Contributed by Rakesh R)
 
     HDFS-8344. NameNode doesn't recover lease for files with missing blocks (raviprak)
 
