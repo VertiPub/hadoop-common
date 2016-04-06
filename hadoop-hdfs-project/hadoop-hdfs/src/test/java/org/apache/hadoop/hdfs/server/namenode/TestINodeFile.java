@@ -469,8 +469,8 @@ public class TestINodeFile {
     }
   }
 
-  @Test(timeout=120000)
-  public void testWriteToDeletedFile() throws IOException {
+  @Test
+  public void testWriteToRenamedFile() throws IOException {
     Configuration conf = new Configuration();
     MiniDFSCluster cluster = new MiniDFSCluster.Builder(conf).numDataNodes(1)
         .build();
@@ -487,16 +487,18 @@ public class TestINodeFile {
     Path filePath = new Path("/test1/file");
     FSDataOutputStream fos = fs.create(filePath);
 
-    // Delete the file
-    fs.delete(filePath, false);
+    // Rename /test1 to test2, and recreate /test1/file
+    Path renamedPath = new Path("/test2");
+    fs.rename(path, renamedPath);
+    fs.create(filePath, (short) 1);
 
-    // Add new block should fail since /test1/file has been deleted.
+    // Add new block should fail since /test1/file has a different fileId
     try {
       fos.write(data, 0, data.length);
       // make sure addBlock() request gets to NN immediately
       fos.hflush();
 
-      fail("Write should fail after delete");
+      fail("Write should fail after rename");
     } catch (Exception e) {
       /* Ignore */
     } finally {

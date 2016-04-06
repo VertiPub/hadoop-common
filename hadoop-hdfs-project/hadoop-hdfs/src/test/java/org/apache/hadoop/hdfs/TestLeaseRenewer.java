@@ -107,8 +107,8 @@ public class TestLeaseRenewer {
     
     // Set up a file so that we start renewing our lease.
     DFSOutputStream mockStream = Mockito.mock(DFSOutputStream.class);
-    long fileId = 123L;
-    renewer.put(fileId, mockStream, MOCK_DFSCLIENT);
+    String filePath = "/foo";
+    renewer.put(filePath, mockStream, MOCK_DFSCLIENT);
 
     // Wait for lease to get renewed
     long failTime = Time.now() + 5000;
@@ -120,7 +120,7 @@ public class TestLeaseRenewer {
       Assert.fail("Did not renew lease at all!");
     }
 
-    renewer.closeFile(fileId, MOCK_DFSCLIENT);
+    renewer.closeFile(filePath, MOCK_DFSCLIENT);
   }
   
   /**
@@ -138,8 +138,8 @@ public class TestLeaseRenewer {
     
     // Set up a file so that we start renewing our lease.
     DFSOutputStream mockStream1 = Mockito.mock(DFSOutputStream.class);
-    long fileId = 456L;
-    renewer.put(fileId, mockStream1, mockClient1);
+    String filePath = "/foo";
+    renewer.put(filePath, mockStream1, mockClient1);
 
     // Second DFSClient does renew lease
     final DFSClient mockClient2 = createMockClient();
@@ -149,7 +149,7 @@ public class TestLeaseRenewer {
 
     // Set up a file so that we start renewing our lease.
     DFSOutputStream mockStream2 = Mockito.mock(DFSOutputStream.class);
-    renewer.put(fileId, mockStream2, mockClient2);
+    renewer.put(filePath, mockStream2, mockClient2);
 
     
     // Wait for lease to get renewed
@@ -170,19 +170,19 @@ public class TestLeaseRenewer {
       }
     }, 100, 10000);
 
-    renewer.closeFile(fileId, mockClient1);
-    renewer.closeFile(fileId, mockClient2);
+    renewer.closeFile(filePath, mockClient1);
+    renewer.closeFile(filePath, mockClient2);
   }
   
   @Test
   public void testThreadName() throws Exception {
     DFSOutputStream mockStream = Mockito.mock(DFSOutputStream.class);
-    long fileId = 789L;
+    String filePath = "/foo";
     Assert.assertFalse("Renewer not initially running",
         renewer.isRunning());
     
     // Pretend to open a file
-    renewer.put(fileId, mockStream, MOCK_DFSCLIENT);
+    renewer.put(filePath, mockStream, MOCK_DFSCLIENT);
     
     Assert.assertTrue("Renewer should have started running",
         renewer.isRunning());
@@ -192,7 +192,7 @@ public class TestLeaseRenewer {
     Assert.assertEquals("LeaseRenewer:myuser@hdfs://nn1/", threadName);
     
     // Pretend to close the file
-    renewer.closeFile(fileId, MOCK_DFSCLIENT);
+    renewer.closeFile(filePath, MOCK_DFSCLIENT);
     renewer.setEmptyTime(Time.now());
     
     // Should stop the renewer running within a few seconds

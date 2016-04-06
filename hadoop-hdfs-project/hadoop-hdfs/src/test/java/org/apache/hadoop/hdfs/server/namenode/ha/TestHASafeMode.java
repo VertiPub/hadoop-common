@@ -36,7 +36,6 @@ import org.apache.commons.logging.impl.Log4JLogger;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
@@ -820,13 +819,10 @@ public class TestHASafeMode {
           null);
       create.write(testData.getBytes());
       create.hflush();
-      long fileId = ((DFSOutputStream)create.
-          getWrappedStream()).getFileId();
-      FileStatus fileStatus = dfs.getFileStatus(filePath);
       DFSClient client = DFSClientAdapter.getClient(dfs);
       // add one dummy block at NN, but not write to DataNode
-      ExtendedBlock previousBlock =
-          DFSClientAdapter.getPreviousBlock(client, fileId);
+      ExtendedBlock previousBlock = DFSClientAdapter.getPreviousBlock(client,
+          pathString);
       DFSClientAdapter.getNamenode(client).addBlock(
           pathString,
           client.getClientName(),
